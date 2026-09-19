@@ -101,38 +101,45 @@ def track_vehicles(
         detector = load_detector(config, camera)
 
     frame_dets: list[FrameDetections] = []
+    for frame in frames:
+        dets = detector(frame.image)
+        frame_dets.append(
+            FrameDetections(
+                frame_number=frame.frame_number,
+                timestamp_sec=frame.timestamp_sec,
+                detections=dets,
+            )
+        )
+    return accumulate_tracks(frame_dets), frame_dets
+
+
+def accumulate_tracks(
+    frame_dets: list[FrameDetections],
+) -> list[VehicleTrack]:
     tracks_raw: dict[int, dict[str, Any]] = {}
     track_class_votes: dict[int, dict[int, int]] = {}
 
-    for frame in frames:
-        dets = detector(frame.image)
-        fd = FrameDetections(
-            frame_number=frame.frame_number,
-            timestamp_sec=frame.timestamp_sec,
-            detections=dets,
-        )
-        frame_dets.append(fd)
-
-        for det in dets:
+    for fd in frame_dets:
+        for det in fd.detections:
             tid = det.track_id
             if tid not in tracks_raw:
                 tracks_raw[tid] = {
-                    "first_frame": frame.frame_number,
-                    "last_frame": frame.frame_number,
-                    "first_ts": frame.timestamp_sec,
-                    "last_ts": frame.timestamp_sec,
-                    "bboxes": {frame.frame_number: det.bbox},
+                    "first_frame": fd.frame_number,
+                    "last_frame": fd.frame_number,
+                    "first_ts": fd.timestamp_sec,
+                    "last_ts": fd.timestamp_sec,
+                    "bboxes": {fd.frame_number: det.bbox},
                 }
                 track_class_votes[tid] = {det.class_id: 1}
             else:
                 t = tracks_raw[tid]
-                if frame.frame_number < t["first_frame"]:
-                    t["first_frame"] = frame.frame_number
-                    t["first_ts"] = frame.timestamp_sec
-                if frame.frame_number > t["last_frame"]:
-                    t["last_frame"] = frame.frame_number
-                    t["last_ts"] = frame.timestamp_sec
-                t["bboxes"][frame.frame_number] = det.bbox
+                if fd.frame_number < t["first_frame"]:
+                    t["first_frame"] = fd.frame_number
+                    t["first_ts"] = fd.timestamp_sec
+                if fd.frame_number > t["last_frame"]:
+                    t["last_frame"] = fd.frame_number
+                    t["last_ts"] = fd.timestamp_sec
+                t["bboxes"][fd.frame_number] = det.bbox
                 track_class_votes[tid][det.class_id] = (
                     track_class_votes[tid].get(det.class_id, 0) + 1
                 )
@@ -200,7 +207,7 @@ def track_vehicles(
             )
         )
 
-    return vehicles, frame_dets
+    return vehicles
 
 
 def crop_vehicle(

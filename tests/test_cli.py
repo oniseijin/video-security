@@ -44,16 +44,18 @@ def test_list_with_jobs(tmp_path: Path) -> None:
     assert "pending" in result.stdout
 
 
-def test_analyze_stub() -> None:
-    result = runner.invoke(app, ["analyze", "/path/to/video.mp4"])
-    assert result.exit_code == 0
-    assert "not implemented" in result.stdout.lower()
+def test_analyze_missing_video(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["--db", str(tmp_path / "t.db"), "analyze", "/path/to/video.mp4"]
+    )
+    assert result.exit_code == 1
 
 
-def test_analyze_no_llm() -> None:
-    result = runner.invoke(app, ["analyze", "/path/to/video.mp4", "--no-llm"])
-    assert result.exit_code == 0
-    assert "not implemented" in result.stdout.lower()
+def test_analyze_no_llm_missing_video(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["--db", str(tmp_path / "t.db"), "analyze", "/path/to/video.mp4", "--no-llm"]
+    )
+    assert result.exit_code == 1
 
 
 def test_import_stub() -> None:

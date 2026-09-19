@@ -179,6 +179,9 @@ MIGRATIONS: list[list[str]] = [
         "VALUES('delete', old.id, old.text); "
         "INSERT INTO frame_text_fts(rowid, text) VALUES (new.id, new.text); END",
     ],
+    [
+        "ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+    ],
 ]
 
 
@@ -235,3 +238,204 @@ def update_job_status(conn: sqlite3.Connection, job_id: int, status: str) -> Non
 def list_jobs(conn: sqlite3.Connection) -> list[JobRow]:
     rows = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
     return [_row_to_job(r) for r in rows]
+
+
+def insert_frame(
+    conn: sqlite3.Connection,
+    job_id: int,
+    clip_id: int,
+    frame_number: int,
+    timestamp_sec: float,
+    dhash: int | None,
+    lighting_condition: str | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO frames "
+        "(job_id, clip_id, frame_number, timestamp_sec, dhash, lighting_condition) "
+        "VALUES (?,?,?,?,?,?)",
+        (job_id, clip_id, frame_number, timestamp_sec, dhash, lighting_condition),
+    )
+    conn.commit()
+
+
+def insert_transcript_segment(
+    conn: sqlite3.Connection,
+    job_id: int,
+    clip_id: int,
+    segment_id: int,
+    start_time: float,
+    end_time: float,
+    text: str,
+    language: str | None,
+) -> None:
+    conn.execute(
+        "INSERT INTO transcript_segments "
+        "(job_id, clip_id, segment_id, start_time, end_time, text, language) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (job_id, clip_id, segment_id, start_time, end_time, text, language),
+    )
+    conn.commit()
+
+
+def insert_event(
+    conn: sqlite3.Connection,
+    job_id: int,
+    event_type: str,
+    start_sec: float,
+    end_sec: float,
+    clip_id: int,
+    track_id: int | None,
+    keyframes_json: str,
+    detector_score: float,
+    priority: float,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO events "
+        "(job_id, event_type, start_sec, end_sec, clip_id, track_id, keyframes_json, "
+        "detector_score, priority) "
+        "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
+        (
+            job_id, event_type, start_sec, end_sec, clip_id, track_id,
+            keyframes_json, detector_score, priority
+        ),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.commit()
+    return int(row["id"])
+
+
+def insert_plate(
+    conn: sqlite3.Connection,
+    job_id: int,
+    track_id: int,
+    clip_id: int,
+    raw_text: str | None,
+    norm_text: str | None,
+    confidence: float | None,
+    best_frame: int | None,
+    ocr_votes_json: str | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO plates "
+        "(job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json),
+    )
+    conn.commit()
+
+
+def insert_frame_text(
+    conn: sqlite3.Connection,
+    job_id: int,
+    clip_id: int,
+    frame_number: int,
+    text: str,
+    text_kind: str,
+    region_json: str | None,
+    confidence: float,
+) -> None:
+    conn.execute(
+        "INSERT INTO frame_text "
+        "(job_id, clip_id, frame_number, text, text_kind, region_json, confidence) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (job_id, clip_id, frame_number, text, text_kind, region_json, confidence),
+    )
+    conn.commit()
+
+
+def insert_vehicle_track(
+    conn: sqlite3.Connection,
+    job_id: int,
+    track_id: int,
+    clip_id: int,
+    first_frame: int,
+    last_frame: int,
+    weaving_score: float | None,
+    direction: str | None,
+) -> None:
+    conn.execute(
+        "INSERT INTO vehicle_tracks "
+        "(job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction),
+    )
+    conn.commit()
+
+
+def insert_analysis_result(
+    conn: sqlite3.Connection,
+    job_id: int,
+    event_id: int,
+    model_digest: str,
+    prompt_version: str,
+    analysis_type: str,
+    raw_response: str,
+    confidence: float | None,
+    retry_count: int,
+    tiled_results: str | None,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO analysis_results "
+        "(job_id, event_id, model_digest, prompt_version, analysis_type, raw_response, "
+        "confidence, retry_count, tiled_results) "
+        "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
+        (
+            job_id, event_id, model_digest, prompt_version, analysis_type,
+            raw_response, confidence, retry_count, tiled_results
+        ),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.commit()
+    return int(row["id"])
+
+
+def update_event_status(
+    conn: sqlite3.Connection,
+    event_id: int,
+    status: str,
+    llm_result_id: int | None = None,
+) -> None:
+    conn.execute(
+        "UPDATE events SET status = ?, llm_result_id = ? WHERE id = ?",
+        (status, llm_result_id, event_id),
+    )
+    conn.commit()
+
+
+def update_event_keyframes(
+    conn: sqlite3.Connection,
+    event_id: int,
+    keyframes_json: str,
+) -> None:
+    conn.execute(
+        "UPDATE events SET keyframes_json = ? WHERE id = ?",
+        (keyframes_json, event_id),
+    )
+    conn.commit()
+
+
+def get_events_for_job(
+    conn: sqlite3.Connection,
+    job_id: int,
+    status: str | None = None,
+) -> list[sqlite3.Row]:
+    if status is None:
+        return conn.execute(
+            "SELECT * FROM events WHERE job_id = ? ORDER BY id", (job_id,)
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM events WHERE job_id = ? AND status = ? ORDER BY id",
+        (job_id, status),
+    ).fetchall()
+
+
+def delete_job_rows(conn: sqlite3.Connection, job_id: int) -> None:
+    tables = [
+        "frames", "events", "vehicle_tracks", "plates", "frame_text",
+        "transcript_segments", "analysis_results", "sessions", "clips", "clip_gps_data",
+    ]
+    for table in tables:
+        conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))
+    conn.commit()
