@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-vs = "video_security.cli:main"
+vs = "video_security.entries:vs_main"
 vs-analyze = "video_security.entries:analyze"
 vs-import = "video_security.entries:import_clips"
 vs-search = "video_security.entries:search"

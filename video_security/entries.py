@@ -3,6 +3,10 @@ import sys
 from video_security.cli import app
 
 
+def vs_main() -> None:
+    app()
+
+
 def analyze() -> None:
     sys.argv[0] = "vs"
     sys.argv[1:1] = ["analyze"]
