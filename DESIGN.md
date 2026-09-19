@@ -439,6 +439,17 @@ scene_change_hash_dist = 12                       # dHash hamming distance for s
 night_luma = 60                                    # mean luma below → night lighting
 ir_max_sat = 20                                    # max saturation for ir classification (0-255)
 decode_width = 1280                                # working decode resolution (motion path runs at 480p)
+yolo_model = "yolov8n"                             # ultralytics weights (or CoreML path below)
+yolo_conf = 0.25                                    # YOLO confidence threshold
+yolo_coreml_path = null                             # pre-exported .mlpackage for ANE (optional)
+
+[audio]
+rms_window_ms = 100                                # RMS analysis window
+rms_sustain_ms = 500                               # min sustained duration for loud events
+rms_factor = 4.0                                    # loud = RMS > baseline * factor
+rms_floor = 0.02                                    # absolute loud threshold (silence guard)
+vad_pad_ms = 300                                    # Silero VAD padding (speech onset)
+distress_keywords = ["help", "police", "get out"]   # audio_distress keyword triggers
 ```
 
 **Per-camera overrides** (`cameras.config_json` in DB — wins over TOML for that

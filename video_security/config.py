@@ -74,6 +74,21 @@ class PrefilterConfig:
     night_luma: int = 60
     ir_max_sat: int = 20
     decode_width: int = 1280
+    yolo_model: str = "yolov8n"
+    yolo_conf: float = 0.25
+    yolo_coreml_path: str | None = None
+
+
+@dataclasses.dataclass
+class AudioConfig:
+    rms_window_ms: int = 100
+    rms_sustain_ms: int = 500
+    rms_factor: float = 4.0
+    rms_floor: float = 0.02
+    vad_pad_ms: int = 300
+    distress_keywords: list[str] = dataclasses.field(
+        default_factory=lambda: ["help", "police", "get out"]
+    )
 
 
 @dataclasses.dataclass
@@ -138,6 +153,7 @@ class Config:
     )
     whisper: WhisperConfig = dataclasses.field(default_factory=WhisperConfig)
     prefilter: PrefilterConfig = dataclasses.field(default_factory=PrefilterConfig)
+    audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:
@@ -264,6 +280,8 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                 )
         elif section == "whisper":
             kwargs["whisper"] = _merge_dataclass(config.whisper, values, "whisper")
+        elif section == "audio":
+            kwargs["audio"] = _merge_dataclass(config.audio, values, "audio")
         elif section == "prefilter":
             kwargs["prefilter"] = _merge_dataclass(config.prefilter, values, "prefilter")
     return dataclasses.replace(config, **kwargs)
