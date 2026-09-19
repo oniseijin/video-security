@@ -166,7 +166,7 @@ jobs(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Kept frames only. is_static is redundant (static frames are dropped), removed.
+-- Kept frames only — static frames are dropped during dedup
 frames(
     job_id INTEGER NOT NULL,
     clip_id INTEGER NOT NULL,
@@ -185,6 +185,7 @@ events(
     start_sec REAL NOT NULL,
     end_sec REAL NOT NULL,
     clip_id INTEGER NOT NULL,
+    track_id INTEGER,               -- NULL for multi-track or non-vehicle events
     keyframes_json TEXT NOT NULL,   -- JSON array of {clip_id, frame_number, timestamp_sec}
     detector_score REAL NOT NULL,
     priority REAL NOT NULL DEFAULT 0.5,

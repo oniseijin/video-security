@@ -40,17 +40,19 @@ Phase 1 (DB)
   ↓
 Phase 2 (Config + CLI)
   ↓
-Phase 3 (Frame ingest) ──→ Phase 5 (Vehicle prefilter) ──┐
-  ↓                                                        │
-Phase 4 (Audio ingest) ──→ Phase 6 (OCR prefilter) ────────┤
-  ↓                                                        │
-Phase 7 (Threat scoring) ──────────────────────────────────┘
+Phase 3 (Frame ingest)
+  ↓
+Phase 4 (Audio ingest)
+  ↓
+Phase 5+6+7 (prefilter, parallel after ingest)
+  ↓
+Phase 11 (mock Ollama — needed by phase 8 tests)
   ↓
 Phase 8 (LLM triage + detail)
   ↓
 Phase 9 (Batch engine)
   ↓
-Phase 10, 11, 12, 13 (parallel)
+Phase 10+12+13 (parallel: reports, E2E tests, docs)
 ```
 
 ## Implementation Order
@@ -63,11 +65,11 @@ Phase 4:  Audio ingest
 Phase 5:  Prefilter — YOLO + ByteTrack + plate crop  ┐
 Phase 6:  Prefilter — OCR consensus + Vision OCR      ├── parallel
 Phase 7:  Prefilter — threat scoring → events          │
+Phase 11: Mock Ollama + golden test clip
 Phase 8:  LLM triage + detail pass
 Phase 9:  Batch engine
 Phase 10: Reports                                    ┐
-Phase 11: Mock Ollama + golden test clip             ├── parallel
-Phase 12: E2E integration + perf benchmarks          │
+Phase 12: E2E integration + perf benchmarks          ├── parallel
 Phase 13: AGENTS.md + README + config defaults        ┘
 ```
 
