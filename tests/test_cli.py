@@ -64,16 +64,15 @@ def test_import_stub() -> None:
     assert "not implemented" in result.stdout.lower()
 
 
-def test_search_stub() -> None:
-    result = runner.invoke(app, ["search", "ABC1234"])
+def test_search_no_query(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["--db", str(tmp_path / "t.db"), "search"])
     assert result.exit_code == 0
-    assert "not implemented" in result.stdout.lower()
+    assert "Usage" in result.stdout
 
 
-def test_report_stub() -> None:
-    result = runner.invoke(app, ["report", "42"])
-    assert result.exit_code == 0
-    assert "not implemented" in result.stdout.lower()
+def test_report_missing_job(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["--db", str(tmp_path / "t.db"), "report", "42"])
+    assert result.exit_code == 1
 
 
 def test_parse_duration_valid() -> None:

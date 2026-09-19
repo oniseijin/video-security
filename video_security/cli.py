@@ -189,17 +189,93 @@ def import_clips_cmd(
 
 @app.command(name="search")
 def search_cmd(
+    ctx: typer.Context,
     query: str | None = typer.Argument(None, help="FTS5 search query string"),  # noqa: B008
     kind: str | None = typer.Option(None, "--kind", help="Event kind filter"),  # noqa: B008
 ) -> None:
-    print("search: not implemented")
+    cfg: Config = ctx.obj["config"]
+    conn = connect(cfg.storage.db_path)
+    init_db(conn)
+
+    if query is not None:
+        try:
+            rows = conn.execute(
+                "SELECT ft.text, j.video_path, f.frame_number "
+                "FROM frame_text_fts ft "
+                "JOIN frame_text f ON f.id = ft.rowid "
+                "JOIN jobs j ON j.id = f.job_id "
+                "WHERE frame_text_fts MATCH ? ORDER BY rank LIMIT 50",
+                (query,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            print("Error: invalid search query", file=sys.stderr)
+            conn.close()
+            raise typer.Exit(code=1) from None
+        print("TEXT MATCHES:")
+        for row in rows:
+            print(f"  {row['video_path']} frame {row['frame_number']}: {row['text']}")
+
+        try:
+            plate_rows = conn.execute(
+                "SELECT norm_text, raw_text, confidence, job_id "
+                "FROM plates WHERE norm_text LIKE ? ORDER BY confidence DESC",
+                (f"%{query.upper()}%",),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            print("Error: invalid search query", file=sys.stderr)
+            conn.close()
+            raise typer.Exit(code=1) from None
+        print("PLATES:")
+        for row in plate_rows:
+            print(
+                f"  {row['norm_text']} ({row['raw_text']})"
+                f" conf={row['confidence']} job={row['job_id']}"
+            )
+    elif kind is not None:
+        if kind == "dangerous":
+            event_rows = conn.execute(
+                "SELECT id, event_type, start_sec, end_sec, status FROM events "
+                "WHERE event_type IN ('weaving','near_miss','hard_brake',"
+                "'hard_corner','impact','audio_distress') "
+                "ORDER BY start_sec"
+            ).fetchall()
+            print("DANGEROUS DRIVING EVENTS:")
+        else:
+            event_rows = conn.execute(
+                "SELECT id, event_type, start_sec, end_sec, status FROM events "
+                "WHERE event_type = ? ORDER BY start_sec", (kind,)
+            ).fetchall()
+            print(f"EVENTS ({kind}):")
+        for row in event_rows:
+            print(
+                f"  {row['id']}: {row['event_type']}"
+                f" {row['start_sec']}s-{row['end_sec']}s {row['status']}"
+            )
+    else:
+        print("Usage: vs-search <query> OR vs-search --kind <event-type>")
+    conn.close()
 
 
 @app.command(name="report")
 def report_cmd(
+    ctx: typer.Context,
     job_id: int = typer.Argument(..., help="Job ID to generate report for"),  # noqa: B008
 ) -> None:
-    print("report: not implemented")
+    from video_security.report import ReportError, generate_report
+
+    cfg: Config = ctx.obj["config"]
+    conn = connect(cfg.storage.db_path)
+    init_db(conn)
+    try:
+        path = generate_report(
+            conn, job_id, Path(cfg.storage.artifact_dir).expanduser()
+        )
+        print(path)
+    except ReportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
 
 
 @app.command(name="list")
