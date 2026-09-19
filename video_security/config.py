@@ -69,6 +69,11 @@ class WhisperConfig:
 @dataclasses.dataclass
 class PrefilterConfig:
     scene_text_sample_sec: int = 30
+    motion_threshold: float = 0.05
+    scene_change_hash_dist: int = 12
+    night_luma: int = 60
+    ir_max_sat: int = 20
+    decode_width: int = 1280
 
 
 @dataclasses.dataclass
