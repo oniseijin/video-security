@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import platform
 import shutil
 import signal
@@ -50,6 +51,43 @@ def caffeinate_wrap(cmd: list[str]) -> int:
     if shutil.which("caffeinate") and platform.system() == "Darwin":
         return subprocess.run(["caffeinate", "-s", "-i", *cmd]).returncode
     return subprocess.run(cmd).returncode
+
+
+class CaffeinateGuard:
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen[bytes] | None = None
+
+    def __enter__(self) -> CaffeinateGuard:
+        if shutil.which("caffeinate") and platform.system() == "Darwin":
+            self._proc = subprocess.Popen(
+                ["caffeinate", "-s", "-i", "-w", str(os.getpid())],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        if self._proc is not None:
+            self._proc.terminate()
+            self._proc.wait()
+
+
+_watermark_config_gb: float | None = None
+
+
+def set_watermark_config(disk_watermark_gb: float | None) -> None:
+    global _watermark_config_gb
+    _watermark_config_gb = disk_watermark_gb
+
+
+def check_disk_watermark_once() -> None:
+    if _watermark_config_gb is None:
+        return
+    if disk_free_gb(Path.home()) < _watermark_config_gb:
+        raise EngineError(
+            f"disk watermark breached ({disk_free_gb(Path.home()):.1f} GB free"
+            f" < {_watermark_config_gb} GB) — aborting for checkpoint"
+        )
 
 
 def on_ac_power() -> bool:

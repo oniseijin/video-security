@@ -82,6 +82,8 @@ def _decode_pass(
     detector: Callable[[np.ndarray], list[Detection]],
     progress: Callable[[int], None] | None = None,
 ) -> tuple[list[FrameDetections], dict[int, FrameData], OrderedDict[int, bytes]]:
+    from video_security.engine import check_disk_watermark_once
+
     frame_dets: list[FrameDetections] = []
     frames_meta: dict[int, FrameData] = {}
     jpeg_cache: OrderedDict[int, bytes] = OrderedDict()
@@ -103,6 +105,8 @@ def _decode_pass(
         frames_meta[frame.frame_number] = frame
         if progress is not None and frame.frame_number % 100 == 0:
             progress(frame.frame_number)
+        if frame.frame_number % 1000 == 0:
+            check_disk_watermark_once()
     return frame_dets, frames_meta, jpeg_cache
 
 
