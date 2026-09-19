@@ -81,5 +81,11 @@ Phase 13: AGENTS.md + README + config defaults        ┘
 ## Phase 2 (After Core)
 
 Source adapters layer on top without changing the core pipeline:
-- `mazda_cx8` — dashcam, multi-clip, parking events, GPS sidecar
-- `gopro` — motorcycle + snowboard, action cam, wide-angle, GPS embedded
+
+| Phase | Description | Agent | Why |
+|---|---|---|---|
+| 14 | Import pipeline (`vs-import`) | `code-helper` | Card scan → hash dedup → copy → verify → register. Well-specified, verified card structure on hand. |
+| 15 | `mazda_cx8` adapter | `code-helper` | Filename timestamp parse, front/rear pairing, mode→priority, NMEA $GPRMC+$GSENS parsing → clip_gps_data + G-force events. Real card available for testing. |
+| 16 | `gopro` adapter | `code-helper` | Motorcycle + snowboard: wide-angle config, embedded GPS. Lower priority. |
+
+Phase 14 + 15 can run concurrently with real CX-8 card as the test fixture.

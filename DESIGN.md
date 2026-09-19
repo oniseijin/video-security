@@ -182,6 +182,7 @@ jobs(
     current_frame INTEGER DEFAULT 0,
     current_stage TEXT DEFAULT 'pending',
     recording_start_utc TEXT,
+    import_id TEXT,                  -- card import batch identifier
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -300,7 +301,7 @@ clips(
     PRIMARY KEY (job_id, clip_id)
 );
 
--- GPS sidecar data (optional, for action cam / dashcam with GPS)
+-- GPS + G-sensor sidecar data (NMEA: $GPRMC position, $GSENS acceleration)
 clip_gps_data(
     job_id INTEGER NOT NULL,
     clip_id INTEGER NOT NULL,
@@ -309,6 +310,9 @@ clip_gps_data(
     lon REAL,
     speed_kmh REAL,
     bearing REAL,
+    ax REAL,                 -- G-sensor lateral (g)
+    ay REAL,                 -- G-sensor longitudinal (g), braking/accel
+    az REAL,                 -- G-sensor vertical (g), impact/bumps
     PRIMARY KEY (job_id, clip_id, time_sec)
 );
 
@@ -402,6 +406,7 @@ go there. When null: everything in `db_path` parent with aggressive cleanup.
 ## CLI
 
 ```
+vs-import <card-mount>           copy new clips off card to artifact disk, dedup by hash
 vs-analyze <video>               full pipeline
 vs-analyze <video> --no-llm      prefilter + OCR + tracking only (no LLM)
 vs-analyze --only-llm            re-run LLM on existing prefilter output
@@ -427,10 +432,58 @@ Pluggable adapter interface. Each adapter provides:
 - `channel_name(clip) → str`
 - `event_taxonomy() → [EventType]`
 
-Built-in adapters: `generic`, `mazda_cx8` (TBD), `gopro` (motorcycle, snowboard).
+Built-in adapters: `generic`, `mazda_cx8`, `gopro` (motorcycle, snowboard).
 
 Event taxonomy is adapter-defined, not globally hardcoded. Each adapter
 declares its own event types and default priority weights.
+
+### mazda_cx8 Adapter (verified against real card)
+
+Card layout (`/Volumes/CX-8/`, 16GB SD, loop-recording — import before overwrite):
+
+```
+NORMAL/    front continuous driving, 2-min clips
+EVENT/     front event-triggered (G-sensor impact/threshold)
+MANUAL/    front manual recordings (driver button press)
+PARKING/   front parking mode (event-triggered by definition)
+PICTURE/   stills
+REAR/<MODE>/            rear cam, IDENTICAL filename to front pair
+SYSTEM/NMEA/<MODE>/     per-clip GPS log, same basename, .NMEA
+SYSTEM/THUMB/<MODE>/    per-clip thumbnail, same basename, .JPG
+```
+
+- **Filename**: `YYMMDDHHMMSS.MP4` in camera-local time. Camera timezone must be
+  configured in `cameras.config_json` to convert to UTC.
+- **Front/rear pairing**: same basename in `<MODE>/` and `REAR/<MODE>/` = one
+  session, two channels.
+- **Priority mapping**: EVENT=1.0, PARKING=0.8, MANUAL=0.7, NORMAL=0.3.
+- **NMEA sentences**: `$GPRMC` (time/lat/lon/speed-knots/bearing/date) and
+  proprietary `$GSENS,x,y,z` — **G-sensor acceleration per second**. $GSENS is
+  the ground truth for dangerous driving: hard braking, impact, aggressive
+  cornering, detected with zero vision cost. Parsed into clip_gps_data
+  (ax/ay/az columns) and G-force threshold crossings generate events directly
+  (hard_brake, impact, hard_corner).
+- **Audio**: verify per-clip (has_audio).
+
+### Import Pipeline (card swap workflow)
+
+Cards are slow, loop-record (old clips get overwritten), and the user swaps them.
+Never process from the card — import first:
+
+```
+vs-import /Volumes/CX-8
+  1. Preflight: artifact_dir mounted, ≥10 GB free
+  2. Scan card with mazda_cx8 adapter → clip list with front/rear pairs
+  3. Skip clips whose video_hash already exists in DB (incremental import)
+  4. Copy new clips (+ paired rear, + .NMEA sidecar) to
+     artifact_dir/incoming/<YYYY-MM-DD>/<mode>/<channel>/
+  5. Verify copy (size + sampled bytes), then register as job with import_id
+  6. Report: N new clips imported, M skipped (already imported)
+  7. Card can be ejected immediately after import — processing happens later
+```
+
+Loop-recording makes frequent imports matter: the card is 97% full, so the
+oldest clips are always at risk of overwrite.
 
 ---
 
@@ -488,7 +541,8 @@ Ollama `format` parameter enforces structure. Triage response schema:
   "properties": {
     "relevant": {"type": "boolean"},
     "event_type": {"enum": ["intrusion", "loitering", "weaving", "near_miss",
-                            "plate_capture", "audio_distress", "suspicious_behavior", "none"]},
+                            "plate_capture", "audio_distress", "suspicious_behavior",
+                            "hard_brake", "hard_corner", "impact", "none"]},
     "description": {"type": "string"},
     "confidence": {"enum": ["low", "medium", "high"]}
   },
