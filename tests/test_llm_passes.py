@@ -51,8 +51,8 @@ def test_triage_basic() -> None:
         assert r0.prompt_version == PROMPT_VERSION
         assert r0.analysis_type == "triage"
 
-        get_requests = [r for r in m.requests if r["path"].startswith("/api/show")]
-        assert len(get_requests) >= 1
+        tags_requests = [r for r in m.requests if r["path"].startswith("/api/tags")]
+        assert len(tags_requests) >= 1
 
         post_requests = [r for r in m.requests if r["path"] == "/api/generate"]
         first_post = post_requests[0]
