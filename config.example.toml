@@ -1,0 +1,76 @@
+[storage]
+db_path = "~/.video-security/db"
+artifact_dir = "/Volumes/lacie8/Ryan/video/vs"
+# staging_dir = null  (optional local in-transit dir)
+
+[import]
+card_mount = "/Volumes/CX-8"
+archive_dirs = ["/Volumes/lacie8/Ryan/video/CX-8"]
+preflight_gb = 25
+
+[adapter.mazda_cx8]
+timezone = "Asia/Tokyo"
+[adapter.mazda_cx8.priority]
+EVENT = 1.0
+PARKING = 0.8
+MANUAL = 0.7
+NORMAL = 0.3
+[adapter.mazda_cx8.gsens]
+hard_brake_g = 0.35
+hard_corner_g = 0.30
+impact_g = 0.80
+
+[engine]
+heartbeat_sec = 30
+max_llm_events = 100
+retention_days = 30
+disk_preflight_gb = 10
+disk_watermark_gb = 5
+
+[llm.triage]
+model = "gemma3:4b"
+num_ctx = 2048
+timeout_s = 120
+
+[llm.detail]
+model = "gemma4:12b"
+num_ctx = 8192
+timeout_s = 300
+
+[whisper]
+model = "small"
+# language = "ja"  (pin if monolingual)
+
+[prefilter]
+scene_text_sample_sec = 30
+motion_threshold = 0.05
+scene_change_hash_dist = 12
+night_luma = 60
+ir_max_sat = 20
+decode_width = 1280
+yolo_model = "yolov8n"
+yolo_conf = 0.25
+# yolo_coreml_path = "/path/to/exported.mlpackage"  (ANE)
+ocr_min_conf = 0.3
+plate_min_votes = 2
+
+[audio]
+rms_window_ms = 100
+rms_sustain_ms = 500
+rms_factor = 4.0
+rms_floor = 0.02
+vad_pad_ms = 300
+distress_keywords = ["help", "police", "get out"]
+
+[threat]
+score_threshold = 0.5
+person_weight = 0.4
+motion_weight = 0.3
+time_weight = 0.3
+after_hours = ["22:00-06:00"]
+loiter_min_sec = 60
+merge_gap_sec = 5
+[threat.priority]
+intrusion = 0.9
+loitering = 0.6
+suspicious_behavior = 0.5
