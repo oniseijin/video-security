@@ -42,7 +42,7 @@ def _frame(ts: float, number: int) -> FrameData:
 def _text_image() -> np.ndarray:
     img = Image.new("RGB", (400, 100), (0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font: Image.ImageFont.ImageFont | Image.FreeTypeFont
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     try:
         font = ImageFont.truetype(
             "/System/Library/Fonts/Supplemental/Arial.ttf", 48
