@@ -378,23 +378,84 @@ sessions(
 
 ---
 
-## Storage
+## Configuration
+
+`~/.video-security/config.toml` (override with `--config <path>`). All magic
+numbers live here — no hardcoded paths or thresholds in code.
+
+**Precedence**: CLI flags > per-camera `cameras.config_json` > `config.toml`
+> built-in defaults.
 
 ```toml
 [storage]
-db_path = "~/.video-security/db"
-artifact_dir = "/Volumes/lacie8/Ryan/video/vs"       # persistent: clips, keyframes, crops, reports
-staging_dir = null                                    # optional local disk for in-transit temp files
+db_path = "~/.video-security/db"                  # SQLite (internal, fast)
+artifact_dir = "/Volumes/lacie8/Ryan/video/vs"    # persistent artifacts (external)
+staging_dir = null                                # optional local in-transit dir, cleaned per job
+
+[import]
+card_mount = "/Volumes/CX-8"                      # live card source
+archive_dirs = ["/Volumes/lacie8/Ryan/video/CX-8"]  # archived card copies
+preflight_gb = 25                                 # artifact_dir free space required
+
+[adapter.mazda_cx8]
+timezone = "Asia/Tokyo"                           # camera clock tz (filename → UTC)
+
+[adapter.mazda_cx8.priority]                      # mode → clip priority
+EVENT = 1.0
+PARKING = 0.8
+MANUAL = 0.7
+NORMAL = 0.3
+
+[adapter.mazda_cx8.gsens]                         # G-sensor thresholds (g, deviation from baseline)
+hard_brake_g = 0.35                               # |ay| longitudinal (braking/accel)
+hard_corner_g = 0.30                              # |ax| lateral
+impact_g = 0.80                                   # spike, any axis (az baseline ≈ -1.0 gravity)
+
+[engine]
+heartbeat_sec = 30                                # dedup keep-floor
+max_llm_events = 100                              # LLM budget circuit breaker
+retention_days = 30                               # prune disk + DB rows older than N days
+disk_preflight_gb = 10                            # system disk: refuse start below
+disk_watermark_gb = 5                             # system disk: checkpoint + abort below
+
+[llm.triage]
+model = "gemma3:4b"
+num_ctx = 2048
+timeout_s = 120
+
+[llm.detail]
+model = "gemma4:12b"
+num_ctx = 8192
+timeout_s = 300
+
+[whisper]
+model = "small"                                   # small | large-v3-turbo
+language = null                                   # pin (e.g. "ja") if monolingual
+
+[prefilter]
+scene_text_sample_sec = 30                        # Vision OCR sampling interval
 ```
 
-- `artifact_dir`: external drive (lacie8, 3.6 TB, ~1.9 TB free). All persistent
-  artifacts live here. The streaming design means local disk is barely needed —
-  no temp WAV, frames never persisted.
-- `staging_dir`: optional. Local disk is faster but fills up (39 GB free).
-  Use only for in-transit files if a measurable bottleneck appears; cleaned
-  after every job. Default null (everything goes directly to artifact_dir).
-- When `artifact_dir` is unreachable mid-job: I/O errors are caught, job
-  checkpoints, aborts cleanly. `--resume` after remount.
+**Per-camera overrides** (`cameras.config_json` in DB — wins over TOML for that
+camera's footage):
+
+```json
+{
+  "osd_mask": [[x1,y1,x2,y2]],
+  "after_hours": ["22:00-06:00"],
+  "motion_threshold": 0.05,
+  "yolo_classes": [0, 1, 2, 3, 4, 5, 6],
+  "homography": null
+}
+```
+
+**Streaming minimizes local-disk need**: no temp WAV (ffmpeg pipes PCM to
+whisper), frames never persisted (only event keyframes + plate crops hit
+`artifact_dir`). `staging_dir` is an escape hatch for in-transit files only if
+a measurable bottleneck appears — cleaned after every job.
+
+**Mid-job external-drive loss**: I/O errors caught, job checkpoints, aborts
+cleanly. `--resume` after remount.
 
 ---
 
@@ -413,6 +474,8 @@ staging_dir = null                                    # optional local disk for 
 ## CLI
 
 ```
+Global flags: --config <path>, --db <path>          override config file / DB location
+
 vs-import <card-mount>           copy new clips off card to artifact disk, dedup by hash
 vs-analyze <video>               full pipeline
 vs-analyze <video> --no-llm      prefilter + OCR + tracking only (no LLM)
@@ -485,7 +548,7 @@ vs-import <source>
       — identical MODE layout, optionally wrapped in date folders
       (vs-import /Volumes/lacie8/Ryan/video/CX-8 recurses all date subfolders)
 
-  1. Preflight: artifact_dir mounted, ≥10 GB free
+  1. Preflight: artifact_dir mounted, ≥ [import] preflight_gb free
   2. Scan source with mazda_cx8 adapter → clip list with front/rear pairs
      (discover_clips recurses <YYYYMMDD>/ date-wrapped archives)
   3. Skip clips whose video_hash already exists in DB (incremental import)
