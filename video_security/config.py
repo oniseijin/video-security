@@ -77,6 +77,8 @@ class PrefilterConfig:
     yolo_model: str = "yolov8n"
     yolo_conf: float = 0.25
     yolo_coreml_path: str | None = None
+    ocr_min_conf: float = 0.3
+    plate_min_votes: int = 2
 
 
 @dataclasses.dataclass

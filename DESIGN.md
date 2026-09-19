@@ -442,6 +442,8 @@ decode_width = 1280                                # working decode resolution (
 yolo_model = "yolov8n"                             # ultralytics weights (or CoreML path below)
 yolo_conf = 0.25                                    # YOLO confidence threshold
 yolo_coreml_path = null                             # pre-exported .mlpackage for ANE (optional)
+ocr_min_conf = 0.3                                  # Vision OCR read confidence floor
+plate_min_votes = 2                                 # consensus votes required for a plate
 
 [audio]
 rms_window_ms = 100                                # RMS analysis window
