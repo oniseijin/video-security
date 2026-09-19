@@ -193,6 +193,12 @@ def analyze_video(
     artifact_dir = Path(config.storage.artifact_dir).expanduser()
     report = AnalyzeReport(job_id=job.id)
 
+    db.delete_job_rows(conn, job.id)
+    conn.execute(
+        "UPDATE jobs SET current_frame = 0, current_stage = 'pending' WHERE id = ?",
+        (job.id,),
+    )
+    conn.commit()
     db.update_job_status(conn, job.id, "extracting")
 
     detector = load_detector(config, camera)

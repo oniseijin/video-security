@@ -121,7 +121,7 @@ class OllamaClient:
             ) from e
 
     def model_digest(self, model: str) -> str:
-        url = self.base_url + "/api/show?model=" + urllib.parse.quote(model)
+        url = self.base_url + "/api/tags"
         try:
             with urllib.request.urlopen(url, timeout=self.timeout_s) as resp:
                 data: Any = json.loads(resp.read().decode())
@@ -133,11 +133,15 @@ class OllamaClient:
             raise OllamaError(
                 f"Ollama not reachable at {self.base_url}"
             ) from e
-        if "digest" not in data:
-            raise OllamaError(
-                f"Missing 'digest' in response from {url}"
-            )
-        return str(data["digest"])
+        for entry in data.get("models", []):
+            name = str(entry.get("name", ""))
+            if name == model or name.split(":")[0] == model:
+                digest = entry.get("digest")
+                if digest:
+                    return str(digest)
+        raise OllamaError(
+            f"Model {model!r} not found in Ollama tags — run: ollama pull {model}"
+        )
 
     def health_check(self, models: list[str]) -> None:
         url = self.base_url + "/api/tags"

@@ -127,6 +127,17 @@ class MockOllama:
                                 "done": True,
                             },
                         )
+                elif parsed.path == "/api/show":
+                    model = body.get("model", "") if body else ""
+                    self._send_json(
+                        200,
+                        {
+                            "modelfile": "FAKE",
+                            "digest": "sha256:"
+                            + hashlib.sha256(str(model).encode()).hexdigest(),
+                            "details": {"family": "gemma", "parameter_size": "4B"},
+                        },
+                    )
                 else:
                     self.send_error(404)
 
