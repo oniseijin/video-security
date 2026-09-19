@@ -383,11 +383,18 @@ sessions(
 ```toml
 [storage]
 db_path = "~/.video-security/db"
-artifact_dir = "/Volumes/SecurityDrive/"  # null → internal, with aggressive cleanup
+artifact_dir = "/Volumes/lacie8/Ryan/video/vs"       # persistent: clips, keyframes, crops, reports
+staging_dir = null                                    # optional local disk for in-transit temp files
 ```
 
-When `artifact_dir` is set: keyframes, crops, reports, temp audio pipe targets
-go there. When null: everything in `db_path` parent with aggressive cleanup.
+- `artifact_dir`: external drive (lacie8, 3.6 TB, ~1.9 TB free). All persistent
+  artifacts live here. The streaming design means local disk is barely needed —
+  no temp WAV, frames never persisted.
+- `staging_dir`: optional. Local disk is faster but fills up (39 GB free).
+  Use only for in-transit files if a measurable bottleneck appears; cleaned
+  after every job. Default null (everything goes directly to artifact_dir).
+- When `artifact_dir` is unreachable mid-job: I/O errors are caught, job
+  checkpoints, aborts cleanly. `--resume` after remount.
 
 ---
 
@@ -467,23 +474,34 @@ SYSTEM/THUMB/<MODE>/    per-clip thumbnail, same basename, .JPG
 
 ### Import Pipeline (card swap workflow)
 
-Cards are slow, loop-record (old clips get overwritten), and the user swaps them.
-Never process from the card — import first:
+Cards are slow, loop-record (old clips get overwritten), and the user swaps them
+every few days. Never process from the card — import first:
 
 ```
-vs-import /Volumes/CX-8
+vs-import <source>
+  <source> is either:
+    - a live card mount (e.g. /Volumes/CX-8), or
+    - an archived card copy (e.g. /Volumes/lacie8/Ryan/video/CX-8/20250923)
+      — identical MODE layout, optionally wrapped in date folders
+      (vs-import /Volumes/lacie8/Ryan/video/CX-8 recurses all date subfolders)
+
   1. Preflight: artifact_dir mounted, ≥10 GB free
-  2. Scan card with mazda_cx8 adapter → clip list with front/rear pairs
+  2. Scan source with mazda_cx8 adapter → clip list with front/rear pairs
+     (discover_clips recurses <YYYYMMDD>/ date-wrapped archives)
   3. Skip clips whose video_hash already exists in DB (incremental import)
   4. Copy new clips (+ paired rear, + .NMEA sidecar) to
-     artifact_dir/incoming/<YYYY-MM-DD>/<mode>/<channel>/
+     artifact_dir/clips/<YYYYMMDD-import>/<mode>/<channel>/
+     — matches the existing manual archive convention on lacie8
   5. Verify copy (size + sampled bytes), then register as job with import_id
   6. Report: N new clips imported, M skipped (already imported)
   7. Card can be ejected immediately after import — processing happens later
 ```
 
-Loop-recording makes frequent imports matter: the card is 97% full, so the
-oldest clips are always at risk of overwrite.
+First import target: existing archive at `/Volumes/lacie8/Ryan/video/CX-8/`
+(14 GB, 574 files, full card copies incl. REAR + System + NMEA).
+
+Loop-recording makes frequent imports matter: the card is always near-full, so
+the oldest clips are always at risk of overwrite.
 
 ---
 
