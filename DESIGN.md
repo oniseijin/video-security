@@ -166,14 +166,13 @@ jobs(
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- One row per frame, kept in DB only (not persisted as JPEG)
+-- Kept frames only. is_static is redundant (static frames are dropped), removed.
 frames(
     job_id INTEGER NOT NULL,
     clip_id INTEGER NOT NULL,
     frame_number INTEGER NOT NULL,
     timestamp_sec REAL NOT NULL,
     dhash INTEGER,
-    is_static BOOLEAN DEFAULT FALSE,
     lighting_condition TEXT,  -- day|dusk|night|ir
     PRIMARY KEY (job_id, clip_id, frame_number)
 );
@@ -185,13 +184,24 @@ events(
     event_type TEXT NOT NULL,
     start_sec REAL NOT NULL,
     end_sec REAL NOT NULL,
-    track_id INTEGER,
     clip_id INTEGER NOT NULL,
     keyframes_json TEXT NOT NULL,   -- JSON array of {clip_id, frame_number, timestamp_sec}
     detector_score REAL NOT NULL,
     priority REAL NOT NULL DEFAULT 0.5,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending|triaged|detailed|resolved|suppressed
     llm_result_id INTEGER
+);
+
+-- Vehicle tracks for plate consensus and trajectory analysis
+vehicle_tracks(
+    job_id INTEGER NOT NULL,
+    track_id INTEGER NOT NULL,
+    clip_id INTEGER NOT NULL,
+    first_frame INTEGER NOT NULL,
+    last_frame INTEGER NOT NULL,
+    weaving_score REAL,
+    direction TEXT,          -- N/S/E/W or wrong_way
+    PRIMARY KEY (job_id, track_id, clip_id)
 );
 
 -- Per-track plate consensus
@@ -273,7 +283,7 @@ clips(
 clip_gps_data(
     job_id INTEGER NOT NULL,
     clip_id INTEGER NOT NULL,
-    time_sec REAL NOT NULL,
+    time_sec REAL NOT NULL,  -- seconds relative to clip start
     lat REAL,
     lon REAL,
     speed_kmh REAL,
@@ -289,7 +299,7 @@ sessions(
 );
 ```
 
-**Indexes**: `(job_id, frame_number)` on `frames` and `frame_text`, `(job_id, flagged)` on `vehicle_tracks` equivalent.
+**Indexes**: `(job_id, frame_number)` on `frames` and `frame_text`.
 
 **SQLite discipline**: WAL mode, `busy_timeout`, single-writer via `BEGIN IMMEDIATE`. Checkpoint on clean shutdown.
 
