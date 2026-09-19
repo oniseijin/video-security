@@ -12,20 +12,26 @@ GOLDEN_HEIGHT = 480
 GOLDEN_FPS = 10
 GOLDEN_FRAMES = 100
 GOLDEN_PLATE = "YOLO42"
-GOLDEN_PERSON_RECT = (100, 350, 130, 440)
+GOLDEN_PERSON_RECT = (100, 320, 190, 470)
 
-_GOLDEN_CAR_RECTS: list[tuple[int, int, int, int]] = []
+BUS_W = 260
+BUS_H = 173
+PERSON_W = 90
+PERSON_H = 150
+
+_FIXTURES = Path(__file__).parent / "fixtures"
+_BUS_CUTOUT = _FIXTURES / "bus_cutout.png"
+_PERSON_CUTOUT = _FIXTURES / "person_cutout.png"
 
 
-def _make_car_rects() -> list[tuple[int, int, int, int]]:
-    rects: list[tuple[int, int, int, int]] = []
-    for i in range(GOLDEN_FRAMES):
-        x1 = -150 + int(round(i * 8.2))
-        rects.append((x1, 300, x1 + 120, 360))
-    return rects
+def _vehicle_rect(i: int) -> tuple[int, int, int, int]:
+    x1 = -300 + int(round(i * 9.8))
+    return (x1, 300, x1 + BUS_W, 473)
 
 
-GOLDEN_CAR_RECTS = _make_car_rects()
+GOLDEN_CAR_RECTS: list[tuple[int, int, int, int]] = [
+    _vehicle_rect(i) for i in range(GOLDEN_FRAMES)
+]
 
 
 def _render_frame(i: int) -> Image.Image:
@@ -42,14 +48,14 @@ def _render_frame(i: int) -> Image.Image:
     for y_start in (300, 340, 380, 420):
         draw.rectangle([318, y_start, 322, y_start + 20], fill=(255, 255, 255))
 
+    bus = Image.open(_BUS_CUTOUT).resize((BUS_W, BUS_H))
     x1, _, _, _ = GOLDEN_CAR_RECTS[i]
-    draw.rectangle([x1, 300, x1 + 120, 360], fill=(255, 255, 255))
-    draw.rectangle([x1 + 8, 350, x1 + 24, 360], fill=(0, 0, 0))
-    draw.rectangle([x1 + 96, 350, x1 + 112, 360], fill=(0, 0, 0))
-    draw.rectangle([x1 + 4, 322, x1 + 60, 340], fill=(0, 0, 0))
-    draw.text((x1 + 8, 323), GOLDEN_PLATE, fill=(255, 255, 255))
+    img.paste(bus, (x1, 300))
+    draw.rectangle([x1 + 6, 400, x1 + 62, 418], fill=(0, 0, 0))
+    draw.text((x1 + 9, 403), GOLDEN_PLATE, fill=(255, 255, 255))
 
-    draw.rectangle(GOLDEN_PERSON_RECT, fill=(30, 40, 120))
+    person = Image.open(_PERSON_CUTOUT).resize((PERSON_W, PERSON_H))
+    img.paste(person, (GOLDEN_PERSON_RECT[0], GOLDEN_PERSON_RECT[1]))
 
     return img
 
