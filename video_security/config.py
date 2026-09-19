@@ -94,6 +94,26 @@ class AudioConfig:
 
 
 @dataclasses.dataclass
+class ThreatConfig:
+    score_threshold: float = 0.5
+    person_weight: float = 0.4
+    motion_weight: float = 0.3
+    time_weight: float = 0.3
+    after_hours: list[str] = dataclasses.field(
+        default_factory=lambda: ["22:00-06:00"]
+    )
+    loiter_min_sec: int = 60
+    merge_gap_sec: int = 5
+    priority: dict[str, float] = dataclasses.field(
+        default_factory=lambda: {
+            "intrusion": 0.9,
+            "loitering": 0.6,
+            "suspicious_behavior": 0.5,
+        }
+    )
+
+
+@dataclasses.dataclass
 class CameraOverrides:
     osd_mask: list[list[int]] = dataclasses.field(default_factory=list)
     after_hours: list[str] = dataclasses.field(default_factory=list)
@@ -156,6 +176,7 @@ class Config:
     whisper: WhisperConfig = dataclasses.field(default_factory=WhisperConfig)
     prefilter: PrefilterConfig = dataclasses.field(default_factory=PrefilterConfig)
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
+    threat: ThreatConfig = dataclasses.field(default_factory=ThreatConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:
@@ -284,6 +305,20 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
             kwargs["whisper"] = _merge_dataclass(config.whisper, values, "whisper")
         elif section == "audio":
             kwargs["audio"] = _merge_dataclass(config.audio, values, "audio")
+        elif section == "threat":
+            if "priority" in values and isinstance(values["priority"], dict):
+                kwargs["threat"] = _merge_dataclass(
+                    config.threat,
+                    {k: v for k, v in values.items() if k != "priority"},
+                    "threat",
+                )
+                kwargs["threat"].priority = _merge_value(
+                    config.threat.priority,
+                    values["priority"],
+                    "threat.priority",
+                )
+            else:
+                kwargs["threat"] = _merge_dataclass(config.threat, values, "threat")
         elif section == "prefilter":
             kwargs["prefilter"] = _merge_dataclass(config.prefilter, values, "prefilter")
     return dataclasses.replace(config, **kwargs)

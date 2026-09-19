@@ -445,6 +445,20 @@ yolo_coreml_path = null                             # pre-exported .mlpackage fo
 ocr_min_conf = 0.3                                  # Vision OCR read confidence floor
 plate_min_votes = 2                                 # consensus votes required for a plate
 
+[threat]
+score_threshold = 0.5                               # anomaly score to flag a frame
+person_weight = 0.4                                 # person presence weight
+motion_weight = 0.3                                 # motion intensity weight
+time_weight = 0.3                                    # after-hours/night boost
+after_hours = ["22:00-06:00"]                       # local-time windows (camera overrides)
+loiter_min_sec = 60                                  # duration for loitering classification
+merge_gap_sec = 5                                   # gap that still merges adjacent flags
+
+[threat.priority]                                   # event type → priority
+intrusion = 0.9
+loitering = 0.6
+suspicious_behavior = 0.5
+
 [audio]
 rms_window_ms = 100                                # RMS analysis window
 rms_sustain_ms = 500                               # min sustained duration for loud events
