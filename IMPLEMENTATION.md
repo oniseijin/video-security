@@ -27,10 +27,15 @@
 
 ## Agent Selection Rules
 
+- **Driving agent** (main session): orchestrates all phases. Strong general model.
+  Writes complete delegation prompts (sub-agents start with zero context), reviews
+  output against DESIGN.md, runs tests, integrates results. Worker quality is
+  capped by driver prompt quality — the driver is where quality lives.
 - `code-helper`: default for all well-specified implementation
 - `deep-helper`: prompt engineering + LLM interaction only
 - `fast-helper`: docs, test plumbing, CI, config defaults
-- `explore`: research/discovery only, never code generation
+- `explore`: read-only codebase exploration. Nearly useless during greenfield;
+  useful in Phase 2 for mining phototext for patterns (lease recovery, FTS5, etc.)
 - `apex-helper`: design review only, never implementation
 
 ## Dependency Graph
