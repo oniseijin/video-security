@@ -449,6 +449,93 @@ declares its own event types and default priority weights.
 
 ---
 
+## Implementation Specifications
+
+### Package Layout
+
+```
+video_security/
+├── cli.py            # typer entry: vs-analyze, vs-search, vs-report, vs-list
+├── config.py         # TOML config, dataclasses, profile support
+├── db.py             # schema, migrations, queries
+├── ingest/
+│   ├── frames.py     # ffmpeg decode, motion/dHash/MOG2 gate, CLAHE
+│   └── audio.py      # PCM pipe → mlx-whisper, VAD, RMS energy
+├── prefilter/
+│   ├── vehicles.py   # YOLO + ByteTrack + trajectory
+│   ├── plates.py     # crop → upscale → Vision OCR → consensus vote
+│   ├── threats.py    # person/motion/time scoring → events
+│   └── scenetext.py  # 1-per-30s Vision OCR sample
+├── llm/
+│   ├── ollama.py     # client, retry/backoff, health check
+│   ├── prompts.py    # prompt templates + PROMPT_VERSION constants
+│   ├── triage.py     # pass 1
+│   └── detail.py     # pass 2 + escalation ladder
+├── engine.py         # state machine, serialization, disk breakers, caffeinate
+├── adapters/
+│   ├── base.py       # SourceAdapter interface
+│   └── generic.py    # default adapter
+└── report.py         # timeline, plates, transcript export
+```
+
+### LLM Output Schema
+
+Ollama `format` parameter enforces structure. Triage response schema:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "relevant": {"type": "boolean"},
+    "event_type": {"enum": ["intrusion", "loitering", "weaving", "near_miss",
+                            "plate_capture", "audio_distress", "suspicious_behavior", "none"]},
+    "description": {"type": "string"},
+    "confidence": {"enum": ["low", "medium", "high"]}
+  },
+  "required": ["relevant", "event_type", "confidence"]
+}
+```
+
+Detail response adds `evidence_rationale` (string) and `recommended_action`
+(enum: escalate|log_only|none). Any reported weapon goes in description text
+with "unverified" — never a dedicated field.
+
+### Ollama Retry Policy
+
+- Timeout: 120s per request (triage), 300s (detail)
+- On timeout/5xx: exponential backoff 2s → 4s → 8s, max 3 attempts
+- On malformed JSON: one repair retry with "JSON only, no prose" instruction
+- After max attempts: event marked `failed`, job continues (no poison-pill loop)
+- Startup health check: ffmpeg present, Ollama reachable, configured models
+  present — fail fast with actionable error before touching video
+
+### Video Hash Method
+
+Chunk-sampled hash: SHA-256 over first 4MB + middle 4MB + last 4MB + file size.
+Whole-file hashing is too slow for multi-GB NVR files; chunk sampling catches
+accidental duplicates, which is the actual use case.
+
+### Concurrency Model
+
+Single process, hard stage serialization. Lease recovery exists for crash
+safety (process died mid-job → lease expires → next run reclaims), NOT for
+parallel workers. Parallelism inside a stage is limited to YOLO batching and
+ffmpeg's internal threading.
+
+### Watch Mode File Stability
+
+Before enqueueing a file from `--watch`: size must be unchanged across two
+checks 5s apart AND no write lock. NVRs write clips continuously; processing
+a half-written file is the classic footgun.
+
+### Retention Semantics
+
+`--retention-days N` prunes: keyframe JPEGs + plate crops on disk, DB rows
+for jobs (cascades to frames/events/plates/transcript). Runs at startup before
+new work. Default: 30 days.
+
+---
+
 ## Testing Strategy
 
 - Mock Ollama server: ok, fail500, slow, trickle, junkonce modes.
