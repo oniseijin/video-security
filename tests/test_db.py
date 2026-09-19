@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from video_security.db import (
+    MIGRATIONS,
+    connect,
+    create_job,
+    get_job_by_hash,
+    init_db,
+    list_jobs,
+    update_job_status,
+)
+
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> str:
+    return str(tmp_path / "test.db")
+
+
+EXPECTED_TABLES = {
+    "jobs",
+    "frames",
+    "events",
+    "vehicle_tracks",
+    "plates",
+    "frame_text",
+    "frame_text_fts",
+    "transcript_segments",
+    "analysis_results",
+    "cameras",
+    "clips",
+    "clip_gps_data",
+    "sessions",
+}
+
+
+def get_table_names(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name"
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
+def test_migrations_creates_all_tables(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    tables = get_table_names(conn)
+    missing = EXPECTED_TABLES - tables
+    assert not missing, f"Missing tables: {missing}"
+    conn.close()
+
+
+def test_migrations_idempotent(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    version_after_first: int = conn.execute("PRAGMA user_version").fetchone()[0]
+    init_db(conn)
+    version_after_second: int = conn.execute("PRAGMA user_version").fetchone()[0]
+    assert version_after_first == version_after_second
+    conn.close()
+
+
+def test_migrations_reconnect(db_path: str) -> None:
+    conn1 = connect(db_path)
+    init_db(conn1)
+    conn1.close()
+    conn2 = connect(db_path)
+    init_db(conn2)
+    tables = get_table_names(conn2)
+    missing = EXPECTED_TABLES - tables
+    assert not missing, f"Missing tables after reconnect: {missing}"
+    conn2.close()
+
+
+def test_job_insert_and_query(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    job = create_job(conn, "/videos/test.mp4", "abc123")
+    assert job.id is not None
+    assert job.video_path == "/videos/test.mp4"
+    assert job.video_hash == "abc123"
+    assert job.status == "pending"
+
+    found = get_job_by_hash(conn, "abc123")
+    assert found is not None
+    assert found.id == job.id
+    assert found.video_path == "/videos/test.mp4"
+
+    not_found = get_job_by_hash(conn, "nonexistent")
+    assert not_found is None
+    conn.close()
+
+
+def test_update_job_status(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    job = create_job(conn, "/videos/test.mp4", "abc123")
+    update_job_status(conn, job.id, "done")
+    updated = get_job_by_hash(conn, "abc123")
+    assert updated is not None
+    assert updated.status == "done"
+    conn.close()
+
+
+def test_list_jobs(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    job1 = create_job(conn, "/videos/one.mp4", "hash1")
+    job2 = create_job(conn, "/videos/two.mp4", "hash2")
+    jobs = list_jobs(conn)
+    assert len(jobs) == 2
+    assert {j.id for j in jobs} == {job1.id, job2.id}
+    conn.close()
+
+
+def test_fts5_trigger_sync(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO frame_text (job_id, clip_id, frame_number, text, text_kind, confidence) "
+        "VALUES (1, 1, 100, 'hello world', 'signage', 0.9)"
+    )
+    conn.commit()
+    results = conn.execute(
+        "SELECT * FROM frame_text_fts WHERE frame_text_fts MATCH 'hello'"
+    ).fetchall()
+    assert len(results) > 0
+
+    conn.execute("UPDATE frame_text SET text = 'goodbye world' WHERE id = 1")
+    conn.commit()
+    old = conn.execute(
+        "SELECT * FROM frame_text_fts WHERE frame_text_fts MATCH 'hello'"
+    ).fetchall()
+    assert len(old) == 0
+    new = conn.execute(
+        "SELECT * FROM frame_text_fts WHERE frame_text_fts MATCH 'goodbye'"
+    ).fetchall()
+    assert len(new) > 0
+
+    conn.execute("DELETE FROM frame_text WHERE id = 1")
+    conn.commit()
+    deleted = conn.execute(
+        "SELECT * FROM frame_text_fts WHERE frame_text_fts MATCH 'goodbye'"
+    ).fetchall()
+    assert len(deleted) == 0
+    conn.close()
+
+
+def test_user_version_tracks_migration_count(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    version: int = conn.execute("PRAGMA user_version").fetchone()[0]
+    assert version == len(MIGRATIONS)
+    conn.close()

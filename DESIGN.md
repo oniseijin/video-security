@@ -434,6 +434,11 @@ language = null                                   # pin (e.g. "ja") if monolingu
 
 [prefilter]
 scene_text_sample_sec = 30                        # Vision OCR sampling interval
+motion_threshold = 0.05                            # mean abs diff, keep-gate (camera overrides)
+scene_change_hash_dist = 12                       # dHash hamming distance for scene change
+night_luma = 60                                    # mean luma below → night lighting
+ir_max_sat = 20                                    # max saturation for ir classification (0-255)
+decode_width = 1280                                # working decode resolution (motion path runs at 480p)
 ```
 
 **Per-camera overrides** (`cameras.config_json` in DB — wins over TOML for that
