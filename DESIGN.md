@@ -85,6 +85,14 @@ Reports: timeline + plates catalog + events log + transcript export
 - Pin language if deployment is monolingual (auto-detect can flip on noisy audio)
 - Single Whisper stack: mlx-whisper only. Model: small (~0.5 GB) or large-v3-turbo (~1.6 GB)
 
+**Audio event detection** (cheap, deterministic, runs during ingest):
+- RMS energy analysis on the PCM stream — sustained energy above baseline flags
+  shouting/glass-break/car-alarm candidates (no ML needed)
+- Keyword matching on transcript segments — distress words ("help", "police",
+  "get out") create `audio_distress` event candidates
+- Both feed the events table with `clip_id`, no track_id, no keyframes (LLM gets
+  transcript text only, no frames)
+
 ### Module 2: Fast Prefilter
 
 Three consumers fed by shared decode pass. Runs serially (not concurrently).
@@ -109,6 +117,18 @@ Three consumers fed by shared decode pass. Runs serially (not concurrently).
 - Stored in frame_text table with FTS5 index
 
 ### Module 3: Slow LLM Analysis
+
+**Audio context injection**: each event sent to the LLM includes the transcript
+window ±30s around the event time range (from transcript_segments), wrapped in
+delimiters as untrusted input. Prompt template:
+
+```json
+{
+  "frames": ["<keyframe 1>", "<keyframe 2>"],
+  "transcript_window": "[00:01:15] hello?\n[00:01:22] who's there? I'm calling police",
+  "metadata": {"event_type": "intrusion", "detector_score": 0.83}
+}
+```
 
 Two-pass system:
 
@@ -185,8 +205,8 @@ events(
     start_sec REAL NOT NULL,
     end_sec REAL NOT NULL,
     clip_id INTEGER NOT NULL,
-    track_id INTEGER,               -- NULL for multi-track or non-vehicle events
-    keyframes_json TEXT NOT NULL,   -- JSON array of {clip_id, frame_number, timestamp_sec}
+    track_id INTEGER,               -- NULL for multi-track, audio, or non-vehicle events
+    keyframes_json TEXT DEFAULT '[]',  -- empty for audio-only events
     detector_score REAL NOT NULL,
     priority REAL NOT NULL DEFAULT 0.5,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending|triaged|detailed|resolved|suppressed
