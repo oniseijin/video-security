@@ -13,6 +13,7 @@ dependencies = [
     "ultralytics>=8.2",
     "Pillow>=10.0",
     "silero-vad>=5.1",
+    "onnxruntime>=1.18",
     "mlx-whisper>=0.4",
     "pyobjc-framework-Vision>=10.0",
 ]
