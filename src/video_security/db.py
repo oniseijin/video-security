@@ -185,6 +185,13 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
     ],
+    [
+        "CREATE INDEX IF NOT EXISTS idx_events_job_start ON events(job_id, start_sec)",
+        "CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)",
+        "CREATE INDEX IF NOT EXISTS idx_plates_norm ON plates(norm_text)",
+        "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_jobs_import ON jobs(import_id)",
+    ],
 ]
 
 
@@ -212,6 +219,14 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
     if "faces_json" not in cols:
         conn.execute("ALTER TABLE events ADD COLUMN faces_json TEXT")
+        conn.commit()
+    plate_cols = [row[1] for row in conn.execute("PRAGMA table_info(plates)").fetchall()]
+    if "crop_path" not in plate_cols:
+        conn.execute("ALTER TABLE plates ADD COLUMN crop_path TEXT")
+        conn.commit()
+    vt_cols = [row[1] for row in conn.execute("PRAGMA table_info(vehicle_tracks)").fetchall()]
+    if "strip_json" not in vt_cols:
+        conn.execute("ALTER TABLE vehicle_tracks ADD COLUMN strip_json TEXT")
         conn.commit()
 
 
@@ -406,12 +421,15 @@ def insert_plate(
     confidence: float | None,
     best_frame: int | None,
     ocr_votes_json: str | None,
+    crop_path: str | None = None,
 ) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO plates "
-        "(job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json),
+        "(job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json, "
+        "crop_path) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json,
+         crop_path),
     )
     conn.commit()
 
@@ -450,6 +468,19 @@ def insert_vehicle_track(
         "(job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction) "
         "VALUES (?,?,?,?,?,?,?)",
         (job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction),
+    )
+    conn.commit()
+
+
+def update_vehicle_track_strip(
+    conn: sqlite3.Connection,
+    job_id: int,
+    track_id: int,
+    strip_json: str | None,
+) -> None:
+    conn.execute(
+        "UPDATE vehicle_tracks SET strip_json = ? WHERE job_id = ? AND track_id = ?",
+        (strip_json, job_id, track_id),
     )
     conn.commit()
 
@@ -534,7 +565,9 @@ def get_events_for_job(
     ).fetchall()
 
 
-def delete_job_rows(conn: sqlite3.Connection, job_id: int) -> None:
+def delete_job_rows(
+    conn: sqlite3.Connection, job_id: int, artifact_dir: str | None = None
+) -> None:
     tables = [
         "frames", "events", "vehicle_tracks", "plates", "frame_text",
         "transcript_segments", "analysis_results", "sessions", "clips", "clip_gps_data",
@@ -542,6 +575,10 @@ def delete_job_rows(conn: sqlite3.Connection, job_id: int) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))
     conn.commit()
+    if artifact_dir:
+        import shutil
+        for sub in ("frames", "plates"):
+            shutil.rmtree(Path(artifact_dir) / sub / str(job_id), ignore_errors=True)
 
 
 def events_for_plate(

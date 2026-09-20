@@ -245,7 +245,7 @@ class BatchEngine:
             ).fetchall()
             job_ids = [int(r["id"]) for r in rows]
             for job_id in job_ids:
-                delete_job_rows(conn, job_id)
+                delete_job_rows(conn, job_id, self.config.storage.artifact_dir)
             if job_ids:
                 placeholders = ",".join("?" * len(job_ids))
                 conn.execute(

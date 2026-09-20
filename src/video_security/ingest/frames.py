@@ -86,6 +86,7 @@ class FrameData:
     dhash: int
     lighting: str
     keep_reason: str
+    raw_image: np.ndarray | None = None
 
 
 def _compute_dhash(gray: np.ndarray) -> int:
@@ -241,7 +242,9 @@ def iter_frames(
 
             if keep_reason:
                 out_frame: np.ndarray = frame
+                raw_image: np.ndarray | None = None
                 if lighting in ("night", "ir"):
+                    raw_image = frame.copy()
                     lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
                     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                     l_channel: np.ndarray = clahe.apply(lab[:, :, 0])
@@ -260,6 +263,7 @@ def iter_frames(
                     dhash=dh,
                     lighting=lighting,
                     keep_reason=keep_reason,
+                    raw_image=raw_image,
                 )
 
             frame_idx += 1

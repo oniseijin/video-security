@@ -33,6 +33,7 @@ class PlateRead:
     confidence: float
     best_frame: int
     votes: int
+    best_bbox: tuple[float, float, float, float] | None = None
 
 
 def extract_plate_reads(
@@ -45,7 +46,9 @@ def extract_plate_reads(
     ocr_fn = ocr_fn or (
         lambda img: vision_ocr(img, level=LEVEL_ACCURATE, languages=["ja-JP", "en-US"])
     )
-    groups: dict[str, list[tuple[str, float, int]]] = defaultdict(list)
+    groups: dict[str, list[tuple[str, float, int, tuple[float, float, float, float] | None]]] = (
+        defaultdict(list)
+    )
     for frame_number in sorted(track_bboxes):
         image = images_by_frame.get(frame_number)
         if image is None:
@@ -57,16 +60,18 @@ def extract_plate_reads(
                 continue
             if not plate_like(r.text):
                 continue
-            groups[normalize_plate(r.text)].append((r.text, r.confidence, frame_number))
+            groups[normalize_plate(r.text)].append(
+                (r.text, r.confidence, frame_number, r.bbox)
+            )
     if not groups:
         return None
     winner_norm = max(
-        groups, key=lambda n: (len(groups[n]), sum(c for _, c, _ in groups[n]))
+        groups, key=lambda n: (len(groups[n]), sum(c for _, c, _f, _b in groups[n]))
     )
     reads = groups[winner_norm]
     if len(reads) < config.prefilter.plate_min_votes:
         return None
-    raw, conf, frame = max(reads, key=lambda r: r[1])
+    raw, conf, frame, bbox = max(reads, key=lambda r: r[1])
     return PlateRead(
         track_id=track_id,
         raw_text=raw,
@@ -74,4 +79,5 @@ def extract_plate_reads(
         confidence=conf,
         best_frame=frame,
         votes=len(reads),
+        best_bbox=bbox,
     )

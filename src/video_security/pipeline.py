@@ -21,6 +21,7 @@ from video_security.llm.detail import detail_events
 from video_security.llm.ollama import OllamaClient
 from video_security.llm.triage import LLMEvent, triage_events
 from video_security.prefilter.faces import detect_faces
+from video_security.prefilter.ocr import upscale_crop
 from video_security.prefilter.plates import PlateRead, extract_plate_reads
 from video_security.prefilter.scenetext import sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
@@ -29,6 +30,7 @@ from video_security.prefilter.vehicles import (
     Detection,
     FrameDetections,
     accumulate_tracks,
+    crop_vehicle,
     load_detector,
 )
 
@@ -110,12 +112,18 @@ def _decode_pass(
     camera: CameraOverrides | None,
     detector: Callable[[np.ndarray], list[Detection]],
     progress: Callable[[int], None] | None = None,
-) -> tuple[list[FrameDetections], dict[int, FrameData], OrderedDict[int, bytes]]:
+) -> tuple[
+    list[FrameDetections],
+    dict[int, FrameData],
+    OrderedDict[int, bytes],
+    OrderedDict[int, bytes],
+]:
     from video_security.engine import check_disk_watermark_once
 
     frame_dets: list[FrameDetections] = []
     frames_meta: dict[int, FrameData] = {}
     jpeg_cache: OrderedDict[int, bytes] = OrderedDict()
+    raw_jpeg_cache: OrderedDict[int, bytes] = OrderedDict()
     tiny = np.zeros((1, 1, 3), dtype=np.uint8)
     for frame in iter_frames(path, config, camera):
         dets = detector(frame.image)
@@ -128,15 +136,22 @@ def _decode_pass(
         )
         if dets:
             jpeg_cache[frame.frame_number] = _encode_jpeg(frame.image)
-            while len(jpeg_cache) > JPEG_CACHE_LIMIT:
-                jpeg_cache.popitem(last=False)
+            combined = len(jpeg_cache) + len(raw_jpeg_cache)
+            while combined > JPEG_CACHE_LIMIT:
+                key, _value = next(iter(jpeg_cache.items()))
+                jpeg_cache.pop(key, None)
+                raw_jpeg_cache.pop(key, None)
+                combined = len(jpeg_cache) + len(raw_jpeg_cache)
+            if frame.raw_image is not None:
+                raw_jpeg_cache[frame.frame_number] = _encode_jpeg(frame.raw_image)
         frame.image = tiny
+        frame.raw_image = None
         frames_meta[frame.frame_number] = frame
         if progress is not None and frame.frame_number % 100 == 0:
             progress(frame.frame_number)
         if frame.frame_number % 1000 == 0:
             check_disk_watermark_once()
-    return frame_dets, frames_meta, jpeg_cache
+    return frame_dets, frames_meta, jpeg_cache, raw_jpeg_cache
 
 
 def _collect_plate_reads(
@@ -188,6 +203,7 @@ def _select_keyframes(
     job_id: int,
     event_id: int,
     max_keyframes: int = 3,
+    raw_jpeg_cache: OrderedDict[int, bytes] | None = None,
 ) -> list[str]:
     chosen = _choose_keyframe_numbers(frame_numbers, jpeg_cache, max_keyframes)
     if not chosen:
@@ -199,6 +215,9 @@ def _select_keyframes(
         p = out_dir / f"event_{event_id}_{i}.jpg"
         p.write_bytes(jpeg_cache[fn])
         rel_paths.append(str(p))
+        if raw_jpeg_cache is not None and fn in raw_jpeg_cache:
+            raw_p = out_dir / f"event_{event_id}_{i}_raw.jpg"
+            raw_p.write_bytes(raw_jpeg_cache[fn])
     return rel_paths
 
 
@@ -231,7 +250,7 @@ def analyze_video(
     artifact_dir = Path(config.storage.artifact_dir).expanduser()
     report = AnalyzeReport(job_id=job.id)
 
-    db.delete_job_rows(conn, job.id)
+    db.delete_job_rows(conn, job.id, config.storage.artifact_dir)
     conn.execute(
         "UPDATE jobs SET current_frame = 0, current_stage = 'pending' WHERE id = ?",
         (job.id,),
@@ -240,7 +259,9 @@ def analyze_video(
     db.update_job_status(conn, job.id, "extracting")
 
     detector = load_detector(config, camera)
-    frame_dets, frames_meta, jpeg_cache = _decode_pass(job, path, config, camera, detector)
+    frame_dets, frames_meta, jpeg_cache, raw_jpeg_cache = _decode_pass(
+        job, path, config, camera, detector
+    )
     report.kept_frames = len(frames_meta)
 
     info = probe_video(path)
@@ -275,7 +296,58 @@ def analyze_video(
 
     plate_reads = _collect_plate_reads(frame_dets, jpeg_cache, images_lookup, config)
     report.plates = len(plate_reads)
+
+    plates_dir = artifact_dir / "plates" / str(job.id)
+    spotlight_ignore(plates_dir)
     for track_id, read in plate_reads.items():
+        crop_path: str | None = None
+        if read.best_bbox is not None:
+            try:
+                raw_jpeg = jpeg_cache.get(read.best_frame)
+                if raw_jpeg is not None:
+                    img = cv2.imdecode(
+                        np.frombuffer(raw_jpeg, dtype=np.uint8), cv2.IMREAD_COLOR
+                    )
+                    if img is not None:
+                        track_bbox = next(
+                            (
+                                d.bbox
+                                for fd in frame_dets
+                                if fd.frame_number == read.best_frame
+                                for d in fd.detections
+                                if d.track_id == track_id
+                            ),
+                            None,
+                        )
+                        if track_bbox is not None:
+                            vehicle_crop = upscale_crop(crop_vehicle(img, track_bbox))
+                            vh, vw = vehicle_crop.shape[:2]
+                            bx, by, bw, bh = read.best_bbox
+                            top = 1.0 - by - bh
+                            px1 = max(0.0, (bx - 0.15 * bw) * vw)
+                            py1 = max(0.0, (top - 0.15 * bh) * vh)
+                            px2 = min(float(vw), (bx + bw * 1.15) * vw)
+                            py2 = min(float(vh), (top + bh * 1.15) * vh)
+                            plate_crop = vehicle_crop[
+                                int(py1) : int(py2), int(px1) : int(px2)
+                            ]
+                            if plate_crop.size > 0:
+                                crop_out = plates_dir / f"track_{track_id}.jpg"
+                                ok, _buf = cv2.imencode(
+                                    ".jpg", plate_crop, [cv2.IMWRITE_JPEG_QUALITY, 85]
+                                )
+                                if ok:
+                                    crop_out.write_bytes(_buf.tobytes())
+                                    crop_path = str(crop_out)
+            except Exception:
+                crop_path = None
+
+        votes_payload: dict[str, object] = {"votes": read.votes}
+        if read.best_bbox is not None:
+            votes_payload["best"] = {
+                "frame": read.best_frame,
+                "bbox": list(read.best_bbox),
+            }
         db.insert_plate(
             conn,
             job.id,
@@ -285,8 +357,28 @@ def analyze_video(
             read.norm_text,
             read.confidence,
             read.best_frame,
-            json.dumps({"votes": read.votes}),
+            json.dumps(votes_payload),
+            crop_path=crop_path,
         )
+
+    frames_dir = artifact_dir / "frames" / str(job.id)
+    for t in tracks:
+        strip_paths: list[str] = []
+        num_frames = t.last_frame - t.first_frame + 1
+        if num_frames > 0:
+            sample_count = min(5, num_frames)
+            for i in range(sample_count):
+                fn = t.first_frame + int(
+                    i * (num_frames - 1) / max(1, sample_count - 1)
+                )
+                jpeg_bytes = jpeg_cache.get(fn)
+                if jpeg_bytes is not None:
+                    spotlight_ignore(frames_dir)
+                    strip_out = frames_dir / f"track_{t.track_id}_{i}.jpg"
+                    strip_out.write_bytes(jpeg_bytes)
+                    strip_paths.append(str(strip_out))
+        strip_json = json.dumps(strip_paths) if strip_paths else None
+        db.update_vehicle_track_strip(conn, job.id, t.track_id, strip_json)
 
     scene_texts = sample_scene_text(
         [f for f in frames_meta.values()], config
@@ -391,7 +483,12 @@ def analyze_video(
     event_kf_paths: dict[int, list[str]] = {}
     for spec, event_id in zip(event_specs, event_ids, strict=True):
         kf_paths = _select_keyframes(
-            spec.frame_numbers, jpeg_cache, artifact_dir, job.id, event_id
+            spec.frame_numbers,
+            jpeg_cache,
+            artifact_dir,
+            job.id,
+            event_id,
+            raw_jpeg_cache=raw_jpeg_cache,
         )
         event_kf_paths[event_id] = kf_paths
         if kf_paths:
