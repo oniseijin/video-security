@@ -46,6 +46,12 @@ def health(
     return {"ok": True, "version": pkg, "db": "readonly"}
 
 
+def app_config(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    return {"carto_api_key": cfg.map.carto_api_key}
+
+
 def stats(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1081,6 +1087,7 @@ def report_html(
 def api_routes() -> list[Route]:
     return [
         ("GET", "/api/health", health),
+        ("GET", "/api/config", app_config),
         ("GET", "/api/stats", stats),
         ("GET", "/api/jobs", jobs_list),
         ("GET", "/api/jobs/{id:int}", job_detail),

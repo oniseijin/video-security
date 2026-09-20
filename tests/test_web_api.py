@@ -309,3 +309,8 @@ def test_report_404_is_json(base_url: str) -> None:
     status, body = _status_of(f"{base_url}/api/jobs/999")
     assert status == 404
     assert json.loads(body)["error"] == "job not found"
+
+
+def test_app_config_default_null_key(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/config")
+    assert data == {"carto_api_key": None}

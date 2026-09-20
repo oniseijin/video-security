@@ -284,3 +284,11 @@ export function fetchJobGps(id: number): Promise<JobGps> {
 export function fetchJobTranscript(id: number): Promise<JobTranscriptPage> {
   return fetchJson<JobTranscriptPage>(`/api/jobs/${id}/transcript`)
 }
+
+export interface AppConfig {
+  carto_api_key: string | null
+}
+
+export function fetchAppConfig(): Promise<AppConfig> {
+  return fetchJson<AppConfig>("/api/config")
+}

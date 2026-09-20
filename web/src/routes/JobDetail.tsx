@@ -171,7 +171,7 @@ export function JobDetail() {
       {active === "tracks" ? <TracksTab jobId={jobId} /> : null}
       {active === "map" ? <MapTab jobId={jobId} /> : null}
       {active === "transcript" ? <TranscriptTab jobId={jobId} /> : null}
-      {active === "playback" ? <PlaybackTab pair={data.pair} /> : null}
+      {active === "playback" ? <PlaybackTab job={data} /> : null}
     </>
   )
 }
