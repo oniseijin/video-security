@@ -209,6 +209,9 @@ fi
 if [ ! -d "$ARTIFACT_DIR" ]; then
   echo "warning: artifact dir $ARTIFACT_DIR does not exist (volume not mounted?)"
   echo "         import/analyze will refuse to run until it is available"
+else
+  touch "$ARTIFACT_DIR/.metadata_never_index" 2>/dev/null \
+    && info "spotlight: $ARTIFACT_DIR excluded from indexing"
 fi
 
 ENTRY_POINTS="$("$VENV/bin/python" - "$SCRIPT_DIR/pyproject.toml" <<'PY'

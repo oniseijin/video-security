@@ -12,6 +12,7 @@ from pathlib import Path
 
 from video_security.config import Config
 from video_security.db import JobRow, connect, delete_job_rows, init_db
+from video_security.fs import spotlight_ignore
 
 
 class EngineError(Exception):
@@ -195,6 +196,7 @@ class BatchEngine:
         if artifact_dir:
             art_path = Path(artifact_dir)
             art_path.mkdir(parents=True, exist_ok=True)
+            spotlight_ignore(art_path)
             art_gb = disk_free_gb(art_path)
             if art_gb < min_gb:
                 raise EngineError(

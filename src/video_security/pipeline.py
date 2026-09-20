@@ -14,6 +14,7 @@ import numpy as np
 from video_security import db
 from video_security.config import CameraOverrides, Config
 from video_security.db import JobRow
+from video_security.fs import spotlight_ignore
 from video_security.ingest.audio import AudioResult, TranscriptSegment, analyze_audio
 from video_security.ingest.frames import FrameData, iter_frames, probe_video
 from video_security.llm.detail import detail_events
@@ -182,7 +183,7 @@ def _select_keyframes(
         step = len(available) / max_keyframes
         chosen = [available[int(i * step)] for i in range(max_keyframes)]
     out_dir = artifact_dir / "frames" / str(job_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    spotlight_ignore(out_dir)
     rel_paths: list[str] = []
     for i, fn in enumerate(chosen):
         p = out_dir / f"event_{event_id}_{i}.jpg"

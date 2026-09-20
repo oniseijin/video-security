@@ -6,6 +6,8 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+from video_security.fs import spotlight_ignore
+
 
 class ReportError(Exception):
     pass
@@ -19,7 +21,7 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
         raise ReportError(f"job {job_id} not found")
 
     out_dir = artifact_dir / "reports"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    spotlight_ignore(out_dir)
     asset_dir = out_dir / f"job_{job_id}_assets"
     asset_dir.mkdir(parents=True, exist_ok=True)
 

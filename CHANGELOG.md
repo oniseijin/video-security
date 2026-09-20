@@ -13,6 +13,11 @@ follow semantic versioning.
   for ByteTrack but does not declare it; it is now an explicit dependency.
 - The installer's venv (uv-created) shipped without `pip`; it is now
   seeded via `ensurepip` for manual debugging.
+- Spotlight (`mds_stores`) churned on the thousands of keyframes,
+  imported clips and DB WAL churn produced during runs. The artifact
+  dir, clips imports root, per-job frame dirs, report dir and the DB's
+  parent dir now each get a `.metadata_never_index` marker so Spotlight
+  skips them.
 
 ## [0.1.0] - 2026-09-20
 

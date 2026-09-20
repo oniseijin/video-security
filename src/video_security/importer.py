@@ -11,6 +11,7 @@ from video_security import db
 from video_security.adapters import ClipInfo, detect_adapter, get_adapter
 from video_security.config import Config
 from video_security.engine import EngineError, disk_free_gb, video_hash
+from video_security.fs import spotlight_ignore
 
 
 @dataclasses.dataclass
@@ -132,6 +133,8 @@ def run_import(
     report = ImportReport()
     seen_hashes: set[str] = set()
     clips_root = artifact_dir / "clips" / import_date
+    spotlight_ignore(clips_root)
+    spotlight_ignore(artifact_dir)
 
     for clip in clips:
         h = video_hash(clip.path)

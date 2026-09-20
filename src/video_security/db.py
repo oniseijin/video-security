@@ -2,6 +2,8 @@ import dataclasses
 import sqlite3
 from pathlib import Path
 
+from video_security.fs import spotlight_ignore
+
 
 @dataclasses.dataclass
 class JobRow:
@@ -189,6 +191,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     parent = Path(db_path).expanduser().parent
     if str(parent) not in ("", "."):
         parent.mkdir(parents=True, exist_ok=True)
+        spotlight_ignore(parent)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
