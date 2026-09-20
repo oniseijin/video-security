@@ -95,6 +95,8 @@ def _compute_dhash(gray: np.ndarray) -> int:
     h = 0
     for bit in bits:
         h = (h << 1) | int(bit)
+    if h >= 1 << 63:
+        h -= 1 << 64
     return h
 
 

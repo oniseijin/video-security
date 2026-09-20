@@ -34,17 +34,13 @@ def detect_adapter(source: Path) -> str:
 
 def _dirs_within(source: Path, depth: int) -> list[Path]:
     out: list[Path] = []
-    level = [source]
+    level: list[Path] = [source]
     for _ in range(depth):
-        out.extend(level)
         level = [
-            d
-            for p in level
-            if p.is_dir()
-            for d in p.iterdir()
-            if d.is_dir()
+            d for p in level if p.is_dir() for d in p.iterdir() if d.is_dir()
         ]
-    return [d for d in out if d.is_dir()]
+        out.extend(level)
+    return out
 
 
 def get_adapter(name: str, config: Config) -> SourceAdapter:

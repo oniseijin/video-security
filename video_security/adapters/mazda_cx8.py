@@ -132,8 +132,10 @@ class MazdaCx8Adapter:
 
 
 def _nmea_checksum(line: str) -> bool:
-    if not line.startswith("$") or "*" not in line:
+    if not line.startswith("$"):
         return False
+    if "*" not in line:
+        return True
     body, _, csum = line[1:].partition("*")
     try:
         expected = int(csum.strip()[:2], 16)

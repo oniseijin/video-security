@@ -69,6 +69,20 @@ def test_parse_nmea_bad_checksum_skipped(tmp_path: Path) -> None:
     assert all(s.ax != 9.0 for s in samples)
 
 
+def test_parse_nmea_gsens_without_checksum(tmp_path: Path) -> None:
+    start = datetime(2025, 8, 7, 3, 12, 52, tzinfo=UTC)
+    lines = [
+        _nmea_line("GPRMC,031240.00,A,3539.28502,N,14001.73333,E,4.3,41.0,070825,,,A"),
+        "$GSENS,-0.041,-0.111,-0.913",
+    ]
+    p = tmp_path / "x.NMEA"
+    p.write_text("\n".join(lines) + "\n")
+    samples = parse_nmea(p, start)
+    gsens = [s for s in samples if s.ax is not None]
+    assert len(gsens) == 1
+    assert gsens[0].ax == -0.041
+
+
 def test_parse_nmea_invalid_status_skipped(tmp_path: Path) -> None:
     start = datetime(2025, 8, 7, 3, 12, 52, tzinfo=UTC)
     lines = [
