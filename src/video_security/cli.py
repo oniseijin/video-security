@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 
+from video_security import db
 from video_security.config import Config, ConfigError, load_config
 from video_security.db import connect, init_db, list_jobs
 
@@ -252,7 +253,7 @@ def search_cmd(
 
         try:
             plate_rows = conn.execute(
-                "SELECT norm_text, raw_text, confidence, job_id "
+                "SELECT norm_text, raw_text, confidence, job_id, track_id "
                 "FROM plates WHERE norm_text LIKE ? ORDER BY confidence DESC",
                 (f"%{query.upper()}%",),
             ).fetchall()
@@ -266,6 +267,12 @@ def search_cmd(
                 f"  {row['norm_text']} ({row['raw_text']})"
                 f" conf={row['confidence']} job={row['job_id']}"
             )
+            for evt in db.events_for_plate(conn, row["job_id"], row["track_id"]):
+                start_mm = f"{int(evt['start_sec'] // 60)}:{int(evt['start_sec'] % 60):02d}"
+                print(
+                    f"    -> event {evt['id']} {evt['event_type']} @ {start_mm}"
+                    f" ({evt['status']})"
+                )
     elif kind is not None:
         if kind == "dangerous":
             event_rows = conn.execute(

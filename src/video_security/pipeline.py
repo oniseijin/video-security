@@ -20,6 +20,7 @@ from video_security.ingest.frames import FrameData, iter_frames, probe_video
 from video_security.llm.detail import detail_events
 from video_security.llm.ollama import OllamaClient
 from video_security.llm.triage import LLMEvent, triage_events
+from video_security.prefilter.faces import detect_faces
 from video_security.prefilter.plates import PlateRead, extract_plate_reads
 from video_security.prefilter.scenetext import sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
@@ -166,6 +167,20 @@ def _collect_plate_reads(
     return reads
 
 
+def _choose_keyframe_numbers(
+    frame_numbers: list[int],
+    jpeg_cache: OrderedDict[int, bytes],
+    max_keyframes: int = 3,
+) -> list[int]:
+    available = [fn for fn in frame_numbers if fn in jpeg_cache]
+    if not available:
+        return []
+    if len(available) <= max_keyframes:
+        return available
+    step = len(available) / max_keyframes
+    return [available[int(i * step)] for i in range(max_keyframes)]
+
+
 def _select_keyframes(
     frame_numbers: list[int],
     jpeg_cache: OrderedDict[int, bytes],
@@ -174,14 +189,9 @@ def _select_keyframes(
     event_id: int,
     max_keyframes: int = 3,
 ) -> list[str]:
-    available = [fn for fn in frame_numbers if fn in jpeg_cache]
-    if not available:
+    chosen = _choose_keyframe_numbers(frame_numbers, jpeg_cache, max_keyframes)
+    if not chosen:
         return []
-    if len(available) <= max_keyframes:
-        chosen = available
-    else:
-        step = len(available) / max_keyframes
-        chosen = [available[int(i * step)] for i in range(max_keyframes)]
     out_dir = artifact_dir / "frames" / str(job_id)
     spotlight_ignore(out_dir)
     rel_paths: list[str] = []
@@ -378,6 +388,25 @@ def analyze_video(
         event_ids.append(event_id)
     report.events = len(event_ids)
 
+    event_kf_paths: dict[int, list[str]] = {}
+    for spec, event_id in zip(event_specs, event_ids, strict=True):
+        kf_paths = _select_keyframes(
+            spec.frame_numbers, jpeg_cache, artifact_dir, job.id, event_id
+        )
+        event_kf_paths[event_id] = kf_paths
+        if kf_paths:
+            db.update_event_keyframes(conn, event_id, json.dumps(kf_paths))
+        chosen = _choose_keyframe_numbers(spec.frame_numbers, jpeg_cache)
+        faces_per_kf: list[list[list[float]]] = []
+        for fn in chosen:
+            raw = jpeg_cache[fn]
+            img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                faces_per_kf.append([list(fb) for fb in detect_faces(img)])
+            else:
+                faces_per_kf.append([])
+        db.update_event_faces(conn, event_id, json.dumps(faces_per_kf))
+
     if no_llm or not event_specs:
         db.update_job_status(conn, job.id, "done")
         return report
@@ -390,11 +419,7 @@ def analyze_video(
     db.update_job_status(conn, job.id, "triage")
     llm_events: list[LLMEvent] = []
     for spec, event_id in zip(event_specs, event_ids, strict=True):
-        kf_paths = _select_keyframes(
-            spec.frame_numbers, jpeg_cache, artifact_dir, job.id, event_id
-        )
-        if kf_paths:
-            db.update_event_keyframes(conn, event_id, json.dumps(kf_paths))
+        kf_paths = event_kf_paths.get(event_id, [])
         keyframes = []
         for p in kf_paths:
             img = cv2.imread(p)

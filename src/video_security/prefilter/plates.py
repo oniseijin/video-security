@@ -15,7 +15,7 @@ _OCR_FN = Callable[[np.ndarray], list[OCRResult]]
 
 
 def normalize_plate(text: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", text.upper())
+    return re.sub(r"[^A-Z0-9\u3040-\u30ff\u4e00-\u9faf]", "", text.upper())
 
 
 def plate_like(text: str) -> bool:
@@ -42,7 +42,9 @@ def extract_plate_reads(
     config: Config,
     ocr_fn: _OCR_FN | None = None,
 ) -> PlateRead | None:
-    ocr_fn = ocr_fn or (lambda img: vision_ocr(img, level=LEVEL_ACCURATE))
+    ocr_fn = ocr_fn or (
+        lambda img: vision_ocr(img, level=LEVEL_ACCURATE, languages=["ja-JP", "en-US"])
+    )
     groups: dict[str, list[tuple[str, float, int]]] = defaultdict(list)
     for frame_number in sorted(track_bboxes):
         image = images_by_frame.get(frame_number)

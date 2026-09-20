@@ -28,7 +28,11 @@ def _image_to_nsdata(image: np.ndarray) -> object:
     return NSData.dataWithBytes_length_(raw, len(raw))
 
 
-def vision_ocr(image: np.ndarray, level: int = LEVEL_FAST) -> list[OCRResult]:
+def vision_ocr(
+    image: np.ndarray,
+    level: int = LEVEL_FAST,
+    languages: list[str] | None = None,
+) -> list[OCRResult]:
     try:
         from Vision import VNImageRequestHandler, VNRecognizeTextRequest
     except Exception:
@@ -40,6 +44,8 @@ def vision_ocr(image: np.ndarray, level: int = LEVEL_FAST) -> list[OCRResult]:
         handler = VNImageRequestHandler.alloc().initWithData_options_(nsdata, None)
         req = VNRecognizeTextRequest.alloc().init()
         req.setRecognitionLevel_(level)
+        if languages is not None:
+            req.setRecognitionLanguages_(languages)
         ok, _err = handler.performRequests_error_([req], None)
         if not ok or req.results() is None:
             return []

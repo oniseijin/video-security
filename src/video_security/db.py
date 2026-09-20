@@ -69,6 +69,7 @@ MIGRATIONS: list[list[str]] = [
             clip_id INTEGER NOT NULL,
             track_id INTEGER,
             keyframes_json TEXT DEFAULT '[]',
+            faces_json TEXT,
             detector_score REAL NOT NULL,
             priority REAL NOT NULL DEFAULT 0.5,
             status TEXT NOT NULL DEFAULT 'pending',
@@ -207,6 +208,10 @@ def init_db(conn: sqlite3.Connection) -> None:
         for stmt in MIGRATIONS[idx]:
             conn.execute(stmt)
         conn.execute(f"PRAGMA user_version = {idx + 1}")
+        conn.commit()
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
+    if "faces_json" not in cols:
+        conn.execute("ALTER TABLE events ADD COLUMN faces_json TEXT")
         conn.commit()
 
 
@@ -361,17 +366,30 @@ def insert_event(
     keyframes_json: str,
     detector_score: float,
     priority: float,
+    faces_json: str | None = None,
 ) -> int:
-    cur = conn.execute(
-        "INSERT INTO events "
-        "(job_id, event_type, start_sec, end_sec, clip_id, track_id, keyframes_json, "
-        "detector_score, priority) "
-        "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
-        (
-            job_id, event_type, start_sec, end_sec, clip_id, track_id,
-            keyframes_json, detector_score, priority
-        ),
-    )
+    if faces_json is not None:
+        cur = conn.execute(
+            "INSERT INTO events "
+            "(job_id, event_type, start_sec, end_sec, clip_id, track_id, keyframes_json, "
+            "detector_score, priority, faces_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id",
+            (
+                job_id, event_type, start_sec, end_sec, clip_id, track_id,
+                keyframes_json, detector_score, priority, faces_json,
+            ),
+        )
+    else:
+        cur = conn.execute(
+            "INSERT INTO events "
+            "(job_id, event_type, start_sec, end_sec, clip_id, track_id, keyframes_json, "
+            "detector_score, priority) "
+            "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
+            (
+                job_id, event_type, start_sec, end_sec, clip_id, track_id,
+                keyframes_json, detector_score, priority,
+            ),
+        )
     row = cur.fetchone()
     cur.close()
     conn.commit()
@@ -489,6 +507,18 @@ def update_event_keyframes(
     conn.commit()
 
 
+def update_event_faces(
+    conn: sqlite3.Connection,
+    event_id: int,
+    faces_json: str,
+) -> None:
+    conn.execute(
+        "UPDATE events SET faces_json = ? WHERE id = ?",
+        (faces_json, event_id),
+    )
+    conn.commit()
+
+
 def get_events_for_job(
     conn: sqlite3.Connection,
     job_id: int,
@@ -512,3 +542,37 @@ def delete_job_rows(conn: sqlite3.Connection, job_id: int) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))
     conn.commit()
+
+
+def events_for_plate(
+    conn: sqlite3.Connection, job_id: int, track_id: int
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM events WHERE job_id = ? AND track_id = ? ORDER BY start_sec",
+        (job_id, track_id),
+    ).fetchall()
+
+
+def nearest_event_to_seconds(
+    conn: sqlite3.Connection, job_id: int, track_id: int, target_seconds: float
+) -> sqlite3.Row | None:
+    rows = events_for_plate(conn, job_id, track_id)
+    if not rows:
+        return None
+    return min(rows, key=lambda r: abs((r["start_sec"] + r["end_sec"]) / 2 - target_seconds))
+
+
+def clip_fps(conn: sqlite3.Connection, job_id: int) -> float:
+    row = conn.execute(
+        "SELECT MIN(timestamp_sec) lo, MAX(timestamp_sec) hi, "
+        "MIN(frame_number) f0, MAX(frame_number) f1 FROM frames WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()
+    if row is None or row["hi"] is None or row["f1"] is None:
+        return 30.0
+    if row["f1"] == row["f0"]:
+        return 30.0
+    span = row["hi"] - row["lo"]
+    if span <= 0:
+        return 30.0
+    return float((row["f1"] - row["f0"]) / span)

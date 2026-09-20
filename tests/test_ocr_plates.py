@@ -78,8 +78,9 @@ def test_upscale_crop() -> None:
 
 def test_normalize_plate() -> None:
     assert normalize_plate("ab-123 ") == "AB123"
-    assert normalize_plate("よ 12") == "12"
+    assert normalize_plate("よ 12") == "よ12"
     assert normalize_plate("x y 9") == "XY9"
+    assert normalize_plate("習志野 れ 12-08") == "習志野れ1208"
 
 
 def test_plate_like() -> None:
@@ -87,6 +88,9 @@ def test_plate_like() -> None:
     assert not plate_like("ABC")
     assert not plate_like("123")
     assert not plate_like("TOOLONGPLATE12345")
+    assert plate_like("習志野れ12-08")
+    assert not plate_like("習志野")
+    assert plate_like("よ12")
 
 
 def _sequencer_ocr(
