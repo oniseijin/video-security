@@ -250,6 +250,15 @@ def get_job_by_hash(conn: sqlite3.Connection, video_hash: str) -> JobRow | None:
     return _row_to_job(row)
 
 
+def get_job_by_video_path(conn: sqlite3.Connection, video_path: str) -> JobRow | None:
+    row = conn.execute(
+        "SELECT * FROM jobs WHERE video_path = ?", (video_path,)
+    ).fetchone()
+    if row is None:
+        return None
+    return _row_to_job(row)
+
+
 def update_job_status(conn: sqlite3.Connection, job_id: int, status: str) -> None:
     conn.execute(
         "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import mimetypes
 import re
@@ -15,11 +16,21 @@ from urllib.parse import SplitResult, parse_qs, unquote, urlsplit
 from video_security.config import Config
 from video_security.db import init_db
 
-Endpoint = Callable[[sqlite3.Connection, Config, dict[str, Any]], dict[str, Any]]
+Endpoint = Callable[[sqlite3.Connection, Config, dict[str, Any]], Any]
 Route = tuple[str, str, Endpoint]
 Routes = list[Route]
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@dataclasses.dataclass
+class FileRange:
+    status: int
+    ctype: str
+    length: int
+    extra_headers: list[tuple[str, str]]
+    path: Path
+    offset: int
 
 _PLACEHOLDER = (
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
@@ -90,17 +101,26 @@ def _handler_class(
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            parsed = urlsplit(self.path)
-            path = unquote(parsed.path)
-            if path.startswith("/api/"):
-                self._api("GET", parsed, path)
-            else:
-                self._static(path)
+            self._dispatch("GET")
+
+        def do_HEAD(self) -> None:
+            self._suppress_body = True
+            self._dispatch("GET")
 
         def log_message(self, format: str, *args: Any) -> None:
             pass
 
-        def _api(self, method: str, parsed: SplitResult, path: str) -> None:
+        def _dispatch(self, method: str) -> None:
+            parsed = urlsplit(self.path)
+            path = unquote(parsed.path)
+            if self._api(method, parsed, path):
+                return
+            if path.startswith("/api/") or path.startswith("/media/"):
+                self._json(404, {"error": "not found"})
+                return
+            self._static(path)
+
+        def _api(self, method: str, parsed: SplitResult, path: str) -> bool:
             query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
             for route_method, pattern, kinds, fn in compiled:
                 if route_method != method:
@@ -113,17 +133,26 @@ def _handler_class(
                     if raw is None:
                         continue
                     params[name] = int(raw) if kinds.get(name) == "int" else raw
+                params["_headers"] = {
+                    key.lower(): str(value) for key, value in self.headers.items()
+                }
                 try:
-                    payload = fn(connections.get(), config, params)
+                    result = fn(connections.get(), config, params)
                 except ApiError as exc:
                     self._json(exc.status, {"error": str(exc)})
-                    return
+                    return True
                 except Exception as exc:
                     self._json(500, {"error": str(exc)})
-                    return
-                self._json(200, payload)
-                return
-            self._json(404, {"error": "not found"})
+                    return True
+                if isinstance(result, FileRange):
+                    self._stream(result)
+                elif isinstance(result, tuple):
+                    status, ctype, body = result
+                    self._send(status, ctype, body, "no-cache")
+                else:
+                    self._json(200, result)
+                return True
+            return False
 
         def _static(self, path: str) -> None:
             rel = path.lstrip("/")
@@ -145,6 +174,26 @@ def _handler_class(
             ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             self._send(200, ctype, path.read_bytes(), cache)
 
+        def _stream(self, fr: FileRange) -> None:
+            self.send_response(fr.status)
+            self.send_header("Content-Type", fr.ctype)
+            self.send_header("Content-Length", str(fr.length))
+            for key, value in fr.extra_headers:
+                self.send_header(key, value)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            if getattr(self, "_suppress_body", False):
+                return
+            with fr.path.open("rb") as handle:
+                handle.seek(fr.offset)
+                remaining = fr.length
+                while remaining > 0:
+                    chunk = handle.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+
         def _json(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload).encode()
             self._send(status, "application/json; charset=utf-8", body, "no-cache")
@@ -155,7 +204,8 @@ def _handler_class(
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache)
             self.end_headers()
-            self.wfile.write(body)
+            if not getattr(self, "_suppress_body", False):
+                self.wfile.write(body)
 
     return Handler
 
@@ -171,8 +221,9 @@ class WebServer(ThreadingHTTPServer):
     ) -> None:
         if routes is None:
             from video_security.web.api import api_routes
+            from video_security.web.media import media_routes
 
-            routes = api_routes()
+            routes = api_routes() + media_routes()
         self.config = config
         self.connections = Connections(config.storage.db_path)
         super().__init__(address, _handler_class(routes, self.connections, config))
@@ -187,6 +238,9 @@ def serve(
     rw = sqlite3.connect(str(Path(config.storage.db_path).expanduser()))
     try:
         init_db(rw)
+        from video_security.geo import ensure_table
+
+        ensure_table(rw)
     finally:
         rw.close()
     bind_host = host or config.web.host
