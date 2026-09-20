@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchStats } from "../api"
-import type { Stats } from "../api"
+import { fetchMapRecent, fetchStats } from "../api"
+import type {
+  GpsEventMarker,
+  GpsPoint,
+  MapRecent,
+  Stats,
+} from "../api"
 import { TerminalNote } from "../components/TerminalNote"
+import { TrackMap } from "../components/TrackMap"
 import { fmtBytes, fmtDate } from "../format"
 import { toneColor } from "../theme"
 
@@ -18,6 +24,52 @@ function Stat({ value, label }: { value: number; label: string }) {
       <span className="stat-value">{value}</span>
       <span className="stat-label">{label}</span>
     </div>
+  )
+}
+
+function RecentEvents() {
+  const { data, isPending, isError, error } = useQuery<MapRecent, Error>({
+    queryKey: ["map-recent"],
+    queryFn: () => fetchMapRecent(200),
+  })
+
+  if (isPending) {
+    return <TerminalNote>querying /api/map/recent ...</TerminalNote>
+  }
+  if (isError) {
+    return (
+      <TerminalNote tone="threat">map error: {error.message}</TerminalNote>
+    )
+  }
+  if (!data || data.items.length === 0) {
+    return null
+  }
+
+  const points: GpsPoint[] = data.items.map((item) => ({
+    t: 0,
+    lat: item.lat,
+    lon: item.lon,
+    speed: null,
+    bearing: null,
+  }))
+  const events: GpsEventMarker[] = data.items.map((item) => ({
+    event_id: item.event_id,
+    lat: item.lat,
+    lon: item.lon,
+    type: item.type,
+    tone: item.tone,
+    time: null,
+    job_id: item.job_id,
+    recorded_at: item.recorded_at,
+    label: item.label,
+  }))
+
+  return (
+    <section className="panel">
+      <h2>Recent Events</h2>
+      <TrackMap events={events} height={340} points={points} route={false} />
+      <p className="note">recent {data.items.length} events with GPS</p>
+    </section>
   )
 }
 
@@ -159,6 +211,7 @@ export function Dashboard() {
           </p>
         )}
       </section>
+      <RecentEvents />
     </>
   )
 }

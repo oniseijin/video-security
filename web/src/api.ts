@@ -230,7 +230,10 @@ export interface GpsEventMarker {
   lon: number
   type: string
   tone: Tone
-  time: number
+  time: number | null
+  job_id?: number
+  recorded_at?: string | null
+  label?: string | null
 }
 
 export interface JobGps {
@@ -291,4 +294,111 @@ export interface AppConfig {
 
 export function fetchAppConfig(): Promise<AppConfig> {
   return fetchJson<AppConfig>("/api/config")
+}
+
+export interface PlateGalleryItem {
+  norm_text: string
+  sightings: number
+  best_confidence: number | null
+  best_crop_url: string | null
+  ken?: string | null
+  jobs: number[]
+  first_seen: string | null
+  last_seen: string | null
+}
+
+export interface PlatesGalleryPage {
+  items: PlateGalleryItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface PlateSighting {
+  job_id: number
+  track_id: number
+  confidence: number | null
+  read_at_sec: number | null
+  recorded_at: string | null
+  crop_url: string | null
+  event_id: number | null
+}
+
+export interface PlateDetail {
+  norm_text: string
+  ken: string | null
+  ken_en: string | null
+  sightings: PlateSighting[]
+}
+
+export interface SearchPlateHit {
+  job_id: number
+  track_id: number
+  norm_text: string | null
+  raw_text: string | null
+  confidence: number | null
+  crop_url: string | null
+}
+
+export interface SearchTextHit {
+  job_id: number
+  clip_id: number
+  frame_number: number
+  text: string
+}
+
+export interface SearchTranscriptHit {
+  job_id: number
+  clip_id: number
+  start_time: number
+  end_time: number
+  text: string
+}
+
+export interface SearchEventHit {
+  job_id: number
+  event_id: number
+  event_type: string
+  start_sec: number
+}
+
+export interface SearchResults {
+  q: string
+  plates: SearchPlateHit[]
+  text: SearchTextHit[]
+  transcripts: SearchTranscriptHit[]
+  events: SearchEventHit[]
+}
+
+export interface MapRecentItem {
+  event_id: number
+  job_id: number
+  lat: number
+  lon: number
+  type: string
+  tone: Tone
+  recorded_at: string | null
+  label: string | null
+}
+
+export interface MapRecent {
+  items: MapRecentItem[]
+}
+
+export function fetchPlatesGallery(
+  params: URLSearchParams
+): Promise<PlatesGalleryPage> {
+  return fetchJson<PlatesGalleryPage>(`/api/plates?${params.toString()}`)
+}
+
+export function fetchPlateDetail(normText: string): Promise<PlateDetail> {
+  return fetchJson<PlateDetail>(`/api/plates/${encodeURIComponent(normText)}`)
+}
+
+export function fetchSearch(q: string): Promise<SearchResults> {
+  return fetchJson<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`)
+}
+
+export function fetchMapRecent(limit: number): Promise<MapRecent> {
+  return fetchJson<MapRecent>(`/api/map/recent?limit=${limit}`)
 }

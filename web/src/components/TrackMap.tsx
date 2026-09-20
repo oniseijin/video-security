@@ -4,7 +4,7 @@ import * as L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { fetchAppConfig } from "../api"
 import type { AppConfig, GpsEventMarker, GpsPoint } from "../api"
-import { fmtSec } from "../format"
+import { fmtDate, fmtSec } from "../format"
 import { TOKENS, themeAttr, toneColor } from "../theme"
 import type { Theme, Tone } from "../theme"
 
@@ -19,6 +19,7 @@ interface TrackMapProps {
   events: GpsEventMarker[]
   height: number
   jobId?: number
+  route?: boolean
 }
 
 function toneHex(tone: Tone, theme: Theme): string {
@@ -27,6 +28,28 @@ function toneHex(tone: Tone, theme: Theme): string {
 
 function lineColor(theme: Theme): string {
   return theme === "machine" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)"
+}
+
+function popupLines(ev: GpsEventMarker, jobId: number | undefined): string {
+  const lines: string[] = []
+  if (ev.recorded_at != null) {
+    lines.push(`${ev.type} · ${fmtDate(ev.recorded_at)}`)
+    if (ev.label != null && ev.label !== "") {
+      lines.push(ev.label)
+    }
+  } else {
+    lines.push(
+      ev.time !== null ? `${ev.type} @ ${fmtSec(ev.time)}` : `${ev.type}`
+    )
+    lines.push(`${ev.lat.toFixed(5)}, ${ev.lon.toFixed(5)}`)
+  }
+  const linkJob = jobId ?? ev.job_id
+  if (linkJob !== undefined) {
+    lines.push(
+      `<a href="/jobs/${linkJob}/events/${ev.event_id}">event #${ev.event_id}</a>`
+    )
+  }
+  return lines.join("<br>")
 }
 
 function GpsPlot({ points, events }: { points: GpsPoint[]; events: GpsEventMarker[] }) {
@@ -72,7 +95,13 @@ function GpsPlot({ points, events }: { points: GpsPoint[]; events: GpsEventMarke
   )
 }
 
-export function TrackMap({ points, events, height, jobId }: TrackMapProps) {
+export function TrackMap({
+  points,
+  events,
+  height,
+  jobId,
+  route = true,
+}: TrackMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [theme, setTheme] = useState<Theme>(themeAttr)
   const [offline, setOffline] = useState(false)
@@ -102,21 +131,27 @@ export function TrackMap({ points, events, height, jobId }: TrackMapProps) {
     const map = L.map(container, { zoomControl: true, attributionControl: true })
     const layer = L.tileLayer(url, { attribution: ATTRIBUTION }).addTo(map)
     const latlngs = points.map((p) => [p.lat, p.lon] as [number, number])
-    L.polyline(latlngs, { color: lineColor(theme), weight: 2, opacity: 0.9 }).addTo(map)
-    L.circleMarker(latlngs[0], {
-      radius: 5,
-      color: toneHex("asset", theme),
-      fill: false,
-    })
-      .addTo(map)
-      .bindPopup("start")
-    L.circleMarker(latlngs[latlngs.length - 1], {
-      radius: 5,
-      color: toneHex("asset", theme),
-      fillOpacity: 1,
-    })
-      .addTo(map)
-      .bindPopup("end")
+    if (route) {
+      L.polyline(latlngs, {
+        color: lineColor(theme),
+        weight: 2,
+        opacity: 0.9,
+      }).addTo(map)
+      L.circleMarker(latlngs[0], {
+        radius: 5,
+        color: toneHex("asset", theme),
+        fill: false,
+      })
+        .addTo(map)
+        .bindPopup("start")
+      L.circleMarker(latlngs[latlngs.length - 1], {
+        radius: 5,
+        color: toneHex("asset", theme),
+        fillOpacity: 1,
+      })
+        .addTo(map)
+        .bindPopup("end")
+    }
     for (const ev of events) {
       const color = toneHex(ev.tone, theme)
       const marker = L.circleMarker([ev.lat, ev.lon], {
@@ -126,12 +161,7 @@ export function TrackMap({ points, events, height, jobId }: TrackMapProps) {
         fillOpacity: 0.85,
         weight: 2,
       }).addTo(map)
-      const detail = jobId
-        ? `<br><a href="/jobs/${jobId}/events/${ev.event_id}">event #${ev.event_id}</a>`
-        : ""
-      marker.bindPopup(
-        `${ev.type} @ ${fmtSec(ev.time)}<br>${ev.lat.toFixed(5)}, ${ev.lon.toFixed(5)}${detail}`
-      )
+      marker.bindPopup(popupLines(ev, jobId))
     }
     map.fitBounds(L.latLngBounds(latlngs).pad(0.15))
     let loaded = false
@@ -150,7 +180,7 @@ export function TrackMap({ points, events, height, jobId }: TrackMapProps) {
       window.clearTimeout(timer)
       map.remove()
     }
-  }, [appConfig, configPending, events, jobId, offline, points, theme])
+  }, [appConfig, configPending, events, jobId, offline, points, route, theme])
 
   if (offline || points.length < 2) {
     return (

@@ -476,6 +476,39 @@ a.count-chip:hover {
   flex-wrap: wrap;
 }
 
+.plate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.plate-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-decoration: none;
+}
+
+.plate-card-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 4.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px dashed var(--vs-line);
+  color: var(--vs-ink-faint);
+  font-family: var(--vs-font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+}
+
+.wrap-cell {
+  overflow-wrap: anywhere;
+  max-width: 36rem;
+}
+
 .plate-card {
   border: 1px solid var(--vs-line);
   padding: 0.75rem;

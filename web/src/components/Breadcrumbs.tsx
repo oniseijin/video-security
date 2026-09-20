@@ -29,8 +29,17 @@ export function useCrumbLabel(label: string | null) {
   }, [label, setLabel])
 }
 
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
 function labelFor(segment: string): string {
-  return /^\d+$/.test(segment) ? `#${segment}` : segment
+  const decoded = decodeSegment(segment)
+  return /^\d+$/.test(decoded) ? `#${decoded}` : decoded
 }
 
 function PathCrumbs() {
