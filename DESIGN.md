@@ -363,8 +363,14 @@ sessions(
 
 1. **Sleep prevention**: `caffeinate -s -i` wrapper. AC-only.
 2. **Hard stage serialization**: never run two heavy stages concurrently.
-   `keep_alive: 0` after last LLM request. `OLLAMA_MAX_LOADED_MODELS=1`.
-   `num_ctx` capped: 2048 triage, 4096-8192 detail.
+   **Single-model residency**: at most one Ollama model in memory at a
+   time — the client evicts the previous model before generating with a
+   different one (triage 4b → detail 12b swaps, never both resident;
+   ~10 GB combined was contributing to memory-pressure kills on 16 GB).
+   `keep_alive: "30m"` sliding window keeps the active model warm between
+   sparse calls during a run; explicit unload of all used models when the
+   run ends (clean exit, Ctrl+C, or time budget) so nothing stays resident
+   after the tool exits. `num_ctx` capped: 2048 triage, 4096-8192 detail.
 3. **Disk preflight** ≥10 GB free + **runtime watermark** ≥5 GB.
    Frames never persisted to disk (streamed in memory). Only event keyframes
    (~3/event, JPEG q80, max width 1280px) + plate crops hit disk.
@@ -499,7 +505,9 @@ cleanly. `--resume` after remount.
 - `--only-llm` for re-running analysis with different models on existing prefilter
   output — prompt iteration without re-processing video
 - Model digest (`ollama show`) + prompt_version stored per analysis_result row
-- `keep_alive: 0` on last request of each LLM pass so Ollama actually unloads
+- Single-model residency: one Ollama model resident at a time; the client
+  evicts the previous model on swap, keeps the active model warm via a 30m
+  sliding `keep_alive`, and unloads everything when the run ends
 
 ---
 
