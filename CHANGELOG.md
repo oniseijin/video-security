@@ -13,11 +13,16 @@ follow semantic versioning.
   for ByteTrack but does not declare it; it is now an explicit dependency.
 - The installer's venv (uv-created) shipped without `pip`; it is now
   seeded via `ensurepip` for manual debugging.
-- Spotlight (`mds_stores`) churned on the thousands of keyframes,
-  imported clips and DB WAL churn produced during runs. The artifact
-  dir, clips imports root, per-job frame dirs, report dir and the DB's
-  parent dir now each get a `.metadata_never_index` marker so Spotlight
-  skips them.
+- Ollama client changes:
+  - `keep_alive` defaulted to `0` (unload model seconds after each
+    request) — and the local server's default now also expires models
+    immediately — so every LLM call paid a cold model load. The client
+    now keeps models resident for 30 minutes per call, keeping triage
+    and detail cheap across a run.
+  - Audited against Ollama 0.34.2 with `OLLAMA_CONTEXT_LENGTH=32768`,
+    flash attention and q8_0 KV cache: per-request `num_ctx` is still
+    honored and `/api/tags` digests are unchanged, so digests and
+    health checks are unaffected.
 
 ## [0.1.0] - 2026-09-20
 

@@ -34,7 +34,7 @@ class OllamaClient:
         images: list[str] | None = None,
         format_schema: dict[str, Any] | None = None,
         num_ctx: int = 2048,
-        keep_alive: int = 0,
+        keep_alive: str = "30m",
     ) -> str:
         body: dict[str, Any] = {
             "model": model,
@@ -90,7 +90,7 @@ class OllamaClient:
         images: list[str] | None = None,
         format_schema: dict[str, Any] | None = None,
         num_ctx: int = 2048,
-        keep_alive: int = 0,
+        keep_alive: str = "30m",
     ) -> dict[str, Any]:
         try:
             result_text = self.generate(

@@ -16,7 +16,7 @@ def test_generate_ok() -> None:
         assert r == m.response_text
         last_body = m.requests[-1]["body"]
         assert last_body["options"]["num_ctx"] == 2048
-        assert last_body["keep_alive"] == 0
+        assert last_body["keep_alive"] == "30m"
         assert last_body["stream"] is False
 
 
