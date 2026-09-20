@@ -335,6 +335,19 @@ def list_cmd(ctx: typer.Context) -> None:
         conn.close()
 
 
+@app.command(name="serve")
+def serve_cmd(
+    ctx: typer.Context,
+    port: int | None = typer.Option(None, "--port", help="Web console port"),  # noqa: B008
+    host: str | None = typer.Option(None, "--host", help="Bind address"),  # noqa: B008
+    open_browser: bool = typer.Option(False, "--open", help="Open the browser"),  # noqa: B008
+) -> None:
+    from video_security.web.server import serve as web_serve
+
+    cfg: Config = ctx.obj["config"]
+    web_serve(cfg, host=host, port=port, open_browser=open_browser)
+
+
 def _rerun_llm_only(
     conn: sqlite3.Connection, cfg: Config, max_llm_events: int | None
 ) -> None:

@@ -26,6 +26,7 @@ vs-import = "video_security.entries:import_clips"
 vs-search = "video_security.entries:search"
 vs-report = "video_security.entries:report"
 vs-list = "video_security.entries:list_jobs"
+vs-serve = "video_security.entries:serve"
 
 [dependency-groups]
 dev = [

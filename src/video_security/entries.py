@@ -43,5 +43,9 @@ def report() -> None:
     _run("report")
 
 
+def serve() -> None:
+    _run("serve")
+
+
 def list_jobs() -> None:
     _run("list")
