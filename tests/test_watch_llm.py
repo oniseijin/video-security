@@ -97,6 +97,9 @@ def test_only_llm_rerun(tmp_path: Path) -> None:
         def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
+        def unload(self, *a: object, **k: object) -> None:
+            return None
+
         def generate_json(self, *a: object, **k: object) -> dict[str, object]:
             return {
                 "relevant": True,
