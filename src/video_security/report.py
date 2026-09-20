@@ -9,6 +9,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from video_security import db, geo
+from video_security.enrich import (
+    clip_mode,
+    event_category,
+    event_description,
+    format_coord,
+    gps_track,
+    nearest_gps,
+    scene_description,
+)
 from video_security.fs import spotlight_ignore
 from video_security.jp_plates import ken_for_plate
 from video_security.report_theme import (
@@ -63,82 +72,6 @@ def _event_faces(evt: sqlite3.Row) -> list[list[list[float]]]:
     return parsed
 
 
-_DASH_MODES = {"NORMAL", "EVENT", "PARKING", "MANUAL", "PICTURE"}
-
-
-def _clip_mode(video_path: str) -> str | None:
-    for part in Path(video_path).parts:
-        if part.upper() in _DASH_MODES:
-            return part.upper()
-    return None
-
-
-def _event_category(
-    mode: str | None, gps_row: sqlite3.Row | None
-) -> str:
-    if mode == "PARKING":
-        return "parking"
-    if gps_row is not None and gps_row["speed_kmh"] is not None:
-        return "driving" if float(gps_row["speed_kmh"]) >= 5.0 else "stationary"
-    return "unknown"
-
-
-def _scene_description(
-    evt: sqlite3.Row,
-    gps_row: sqlite3.Row | None,
-    category: str,
-    face_count: int,
-    plate_texts: list[str],
-) -> str:
-    bits: list[str] = []
-    lead = {
-        "driving": "Vehicle driving",
-        "parking": "Parked vehicle",
-        "stationary": "Vehicle stationary",
-    }.get(category, "Scene")
-    bits.append(lead)
-    if gps_row is not None and gps_row["speed_kmh"] is not None:
-        bits.append(f"at {float(gps_row['speed_kmh']):.0f} km/h")
-    if evt["event_type"] in {"hard_corner", "impact", "hard_brake"} and gps_row is not None:
-        ax = gps_row["ax"]
-        ay = gps_row["ay"]
-        if ax is not None or ay is not None:
-            lateral = math.sqrt(
-                float(ax or 0.0) ** 2 + float(ay or 0.0) ** 2
-            )
-            bits.append(f"lateral {lateral:.2f}g")
-    if face_count:
-        bits.append(f"{face_count} face{'s' if face_count != 1 else ''} visible")
-    if plate_texts:
-        bits.append("plate " + ", ".join(plate_texts))
-    if gps_row is not None and gps_row["lat"] is not None:
-        bits.append(_format_coord(gps_row))
-    return " · ".join(bits)
-
-
-def _gps_track(
-    conn: sqlite3.Connection, job_id: int
-) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT time_sec, lat, lon, speed_kmh FROM clip_gps_data "
-        "WHERE job_id = ? AND lat IS NOT NULL AND lon IS NOT NULL "
-        "ORDER BY time_sec",
-        (job_id,),
-    ).fetchall()
-
-
-def _nearest_gps(
-    track: list[sqlite3.Row], target_sec: float
-) -> sqlite3.Row | None:
-    if not track:
-        return None
-    return min(track, key=lambda r: abs(r["time_sec"] - target_sec))
-
-
-def _format_coord(row: sqlite3.Row) -> str:
-    return f"{row['lat']:.5f}, {row['lon']:.5f}"
-
-
 def _gps_svg(
     track: list[sqlite3.Row],
     events: list[sqlite3.Row],
@@ -186,14 +119,14 @@ def _gps_svg(
         'stroke="none" fill="currentColor"/>'
     )
     for evt in events:
-        gps = _nearest_gps(track, float(evt["start_sec"]))
+        gps = nearest_gps(track, float(evt["start_sec"]))
         if gps is None:
             continue
         tone = event_tone(evt["event_type"])
         cx, cy = px(gps["lon"]), py(gps["lat"])
         title = (
             f"<title>{html.escape(evt['event_type'])} @ "
-            f"{_mmss(evt['start_sec'])} — {html.escape(_format_coord(gps))}"
+            f"{_mmss(evt['start_sec'])} — {html.escape(format_coord(gps))}"
             "</title>"
         )
         parts.append(
@@ -209,28 +142,16 @@ def _gps_svg(
     return "".join(parts) + f'<p class="note">{caption}</p>'
 
 
-def _event_description(conn: sqlite3.Connection, evt: sqlite3.Row) -> str:
-    if evt["llm_result_id"] is None:
-        return ""
-    ar = conn.execute(
-        "SELECT raw_response FROM analysis_results WHERE id = ?",
-        (evt["llm_result_id"],),
-    ).fetchone()
-    if ar is None:
-        return ""
-    try:
-        resp = json.loads(ar["raw_response"])
-    except (json.JSONDecodeError, TypeError):
-        return ""
-    return str(resp.get("description", ""))
-
-
-def generate_report(
+def render_report_html(
     conn: sqlite3.Connection,
     job_id: int,
     artifact_dir: Path,
+    *,
     geocode: bool = False,
-) -> Path:
+    geocode_network: bool = True,
+    media_base: str | None = None,
+    embed: bool = False,
+) -> str:
     job_row = conn.execute(
         "SELECT id, video_path, status, created_at, recording_start_utc "
         "FROM jobs WHERE id = ?",
@@ -240,7 +161,6 @@ def generate_report(
         raise ReportError(f"job {job_id} not found")
 
     out_dir = artifact_dir / "reports"
-    spotlight_ignore(out_dir)
 
     events = conn.execute(
         "SELECT * FROM events WHERE job_id = ? ORDER BY start_sec", (job_id,)
@@ -273,12 +193,12 @@ def generate_report(
     ).fetchone()["cnt"] or 0
 
     has_faces = any(any(f for f in _event_faces(evt)) for evt in events)
-    face_button = (
-        '<button id="face-toggle" class="face-toggle" type="button" '
-        'aria-pressed="true">Faces On</button>'
-        if has_faces
-        else ""
-    )
+    face_button = ""
+    if has_faces and not embed:
+        face_button = (
+            '<button id="face-toggle" class="face-toggle" type="button" '
+            'aria-pressed="true">Faces On</button>'
+        )
 
     recorded_dt = _parse_utc(job_row["recording_start_utc"])
     imported_dt = _parse_utc(str(job_row["created_at"]))
@@ -301,6 +221,13 @@ def generate_report(
             f" &middot; {days} days later</p>"
         )
 
+    theme_toggle_button = ""
+    if not embed:
+        theme_toggle_button = (
+            '<button id="theme-toggle" class="theme-toggle" type="button" role="switch" '
+            'aria-label="Toggle Machine/Samaritan theme">Machine</button>'
+        )
+
     parts: list[str] = [
         "<!DOCTYPE html>",
         '<html lang="en" data-theme="machine">',
@@ -315,8 +242,7 @@ def generate_report(
         '<span class="rec-dot" aria-hidden="true"></span>',
         f'<span class="masthead-title">Video Surveillance // Job {job_row["id"]}</span>',
         f'<span class="masthead-meta">{meta_line}</span>',
-        '<button id="theme-toggle" class="theme-toggle" type="button" role="switch" '
-        'aria-label="Toggle Machine/Samaritan theme">Machine</button>',
+        theme_toggle_button,
         face_button,
         "</header>",
         archive_flag,
@@ -347,8 +273,8 @@ def generate_report(
 
     parts.append('<section class="panel">')
     parts.append("<h2>Timeline</h2>")
-    gps_track = _gps_track(conn, job_id)
-    clip_mode = _clip_mode(str(job_row["video_path"]))
+    track = gps_track(conn, job_id)
+    mode = clip_mode(str(job_row["video_path"]))
     plates_by_track: dict[int, list[str]] = {}
     for pr in plate_rows:
         plates_by_track.setdefault(int(pr["track_id"]), []).append(
@@ -356,9 +282,9 @@ def generate_report(
         )
     event_meta: dict[int, tuple[str, str]] = {}
     for evt in events:
-        gps = _nearest_gps(gps_track, float(evt["start_sec"])) if gps_track else None
-        category = _event_category(clip_mode, gps)
-        description = _event_description(conn, evt)
+        gps = nearest_gps(track, float(evt["start_sec"])) if track else None
+        category = event_category(mode, gps)
+        description = event_description(conn, evt)
         if not description:
             face_count = sum(len(f) for f in _event_faces(evt))
             plate_texts = (
@@ -366,7 +292,7 @@ def generate_report(
                 if evt["track_id"] is not None
                 else []
             )
-            description = _scene_description(evt, gps, category, face_count, plate_texts)
+            description = scene_description(evt, gps, category, face_count, plate_texts)
         event_meta[int(evt["id"])] = (description, category)
     captured_ids: set[int] = set()
     for evt in events:
@@ -386,7 +312,7 @@ def generate_report(
     head_cells.append('<th class="num">Priority</th>')
     head_cells.append('<th class="num">Score</th>')
     head_cells.append("<th>Status</th>")
-    if gps_track:
+    if track:
         head_cells.append("<th>Location</th>")
     head_cells.append("<th>Description</th>")
     parts.append(
@@ -405,18 +331,23 @@ def generate_report(
         if recorded_dt is not None:
             at = recorded_dt + timedelta(seconds=float(evt["start_sec"]))
             recorded_cell = f"<td>{at:%Y-%m-%d %H:%M:%S}</td>"
-        gps = _nearest_gps(gps_track, float(evt["start_sec"])) if gps_track else None
+        gps = nearest_gps(track, float(evt["start_sec"])) if track else None
         location_cell = ""
-        if gps_track:
+        if track:
             if gps is None:
                 location_cell = "<td></td>"
             else:
-                coord = _format_coord(gps)
+                coord = format_coord(gps)
                 label = coord
                 if geocode and gps["lat"] is not None and gps["lon"] is not None:
-                    place = geo.reverse_geocode(
-                        conn, float(gps["lat"]), float(gps["lon"])
-                    )
+                    if geocode_network:
+                        place = geo.reverse_geocode(
+                            conn, float(gps["lat"]), float(gps["lon"])
+                        )
+                    else:
+                        place = geo.cached_description(
+                            conn, float(gps["lat"]), float(gps["lon"])
+                        )
                     if place:
                         label = place
                 location_cell = (
@@ -445,13 +376,13 @@ def generate_report(
         )
     parts.append("</table></section>")
 
-    gps_map = _gps_svg(gps_track, events)
-    if gps_track:
+    gps_map = _gps_svg(track, events)
+    if track:
         parts.append('<section class="panel">')
         parts.append("<h2>Location Track</h2>")
         map_events = []
         for evt in events:
-            gps = _nearest_gps(gps_track, float(evt["start_sec"]))
+            gps = nearest_gps(track, float(evt["start_sec"]))
             if gps is None:
                 continue
             map_events.append(
@@ -470,7 +401,7 @@ def generate_report(
                         "lat": float(r["lat"]),
                         "lon": float(r["lon"]),
                     }
-                    for r in gps_track
+                    for r in track
                 ],
                 "events": map_events,
             }
@@ -491,14 +422,22 @@ def generate_report(
         parts.append('<p class="note gps-fallback-note">SVG fallback —'
             " map tiles unavailable (offline)</p>")
         parts.append(f"<script>{THEME_MAP_JS}</script>")
-        if geocode and len(gps_track) >= 2:
-            first, last = gps_track[0], gps_track[-1]
-            start_place = geo.reverse_geocode(
-                conn, float(first["lat"]), float(first["lon"])
-            )
-            end_place = geo.reverse_geocode(
-                conn, float(last["lat"]), float(last["lon"])
-            )
+        if geocode and len(track) >= 2:
+            first, last = track[0], track[-1]
+            if geocode_network:
+                start_place = geo.reverse_geocode(
+                    conn, float(first["lat"]), float(first["lon"])
+                )
+                end_place = geo.reverse_geocode(
+                    conn, float(last["lat"]), float(last["lon"])
+                )
+            else:
+                start_place = geo.cached_description(
+                    conn, float(first["lat"]), float(first["lon"])
+                )
+                end_place = geo.cached_description(
+                    conn, float(last["lat"]), float(last["lon"])
+                )
             if start_place or end_place:
                 parts.append(
                     '<p class="note">'
@@ -521,7 +460,7 @@ def generate_report(
         if not paths:
             continue
         description, _category = event_meta.get(
-            int(evt["id"]), (_event_description(conn, evt), "unknown")
+            int(evt["id"]), (event_description(conn, evt), "unknown")
         )
         tone = event_tone(evt["event_type"])
         faces = _event_faces(evt)
@@ -540,7 +479,14 @@ def generate_report(
         for i, p in enumerate(paths):
             if "/" not in p and "\\" not in p:
                 continue
-            src = _keyframe_src(p, out_dir)
+            if media_base is not None:
+                try:
+                    rel = os.path.relpath(p, artifact_dir)
+                    src = f"{media_base}/{rel}"
+                except ValueError:
+                    src = _keyframe_src(p, out_dir)
+            else:
+                src = _keyframe_src(p, out_dir)
             boxes = faces[i] if i < len(faces) else []
             if boxes:
                 parts.append('<div class="kf-wrap">')
@@ -710,9 +656,10 @@ def generate_report(
         '<footer class="report-footer">generated by vs report &middot; '
         "local analysis &middot; no data leaves this machine</footer>"
     )
-    parts.append(f"<script>{THEME_TOGGLE_JS}</script>")
-    if has_faces:
-        parts.append(f"<script>{THEME_FACES_JS}</script>")
+    if not embed:
+        parts.append(f"<script>{THEME_TOGGLE_JS}</script>")
+        if has_faces:
+            parts.append(f"<script>{THEME_FACES_JS}</script>")
     parts.append(
         '<div id="lightbox" class="lightbox" aria-hidden="true">'
         '<div class="lightbox-frame">'
@@ -730,7 +677,18 @@ def generate_report(
     parts.append("</div>")
     parts.append("</body></html>")
 
-    html_content = "\n".join(parts)
+    return "\n".join(parts)
+
+
+def generate_report(
+    conn: sqlite3.Connection,
+    job_id: int,
+    artifact_dir: Path,
+    geocode: bool = False,
+) -> Path:
+    out_dir = artifact_dir / "reports"
+    spotlight_ignore(out_dir)
+    html_content = render_report_html(conn, job_id, artifact_dir, geocode=geocode)
     report_path = out_dir / f"job_{job_id}.html"
     report_path.write_text(html_content, encoding="utf-8")
     return report_path

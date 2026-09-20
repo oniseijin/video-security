@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-THEME_CSS = """
+SHARED_CSS = """
 /* Person-of-Interest surveillance theme: dual polarity.
    MACHINE (dark, default): white + neon red on black, glowing corner brackets.
    SAMARITAN (light): black + crisp red on white, hairline edge + reticle.
@@ -94,7 +94,6 @@ body::after {
 
 ::selection { color: var(--vs-selection-ink); background: var(--vs-selection-bg); }
 
-.wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
 
 .masthead {
   display: flex;
@@ -157,13 +156,6 @@ body::after {
 
 body.hide-faces .face-box { display: none; }
 
-.filepath {
-  font-family: var(--vs-font-mono);
-  font-size: 0.75rem;
-  color: var(--vs-ink-dim);
-  word-break: break-all;
-  margin: 0.75rem 0 0;
-}
 
 .flag {
   font-family: var(--vs-font-mono);
@@ -182,18 +174,6 @@ body.hide-faces .face-box { display: none; }
   margin: 0.5rem 0 0;
 }
 
-.gps-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  color: var(--vs-ink);
-  border: 1px solid var(--vs-line);
-}
-.gps-map { height: 340px; border: 1px solid var(--vs-line); }
-.gps-dot--threat { fill: var(--vs-threat); }
-.gps-dot--warning { fill: var(--vs-warning); }
-.gps-dot--info { fill: var(--vs-info); }
-.gps-dot--asset { fill: var(--vs-asset); }
 
 .panel { margin: 2rem 0; }
 .panel > h2 {
@@ -436,15 +416,6 @@ a.chip:hover { border-color: var(--vs-accent); color: var(--vs-accent); }
 .terminal .ts { color: var(--vs-ink-faint); }
 .terminal .prompt { color: var(--vs-success); }
 
-.report-footer {
-  margin: 3rem 0 1.5rem;
-  border-top: 1px solid var(--vs-line);
-  padding-top: 0.75rem;
-  font-family: var(--vs-font-mono);
-  font-size: 0.6875rem;
-  color: var(--vs-ink-faint);
-  text-transform: uppercase;
-}
 
 @keyframes vs-pulse {
   0%, 100% { opacity: 0.35; }
@@ -465,6 +436,40 @@ a.chip:hover { border-color: var(--vs-accent); color: var(--vs-accent); }
   .data-table td, .subject figcaption, .filepath { color: #000; }
 }
 """
+
+REPORT_CSS = """.wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
+.filepath {
+  font-family: var(--vs-font-mono);
+  font-size: 0.75rem;
+  color: var(--vs-ink-dim);
+  word-break: break-all;
+  margin: 0.75rem 0 0;
+}
+.gps-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--vs-ink);
+  border: 1px solid var(--vs-line);
+}
+.gps-map { height: 340px; border: 1px solid var(--vs-line); }
+.gps-dot--threat { fill: var(--vs-threat); }
+.gps-dot--warning { fill: var(--vs-warning); }
+.gps-dot--info { fill: var(--vs-info); }
+.gps-dot--asset { fill: var(--vs-asset); }
+.report-footer {
+  margin: 3rem 0 1.5rem;
+  border-top: 1px solid var(--vs-line);
+  padding-top: 0.75rem;
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  color: var(--vs-ink-faint);
+  text-transform: uppercase;
+}
+"""
+
+THEME_CSS = SHARED_CSS + REPORT_CSS
+
 
 THEME_JS = """
 (function () {
