@@ -34,7 +34,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["video_security"]
+packages = ["src/video_security"]
 
 [tool.ruff]
 line-length = 100
@@ -50,6 +50,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-m 'not benchmark'"
 markers = [
     "benchmark: performance benchmarks with throughput floors (deselected by default)",

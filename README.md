@@ -62,7 +62,18 @@ Mazda CX-8 G-sensor events (`hard_brake`, `hard_corner`, `impact`) are detected 
 
 ```bash
 .venv/bin/ruff check .
-.venv/bin/mypy video_security tests
+.venv/bin/mypy src/video_security tests
 .venv/bin/pytest
 .venv/bin/pytest -m benchmark
+```
+
+Package lives under `src/video_security/` (src layout).
+
+### Smoke testing (isolated from real data)
+
+`test-output/` is gitignored and holds the isolated smoke environment: `test-output/smoke.toml` points the DB and artifact dir at `test-output/` (never `~/.video-security/db` or the real artifact volume). Run smoke checks from the repo root:
+
+```bash
+.venv/bin/vs --config test-output/smoke.toml analyze <clip>
+.venv/bin/vs --config test-output/smoke.toml report <job-id>
 ```

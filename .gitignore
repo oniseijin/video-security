@@ -12,3 +12,4 @@ build/
 *.sqlite*
 .DS_Store
 artifacts/
+test-output/
