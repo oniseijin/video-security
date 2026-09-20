@@ -727,4 +727,15 @@ Not in scope for current phases; captured so the intent isn't lost.
   catalog — job list with status/filters, event timeline browsing, plate
   and dangerous-driving search, report viewing. Read-mostly; the CLI
   remains the writer, so the app can stay a thin viewer.
+- **Face highlighting**: face detection (Apple Vision
+  `VNDetectFaceRectanglesRequest` — the pyobjc dependency is already
+  present) with boxes drawn on keyframes and face counts as event
+  metadata. Local-only detection; no face recognition or embeddings by
+  default.
+- **Plate-to-event/frame linkage**: plates are already stored with
+  `track_id` and `best_frame`, but reports don't tie them together.
+  Link each plate read to the event(s) its track participated in and
+  to the exact keyframe it was read from — plate crops shown inline in
+  the report timeline, and `vs search <plate>` jumping to the linked
+  events.
 - Memory-pressure test: detail falls back to 4B model.
