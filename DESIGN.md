@@ -511,6 +511,22 @@ cleanly. `--resume` after remount.
 
 ---
 
+## Scene Description Strategy
+
+LLM never runs per frame. Descriptions are three-tier, cheapest that works:
+
+1. **LLM detail pass** — prose descriptions for events that survive triage;
+   one `analysis_results` row per pass (~1-2 KB). This is the only stored
+   prose; per-frame LLM would cost hours per clip and GBs of storage.
+2. **Deterministic synthesis** — at report time, events without LLM text
+   get a scene description assembled from structured data (driving/
+   parking/stationary category from clip mode + GPS speed, speed, G-force,
+   face counts, plates, coordinates). Nothing stored; recomputed on render.
+3. **Event category** — derived at render time from the clip's dashcam
+   mode (path segment, e.g. PARKING) and GPS speed at event time
+   (driving ≥ 5 km/h, else stationary; unknown without GPS). Feeds both
+   the synthesis and future web-ui filters.
+
 ## Theming (Person of Interest design language)
 
 Reports and the future web UI share one visual language, adapted from
@@ -757,13 +773,22 @@ Not in scope for current phases; captured so the intent isn't lost.
 - **Richer report regeneration**: `vs report` renders from the DB alone
   (events, plates, tracks, GPS, transcripts, keyframes are all persisted),
   so reports can be re-rendered with more sophistication at any time
-  without re-analysis. Ideas: timeline scrubbing with keyframe filmstrip,
-  map view of GPS/G-force events, side-by-side front/rear pair playback,
-  plate gallery across jobs, night-mode/CLAHE comparison toggles.
+  without re-analysis. Shipped already: zoomable lightbox with face-box
+  preservation, GPS Location Track panel, event categories + deterministic
+  scene descriptions, recording-vs-import flags. Remaining ideas:
+  timeline scrubbing with a keyframe filmstrip, side-by-side front/rear
+  pair playback, plate gallery across jobs, night-mode/CLAHE comparison
+  toggles.
 - **Web app for tracking**: a full local web UI over the same SQLite
   catalog — job list with status/filters, event timeline browsing, plate
   and dangerous-driving search, report viewing. Read-mostly; the CLI
-  remains the writer, so the app can stay a thin viewer.
+  remains the writer, so the app can stay a thin viewer. Reuses the
+  `--vs-*` theme tokens from `report_theme.py`. Data-model notes for
+  the UI: distinguish recording date (from dashcam filenames) from
+  import date everywhere (timelines, day grouping, navigation);
+  surface the event category (driving/parking/stationary) as a filter;
+  GPS panels are adapter-dependent (CX-8 only) and must degrade
+  gracefully; plates link to events via track_id.
 - **Face highlighting**: face detection (Apple Vision
   `VNDetectFaceRectanglesRequest` — the pyobjc dependency is already
   present) with boxes drawn on keyframes and face counts as event

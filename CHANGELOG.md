@@ -20,6 +20,44 @@ follow semantic versioning.
   carries forward to the future web UI. Design language adapted from
   the MIT-licensed poi-web-ui (Krisztián Kis) and positronick-ui
   (Nicholas Sollazzo).
+- **Keyframe zoom**: click any keyframe for a lightbox view with
+  mouse-wheel zoom (toward cursor), +/-/reset controls, double-click
+  toggle, and drag-to-pan. Face-detection boxes are cloned into the
+  lightbox and scale with the zoom; the Faces On/Off toggle (persisted)
+  hides them everywhere.
+- **Japanese plate support**: plate OCR now runs with ja-JP recognition
+  and keeps CJK characters, so the place-name kanji survives; a
+  place-to-prefecture map (~130 entries, `jp_plates.py`) shows the ken
+  on plate chips and in the plates table (e.g. 習志野 → 千葉県/Chiba).
+- **Face detection** (Apple Vision `VNDetectFaceRectanglesRequest`) on
+  chosen event keyframes, stored per event as `faces_json` (idempotent
+  migration); boxes render over keyframes in the report with face
+  counts in the designation tags.
+- **Plate-to-event linkage**: `vs search <plate>` prints linked events;
+  plate chips and table rows link to the event anchor in reports. The
+  plates table now uses readable columns — Read At (timestamp of the
+  clearest OCR read) and Vehicle (tracked vehicle ID) — with an
+  explanatory note.
+- **GPS in reports**: Location column in the timeline (coordinates at
+  event time) and a Location Track panel — an SVG plot of the clip's
+  GPS path with tone-colored event markers, start/end markers and
+  bounds caption. Rendered only when the source adapter provided GPS.
+- **Event categories and scene descriptions**: each event is
+  categorized (driving / parking / stationary / unknown) from the
+  dashcam mode path segment and GPS speed; events without LLM prose get
+  a deterministic scene description synthesized at render time
+  (category, speed, G-force, faces, plates, coordinates) — nothing
+  extra stored (see DESIGN.md Scene Description Strategy).
+- **Recording vs import dates**: the masthead shows the recorded time
+  (from the CX-8 filename) alongside the import time; archive imports
+  (gap > 1 day) get a warning flag, and the timeline gains an absolute
+  Recorded column.
+
+### Changed
+
+- Reports reference keyframes in `frames/<job_id>/` directly instead
+  of copying JPEGs into `job_<id>_assets/` — no duplicate assets on
+  disk; legacy already-copied paths still resolve.
 
 ### Fixed
 

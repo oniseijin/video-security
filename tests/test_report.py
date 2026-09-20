@@ -16,6 +16,7 @@ from video_security.db import (
     insert_analysis_result,
     insert_event,
     insert_frame_text,
+    insert_gps_row,
     insert_plate,
     insert_transcript_segment,
     insert_vehicle_track,
@@ -44,8 +45,9 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     cv2.imwrite(str(kf2), img)
 
     evt1_id = insert_event(
-        conn, job.id, "intrusion", 10.0, 15.0, 0, None,
+        conn, job.id, "intrusion", 10.0, 15.0, 0, 7,
         json.dumps([str(kf1), str(kf2)]), 0.85, 0.9,
+        faces_json="[[[0.1, 0.2, 0.3, 0.4]], []]",
     )
     ar_id = insert_analysis_result(
         conn, job.id, evt1_id, "md5", "v1", "detail",
@@ -59,9 +61,21 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     )
 
     insert_plate(
-        conn, job.id, 1, 0, "YOLO42", "YOLO42", 0.95, 100,
+        conn, job.id, 7, 0, "YOLO42", "YOLO42", 0.95, 100,
         json.dumps(["YOLO42"]),
     )
+    insert_plate(
+        conn, job.id, 2, 0, "習志野 れ 12-08", "習志野れ1208", 0.9, 110,
+        json.dumps(["習志野 れ 12-08"]),
+    )
+
+    for i in range(10):
+        speed = 12.0 if i < 6 else 2.0
+        insert_gps_row(
+            conn, job.id, 0, i * 2.0, 35.61 + i * 0.0001, 139.74 - i * 0.0001,
+            speed, 90.0, None, None, None,
+        )
+    conn.commit()
 
     insert_transcript_segment(
         conn, job.id, 0, 0, 5.0, 10.0, "hello world", "en",
@@ -82,15 +96,91 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert "intrusion" in content
     assert "audio_distress" in content
     assert "YOLO42" in content
+    assert "習志野" in content
+    assert "Chiba" in content
     assert "suspicious person detected" in content
     assert content.count("<table") >= 4
-    assert content.count("<img") == 2
+    assert content.count("<img") == 3
     assert 'data-theme="machine"' in content
     assert 'id="theme-toggle"' in content
     assert "subject subject--threat" in content
     assert '<tr class="row-suppressed">' not in content
-    assets = list((artifact_dir / "reports" / f"job_{job.id}_assets").iterdir())
-    assert len(assets) == 2
+    assert 'id="lightbox"' in content
+    assert "lightbox-zoom" in content
+    assert "lightbox-controls" in content
+    assert 'data-zoom="in"' in content
+    assert "cursor: zoom-in" in content
+    assert "../keyframes/kf1.jpg" in content
+    assert 'id="face-toggle"' in content
+    assert "Faces On" in content
+    assert "face-box" in content
+    assert f'href="#event-{evt1_id}"' in content
+    assert 'id="event-' in content
+    assert "RECORDED" not in content
+    assert "Archive import" not in content
+    assert "<th>Category</th>" in content
+    assert ">driving<" in content
+    assert ">stationary<" in content
+    assert "35.61050, 139.73950" in content
+    assert "gps-svg" in content
+    assert "Location Track" in content
+    assert "km/h" in content
+    assert "Vehicle stationary" in content
+    assert "Read At" in content
+    assert ">#7<" in content
+    assert "tracked vehicle ID" in content
+    assert not (artifact_dir / "reports" / f"job_{job.id}_assets").exists()
+    conn.close()
+
+
+def test_report_parking_mode_category(
+    db_and_job: tuple[sqlite3.Connection, JobRow, Path],
+) -> None:
+    conn, job, tmp_path = db_and_job
+    conn.execute(
+        "UPDATE jobs SET video_path = ? WHERE id = ?",
+        ("/clips/20260920/PARKING/front/x.MP4", job.id),
+    )
+    insert_event(
+        conn, job.id, "suspicious_behavior", 5.0, 9.0, 0, None, "[]", 0.5, 0.3,
+    )
+    conn.commit()
+    p = generate_report(conn, job.id, tmp_path / "art")
+    content = p.read_text()
+    assert ">parking<" in content
+    assert "Parked vehicle" in content
+    conn.close()
+
+
+def test_report_recording_vs_import_dates(
+    db_and_job: tuple[sqlite3.Connection, JobRow, Path],
+) -> None:
+    conn, job, tmp_path = db_and_job
+
+    kf_dir = tmp_path / "keyframes"
+    kf_dir.mkdir()
+    kf = kf_dir / "kf.jpg"
+    img = np.zeros((60, 80, 3), dtype=np.uint8)
+    cv2.imwrite(str(kf), img)
+
+    insert_event(
+        conn, job.id, "intrusion", 10.0, 15.0, 0, None,
+        json.dumps([str(kf)]), 0.85, 0.9,
+    )
+    conn.execute(
+        "UPDATE jobs SET recording_start_utc = ?, created_at = ? WHERE id = ?",
+        ("2025-08-07T03:12:52+00:00", "2026-09-20 01:51:00", job.id),
+    )
+    conn.commit()
+
+    p = generate_report(conn, job.id, tmp_path / "art")
+    content = p.read_text()
+    assert "recorded 2025-08-07 03:12 UTC" in content
+    assert "imported 2026-09-20" in content
+    assert "Archive import" in content
+    assert "days later" in content
+    assert "<th>Recorded</th>" in content
+    assert "2025-08-07 03:13:02" in content
     conn.close()
 
 

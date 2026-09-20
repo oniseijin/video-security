@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import html
 import json
-import shutil
+import math
+import os
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from video_security import db
 from video_security.fs import spotlight_ignore
+from video_security.jp_plates import ken_for_plate
 from video_security.report_theme import (
     THEME_CSS,
+    THEME_FACES_JS,
     THEME_JS,
+    THEME_LIGHTBOX_JS,
     THEME_TOGGLE_JS,
     event_tone,
 )
@@ -21,6 +27,185 @@ class ReportError(Exception):
 
 def _mmss(seconds: float) -> str:
     return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+def _parse_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _keyframe_src(path: str, reports_dir: Path) -> str:
+    src = Path(path)
+    if src.is_absolute():
+        if not src.exists():
+            return path
+        return os.path.relpath(src, reports_dir)
+    return path
+
+
+def _event_faces(evt: sqlite3.Row) -> list[list[list[float]]]:
+    if not evt["faces_json"]:
+        return []
+    try:
+        parsed = json.loads(evt["faces_json"])
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return parsed
+
+
+_DASH_MODES = {"NORMAL", "EVENT", "PARKING", "MANUAL", "PICTURE"}
+
+
+def _clip_mode(video_path: str) -> str | None:
+    for part in Path(video_path).parts:
+        if part.upper() in _DASH_MODES:
+            return part.upper()
+    return None
+
+
+def _event_category(
+    mode: str | None, gps_row: sqlite3.Row | None
+) -> str:
+    if mode == "PARKING":
+        return "parking"
+    if gps_row is not None and gps_row["speed_kmh"] is not None:
+        return "driving" if float(gps_row["speed_kmh"]) >= 5.0 else "stationary"
+    return "unknown"
+
+
+def _scene_description(
+    evt: sqlite3.Row,
+    gps_row: sqlite3.Row | None,
+    category: str,
+    face_count: int,
+    plate_texts: list[str],
+) -> str:
+    bits: list[str] = []
+    lead = {
+        "driving": "Vehicle driving",
+        "parking": "Parked vehicle",
+        "stationary": "Vehicle stationary",
+    }.get(category, "Scene")
+    bits.append(lead)
+    if gps_row is not None and gps_row["speed_kmh"] is not None:
+        bits.append(f"at {float(gps_row['speed_kmh']):.0f} km/h")
+    if evt["event_type"] in {"hard_corner", "impact", "hard_brake"} and gps_row is not None:
+        ax = gps_row["ax"]
+        ay = gps_row["ay"]
+        if ax is not None or ay is not None:
+            lateral = math.sqrt(
+                float(ax or 0.0) ** 2 + float(ay or 0.0) ** 2
+            )
+            bits.append(f"lateral {lateral:.2f}g")
+    if face_count:
+        bits.append(f"{face_count} face{'s' if face_count != 1 else ''} visible")
+    if plate_texts:
+        bits.append("plate " + ", ".join(plate_texts))
+    if gps_row is not None and gps_row["lat"] is not None:
+        bits.append(_format_coord(gps_row))
+    return " · ".join(bits)
+
+
+def _gps_track(
+    conn: sqlite3.Connection, job_id: int
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT time_sec, lat, lon, speed_kmh FROM clip_gps_data "
+        "WHERE job_id = ? AND lat IS NOT NULL AND lon IS NOT NULL "
+        "ORDER BY time_sec",
+        (job_id,),
+    ).fetchall()
+
+
+def _nearest_gps(
+    track: list[sqlite3.Row], target_sec: float
+) -> sqlite3.Row | None:
+    if not track:
+        return None
+    return min(track, key=lambda r: abs(r["time_sec"] - target_sec))
+
+
+def _format_coord(row: sqlite3.Row) -> str:
+    return f"{row['lat']:.5f}, {row['lon']:.5f}"
+
+
+def _gps_svg(
+    track: list[sqlite3.Row],
+    events: list[sqlite3.Row],
+) -> str:
+    if len(track) < 2:
+        return ""
+    lats = [float(r["lat"]) for r in track]
+    lons = [float(r["lon"]) for r in track]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    if min_lat == max_lat and min_lon == max_lon:
+        return ""
+    mean_lat_rad = math.radians((min_lat + max_lat) / 2)
+    cos_lat = abs(math.cos(mean_lat_rad))
+    w = 640.0
+    h = 240.0
+    span_x = max((max_lon - min_lon) * cos_lat, 1e-9)
+    span_y = max(max_lat - min_lat, 1e-9)
+    scale = min((w - 40) / span_x, (h - 40) / span_y)
+    ox = (w - span_x * scale) / 2
+    oy = (h - span_y * scale) / 2
+
+    def px(lon: float) -> float:
+        return ox + (lon - min_lon) * cos_lat * scale
+
+    def py(lat: float) -> float:
+        return h - (oy + (lat - min_lat) * scale)
+
+    pts = " ".join(f"{px(r['lon']):.1f},{py(r['lat']):.1f}" for r in track)
+    parts = [
+        f'<svg class="gps-svg" viewBox="0 0 {w:.0f} {h:.0f}" '
+        'role="img" aria-label="GPS track">',
+        f'<polyline points="{pts}" fill="none" stroke="currentColor" '
+        'stroke-width="1" opacity="0.45"/>',
+    ]
+    first, last = track[0], track[-1]
+    x0, y0 = px(first["lon"]) - 3, py(first["lat"]) - 3
+    x1, y1 = px(last["lon"]) - 3, py(last["lat"]) - 3
+    parts.append(
+        f'<rect x="{x0:.1f}" y="{y0:.1f}" width="6" height="6" '
+        'fill="none" stroke="currentColor"/>'
+    )
+    parts.append(
+        f'<rect x="{x1:.1f}" y="{y1:.1f}" width="6" height="6" '
+        'stroke="none" fill="currentColor"/>'
+    )
+    for evt in events:
+        gps = _nearest_gps(track, float(evt["start_sec"]))
+        if gps is None:
+            continue
+        tone = event_tone(evt["event_type"])
+        cx, cy = px(gps["lon"]), py(gps["lat"])
+        title = (
+            f"<title>{html.escape(evt['event_type'])} @ "
+            f"{_mmss(evt['start_sec'])} — {html.escape(_format_coord(gps))}"
+            "</title>"
+        )
+        parts.append(
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="4" '
+            f'class="gps-dot gps-dot--{tone}">{title}</circle>'
+        )
+    parts.append("</svg>")
+    caption = (
+        f"bounds {min_lat:.5f}&ndash;{max_lat:.5f} N, "
+        f"{min_lon:.5f}&ndash;{max_lon:.5f} E &middot; "
+        "start square &middot; end filled &middot; markers = events"
+    )
+    return "".join(parts) + f'<p class="note">{caption}</p>'
 
 
 def _event_description(conn: sqlite3.Connection, evt: sqlite3.Row) -> str:
@@ -41,54 +226,19 @@ def _event_description(conn: sqlite3.Connection, evt: sqlite3.Row) -> str:
 
 def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -> Path:
     job_row = conn.execute(
-        "SELECT id, video_path, status, created_at FROM jobs WHERE id = ?", (job_id,)
+        "SELECT id, video_path, status, created_at, recording_start_utc "
+        "FROM jobs WHERE id = ?",
+        (job_id,),
     ).fetchone()
     if job_row is None:
         raise ReportError(f"job {job_id} not found")
 
     out_dir = artifact_dir / "reports"
     spotlight_ignore(out_dir)
-    asset_dir = out_dir / f"job_{job_id}_assets"
-    asset_dir.mkdir(parents=True, exist_ok=True)
 
     events = conn.execute(
         "SELECT * FROM events WHERE job_id = ? ORDER BY start_sec", (job_id,)
     ).fetchall()
-
-    copied: dict[str, str] = {}
-    for evt in events:
-        kf_json = evt["keyframes_json"]
-        if kf_json == "[]":
-            continue
-        try:
-            paths: list[str] = json.loads(kf_json)
-        except (json.JSONDecodeError, TypeError):
-            paths = []
-        new_paths: list[str] = []
-        for p in paths:
-            if p in copied:
-                new_paths.append(copied[p])
-                continue
-            src = Path(p)
-            if not src.exists():
-                new_paths.append(p)
-                continue
-            dst_name = f"evt{evt['id']}_{src.name}"
-            dst = asset_dir / dst_name
-            try:
-                shutil.copy2(src, dst)
-            except OSError:
-                new_paths.append(p)
-                continue
-            rel = f"job_{job_id}_assets/{dst_name}"
-            copied[p] = rel
-            new_paths.append(rel)
-        if new_paths != paths:
-            conn.execute(
-                "UPDATE events SET keyframes_json = ? WHERE id = ?",
-                (json.dumps(new_paths), evt["id"]),
-            )
-    conn.commit()
 
     event_types: dict[str, int] = {}
     status_counts: dict[str, int] = {}
@@ -116,6 +266,35 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
         "SELECT COUNT(*) as cnt FROM frames WHERE job_id = ?", (job_id,)
     ).fetchone()["cnt"] or 0
 
+    has_faces = any(any(f for f in _event_faces(evt)) for evt in events)
+    face_button = (
+        '<button id="face-toggle" class="face-toggle" type="button" '
+        'aria-pressed="true">Faces On</button>'
+        if has_faces
+        else ""
+    )
+
+    recorded_dt = _parse_utc(job_row["recording_start_utc"])
+    imported_dt = _parse_utc(str(job_row["created_at"]))
+    meta_bits = [html.escape(job_row["status"])]
+    if recorded_dt is not None:
+        meta_bits.append(f"recorded {recorded_dt:%Y-%m-%d %H:%M} UTC")
+    if imported_dt is not None:
+        meta_bits.append(f"imported {imported_dt:%Y-%m-%d}")
+    meta_line = " &middot; ".join(meta_bits)
+    archive_flag = ""
+    if (
+        recorded_dt is not None
+        and imported_dt is not None
+        and imported_dt - recorded_dt > timedelta(days=1)
+    ):
+        days = (imported_dt - recorded_dt).days
+        archive_flag = (
+            '<p class="flag">Archive import &middot; recorded '
+            f"{recorded_dt:%Y-%m-%d} &middot; imported {imported_dt:%Y-%m-%d}"
+            f" &middot; {days} days later</p>"
+        )
+
     parts: list[str] = [
         "<!DOCTYPE html>",
         '<html lang="en" data-theme="machine">',
@@ -129,12 +308,12 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
         '<header class="masthead">',
         '<span class="rec-dot" aria-hidden="true"></span>',
         f'<span class="masthead-title">Video Surveillance // Job {job_row["id"]}</span>',
-        '<span class="masthead-meta">'
-        f"{html.escape(job_row['status'])} &middot; {html.escape(job_row['created_at'])}"
-        "</span>",
+        f'<span class="masthead-meta">{meta_line}</span>',
         '<button id="theme-toggle" class="theme-toggle" type="button" role="switch" '
         'aria-label="Toggle Machine/Samaritan theme">Machine</button>',
+        face_button,
         "</header>",
+        archive_flag,
         f'<p class="filepath">{html.escape(job_row["video_path"])}</p>',
     ]
 
@@ -162,10 +341,41 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
 
     parts.append('<section class="panel">')
     parts.append("<h2>Timeline</h2>")
+    gps_track = _gps_track(conn, job_id)
+    clip_mode = _clip_mode(str(job_row["video_path"]))
+    plates_by_track: dict[int, list[str]] = {}
+    for pr in plate_rows:
+        plates_by_track.setdefault(int(pr["track_id"]), []).append(
+            str(pr["norm_text"] or "")
+        )
+    event_meta: dict[int, tuple[str, str]] = {}
+    for evt in events:
+        gps = _nearest_gps(gps_track, float(evt["start_sec"])) if gps_track else None
+        category = _event_category(clip_mode, gps)
+        description = _event_description(conn, evt)
+        if not description:
+            face_count = sum(len(f) for f in _event_faces(evt))
+            plate_texts = (
+                plates_by_track.get(int(evt["track_id"]), [])
+                if evt["track_id"] is not None
+                else []
+            )
+            description = _scene_description(evt, gps, category, face_count, plate_texts)
+        event_meta[int(evt["id"])] = (description, category)
+    head_cells = ["<th>Start</th>", "<th>End</th>"]
+    if recorded_dt is not None:
+        head_cells.append("<th>Recorded</th>")
+    head_cells.append("<th>Type</th>")
+    head_cells.append("<th>Category</th>")
+    head_cells.append("<th>Id</th>")
+    head_cells.append('<th class="num">Priority</th>')
+    head_cells.append('<th class="num">Score</th>')
+    head_cells.append("<th>Status</th>")
+    if gps_track:
+        head_cells.append("<th>Location</th>")
+    head_cells.append("<th>Description</th>")
     parts.append(
-        '<table class="data-table"><tr><th>Start</th><th>End</th><th>Type</th>'
-        "<th>Id</th><th class=\"num\">Priority</th><th class=\"num\">Score</th>"
-        "<th>Status</th><th>Description</th></tr>"
+        '<table class="data-table"><tr>' + "".join(head_cells) + "</tr>"
     )
     for evt in events:
         tone = (
@@ -173,22 +383,45 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
             if evt["status"] == "suppressed"
             else event_tone(evt["event_type"])
         )
-        description = _event_description(conn, evt)
+        description, category = event_meta.get(
+            int(evt["id"]), ("", "unknown")
+        )
+        recorded_cell = ""
+        if recorded_dt is not None:
+            at = recorded_dt + timedelta(seconds=float(evt["start_sec"]))
+            recorded_cell = f"<td>{at:%Y-%m-%d %H:%M:%S}</td>"
+        gps = _nearest_gps(gps_track, float(evt["start_sec"])) if gps_track else None
+        location_cell = ""
+        if gps_track:
+            location_cell = (
+                f"<td>{html.escape(_format_coord(gps))}</td>" if gps else "<td></td>"
+            )
         parts.append(
             f"<tr class=\"row-{tone}\">"
             f"<td>{_mmss(evt['start_sec'])}</td><td>{_mmss(evt['end_sec'])}</td>"
+            f"{recorded_cell}"
             f"<td>{html.escape(evt['event_type'])}</td>"
+            f"<td>{html.escape(category)}</td>"
             f"<td>{evt['id']}</td>"
             f"<td class=\"num\">{evt['priority']}</td>"
             f"<td class=\"num\">{evt['detector_score']:.3f}</td>"
             f"<td>{html.escape(evt['status'])}</td>"
+            f"{location_cell}"
             f"<td>{html.escape(description)}</td>"
             f"</tr>"
         )
     parts.append("</table></section>")
 
+    gps_map = _gps_svg(gps_track, events)
+    if gps_map:
+        parts.append('<section class="panel">')
+        parts.append("<h2>Location Track</h2>")
+        parts.append(gps_map)
+        parts.append("</section>")
+
     parts.append('<section class="panel">')
     parts.append("<h2>Keyframes</h2>")
+    fps = db.clip_fps(conn, job_id)
     for evt in events:
         kf_json = evt["keyframes_json"]
         if kf_json == "[]":
@@ -199,20 +432,51 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
             continue
         if not paths:
             continue
-        description = _event_description(conn, evt)
+        description, _category = event_meta.get(
+            int(evt["id"]), (_event_description(conn, evt), "unknown")
+        )
         tone = event_tone(evt["event_type"])
+        faces = _event_faces(evt)
+        face_count = sum(len(f) for f in faces)
         designation = f"{evt['event_type']} // {_mmss(evt['start_sec'])}"
+        if face_count:
+            designation += f" // {face_count} face" + ("s" if face_count != 1 else "")
         caption = html.escape(
             f"Event {evt['id']}: {evt['event_type']}"
             + (f" — {description}" if description else "")
         )
-        parts.append(f'<figure class="subject subject--{tone}">')
+        parts.append(f'<figure class="subject subject--{tone}" id="event-{evt["id"]}">')
         parts.append(
             f'<span class="designation">{html.escape(designation)}</span>'
         )
-        for p in paths:
-            if "/" in p or "\\" in p:
-                parts.append(f"<img src=\"{html.escape(p, quote=False)}\" alt=\"{caption}\">")
+        for i, p in enumerate(paths):
+            if "/" not in p and "\\" not in p:
+                continue
+            src = _keyframe_src(p, out_dir)
+            boxes = faces[i] if i < len(faces) else []
+            if boxes:
+                parts.append('<div class="kf-wrap">')
+                parts.append(
+                    f"<img src=\"{html.escape(src, quote=False)}\" alt=\"{caption}\">"
+                )
+                for box in boxes:
+                    x, y, w, h = (
+                        float(box[0]),
+                        float(box[1]),
+                        float(box[2]),
+                        float(box[3]),
+                    )
+                    parts.append(
+                        '<span class="face-box" style="'
+                        f"left: {x * 100:.1f}%; top: {y * 100:.1f}%; "
+                        f"width: {w * 100:.1f}%; height: {h * 100:.1f}%;"
+                        '"></span>'
+                    )
+                parts.append("</div>")
+            else:
+                parts.append(
+                    f"<img src=\"{html.escape(src, quote=False)}\" alt=\"{caption}\">"
+                )
         parts.append(f"<figcaption>{caption}</figcaption>")
         parts.append("</figure>")
     parts.append("")
@@ -221,29 +485,67 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
     parts.append("<h2>Plates</h2>")
     if plate_rows:
         for pr in plate_rows:
-            parts.append(
+            ken = ken_for_plate(pr["raw_text"] or "") or ken_for_plate(
+                pr["norm_text"] or ""
+            )
+            ken_str = (
+                f" &middot; {html.escape(ken[0])} ({html.escape(ken[1])})"
+                if ken
+                else ""
+            )
+            target = db.nearest_event_to_seconds(
+                conn, job_id, pr["track_id"], (pr["best_frame"] or 0) / fps
+            )
+            chip_body = (
                 '<span class="chip chip--plate">'
                 f"{html.escape(pr['norm_text'] or '')} &middot; raw "
                 f"{html.escape(pr['raw_text'] or '')} &middot; conf "
-                f"{pr['confidence']:.2f}</span>"
+                f"{pr['confidence']:.2f}{ken_str}</span>"
             )
+            if target is not None:
+                parts.append(
+                    f'<a href="#event-{target["id"]}">{chip_body}</a>'
+                )
+            else:
+                parts.append(chip_body)
         parts.append("")
         parts.append(
-            '<table class="data-table"><tr><th>Norm</th><th>Raw</th>'
+            '<table class="data-table"><tr><th>Plate</th><th>Raw</th>'
+            "<th>Ken</th>"
             '<th class="num">Confidence</th>'
-            "<th class=\"num\">Best Frame</th><th class=\"num\">Track</th></tr>"
+            "<th class=\"num\">Read At</th><th class=\"num\">Vehicle</th></tr>"
         )
         for pr in plate_rows:
+            ken = ken_for_plate(pr["raw_text"] or "") or ken_for_plate(
+                pr["norm_text"] or ""
+            )
+            ken_cell = f"{ken[0]} ({ken[1]})" if ken else ""
+            target = db.nearest_event_to_seconds(
+                conn, job_id, pr["track_id"], (pr["best_frame"] or 0) / fps
+            )
+            read_at = _mmss((pr["best_frame"] or 0) / fps) if fps else "—"
+            norm_cell = (
+                f'<a href="#event-{target["id"]}" title="jump to event">'
+                f"{html.escape(pr['norm_text'] or '')}</a>"
+                if target is not None
+                else html.escape(pr["norm_text"] or "")
+            )
             parts.append(
                 f"<tr>"
-                f"<td>{html.escape(pr['norm_text'] or '')}</td>"
+                f"<td>{norm_cell}</td>"
                 f"<td>{html.escape(pr['raw_text'] or '')}</td>"
+                f"<td>{html.escape(ken_cell)}</td>"
                 f"<td class=\"num\">{pr['confidence']}</td>"
-                f"<td class=\"num\">{pr['best_frame']}</td>"
-                f"<td class=\"num\">{pr['track_id']}</td>"
+                f"<td class=\"num\" title=\"frame {pr['best_frame']}\">{read_at}</td>"
+                f"<td class=\"num\">#{pr['track_id']}</td>"
                 f"</tr>"
             )
         parts.append("</table>")
+        parts.append(
+            '<p class="note">Read At = timestamp of the clearest OCR read '
+            '(hover for frame number) &middot; Vehicle = tracked vehicle ID '
+            "within the clip &middot; click a plate to jump to its event</p>"
+        )
     else:
         parts.append("<p>No plates detected.</p>")
     parts.append("</section>")
@@ -293,6 +595,22 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
         "local analysis &middot; no data leaves this machine</footer>"
     )
     parts.append(f"<script>{THEME_TOGGLE_JS}</script>")
+    if has_faces:
+        parts.append(f"<script>{THEME_FACES_JS}</script>")
+    parts.append(
+        '<div id="lightbox" class="lightbox" aria-hidden="true">'
+        '<div class="lightbox-frame">'
+        '<div class="lightbox-zoom"><img alt=""></div>'
+        '<div class="lightbox-controls">'
+        '<button type="button" data-zoom="out" aria-label="Zoom out">-</button>'
+        '<span class="lb-level">100%</span>'
+        '<button type="button" data-zoom="in" aria-label="Zoom in">+</button>'
+        '<button type="button" data-zoom="reset" aria-label="Reset zoom">Reset</button>'
+        '</div>'
+        '<p class="lightbox-caption"></p>'
+        '</div></div>'
+    )
+    parts.append(f"<script>{THEME_LIGHTBOX_JS}</script>")
     parts.append("</div>")
     parts.append("</body></html>")
 
