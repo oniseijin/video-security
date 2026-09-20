@@ -773,9 +773,11 @@ Not in scope for current phases; captured so the intent isn't lost.
 - **Richer report regeneration**: `vs report` renders from the DB alone
   (events, plates, tracks, GPS, transcripts, keyframes are all persisted),
   so reports can be re-rendered with more sophistication at any time
-  without re-analysis. Shipped already: zoomable lightbox with face-box
-  preservation, GPS Location Track panel, event categories + deterministic
-  scene descriptions, recording-vs-import flags. Remaining ideas:
+  without re-analysis. Shipped already: zoomable lightbox (all images)
+  with face-box preservation, interactive Leaflet Location Track with
+  SVG fallback + reverse-geocoded places, event categories +
+  deterministic scene descriptions, recording-vs-import flags, linked
+  timeline/driving-log/plate navigation. Remaining ideas:
   timeline scrubbing with a keyframe filmstrip, side-by-side front/rear
   pair playback, plate gallery across jobs, night-mode/CLAHE comparison
   toggles.
@@ -783,12 +785,14 @@ Not in scope for current phases; captured so the intent isn't lost.
   catalog — job list with status/filters, event timeline browsing, plate
   and dangerous-driving search, report viewing. Read-mostly; the CLI
   remains the writer, so the app can stay a thin viewer. Reuses the
-  `--vs-*` theme tokens from `report_theme.py`. Data-model notes for
+  `--vs-*` theme tokens from `report_theme.py` and the Leaflet/CARTO
+  map layer from the report's Location Track. Data-model notes for
   the UI: distinguish recording date (from dashcam filenames) from
   import date everywhere (timelines, day grouping, navigation);
   surface the event category (driving/parking/stationary) as a filter;
   GPS panels are adapter-dependent (CX-8 only) and must degrade
-  gracefully; plates link to events via track_id.
+  gracefully; plates link to events via track_id; reverse-geocoded
+  place names come from the `gps_reverse_geocode` cache table.
 - **Face highlighting**: face detection (Apple Vision
   `VNDetectFaceRectanglesRequest` — the pyobjc dependency is already
   present) with boxes drawn on keyframes and face counts as event

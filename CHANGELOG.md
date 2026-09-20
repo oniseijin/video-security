@@ -39,9 +39,21 @@ follow semantic versioning.
   clearest OCR read) and Vehicle (tracked vehicle ID) — with an
   explanatory note.
 - **GPS in reports**: Location column in the timeline (coordinates at
-  event time) and a Location Track panel — an SVG plot of the clip's
-  GPS path with tone-colored event markers, start/end markers and
-  bounds caption. Rendered only when the source adapter provided GPS.
+  event time) and a Location Track panel — an interactive Leaflet map
+  (dark CARTO tiles in Machine mode, light in Samaritan, swapped with
+  the theme) with the GPS trace, tone-colored event markers and
+  popups; falls back to the offline SVG plot when tiles are
+  unavailable. Rendered only when the source adapter provided GPS.
+- **Reverse geocoding**: with `[report] reverse_geocode = true`
+  (default), report generation resolves GPS coordinates to place
+  descriptions via OpenStreetMap Nominatim (rate-limited, cached in
+  the DB, coordinates-only) — shown in the Location column and the
+  track caption, with coordinates preserved on hover/fallback.
+- **Linked navigation**: timeline rows link to their event captures
+  below; driving-log vehicles link to their first event with readable
+  active windows (timestamps, frame spans on hover) instead of raw
+  frame numbers; plate table rows link to events. Lightbox zoom now
+  applies to every image in the report, not just keyframes.
 - **Event categories and scene descriptions**: each event is
   categorized (driving / parking / stationary / unknown) from the
   dashcam mode path segment and GPS speed; events without LLM prose get

@@ -84,6 +84,9 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     insert_vehicle_track(
         conn, job.id, 1, 0, 0, 100, 0.3, "E",
     )
+    insert_vehicle_track(
+        conn, job.id, 7, 0, 0, 350, None, "E",
+    )
 
     insert_frame_text(
         conn, job.id, 0, 50, "SOME TEXT", "signage", None, 0.8,
@@ -129,6 +132,15 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert "Read At" in content
     assert ">#7<" in content
     assert "tracked vehicle ID" in content
+    assert '<th class="num">Vehicle</th>' in content
+    assert "<th>Active</th>" in content
+    assert 'title="frames 0-100"' in content
+    assert "0:00&ndash;0:03" in content
+    assert f'<a href="#event-{evt1_id}" title="view capture">{evt1_id}</a>' in content
+    assert 'id="gps-map"' in content
+    assert 'id="gps-data"' in content
+    assert "leaflet@1.9.4" in content
+    assert "nominatim" not in content
     assert not (artifact_dir / "reports" / f"job_{job.id}_assets").exists()
     conn.close()
 

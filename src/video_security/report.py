@@ -8,7 +8,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from video_security import db
+from video_security import db, geo
 from video_security.fs import spotlight_ignore
 from video_security.jp_plates import ken_for_plate
 from video_security.report_theme import (
@@ -16,6 +16,7 @@ from video_security.report_theme import (
     THEME_FACES_JS,
     THEME_JS,
     THEME_LIGHTBOX_JS,
+    THEME_MAP_JS,
     THEME_TOGGLE_JS,
     event_tone,
 )
@@ -224,7 +225,12 @@ def _event_description(conn: sqlite3.Connection, evt: sqlite3.Row) -> str:
     return str(resp.get("description", ""))
 
 
-def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -> Path:
+def generate_report(
+    conn: sqlite3.Connection,
+    job_id: int,
+    artifact_dir: Path,
+    geocode: bool = False,
+) -> Path:
     job_row = conn.execute(
         "SELECT id, video_path, status, created_at, recording_start_utc "
         "FROM jobs WHERE id = ?",
@@ -362,6 +368,15 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
             )
             description = _scene_description(evt, gps, category, face_count, plate_texts)
         event_meta[int(evt["id"])] = (description, category)
+    captured_ids: set[int] = set()
+    for evt in events:
+        kf_json = evt["keyframes_json"]
+        try:
+            kf_paths = json.loads(kf_json) if kf_json else []
+        except (json.JSONDecodeError, TypeError):
+            kf_paths = []
+        if any("/" in p or "\\" in p for p in kf_paths):
+            captured_ids.add(int(evt["id"]))
     head_cells = ["<th>Start</th>", "<th>End</th>"]
     if recorded_dt is not None:
         head_cells.append("<th>Recorded</th>")
@@ -393,16 +408,34 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
         gps = _nearest_gps(gps_track, float(evt["start_sec"])) if gps_track else None
         location_cell = ""
         if gps_track:
-            location_cell = (
-                f"<td>{html.escape(_format_coord(gps))}</td>" if gps else "<td></td>"
-            )
+            if gps is None:
+                location_cell = "<td></td>"
+            else:
+                coord = _format_coord(gps)
+                label = coord
+                if geocode and gps["lat"] is not None and gps["lon"] is not None:
+                    place = geo.reverse_geocode(
+                        conn, float(gps["lat"]), float(gps["lon"])
+                    )
+                    if place:
+                        label = place
+                location_cell = (
+                    f'<td title="{html.escape(coord)}">'
+                    f"{html.escape(label)}</td>"
+                )
+        id_cell = (
+            f'<a href="#event-{evt["id"]}" title="view capture">'
+            f"{evt['id']}</a>"
+            if int(evt["id"]) in captured_ids
+            else str(evt["id"])
+        )
         parts.append(
             f"<tr class=\"row-{tone}\">"
             f"<td>{_mmss(evt['start_sec'])}</td><td>{_mmss(evt['end_sec'])}</td>"
             f"{recorded_cell}"
             f"<td>{html.escape(evt['event_type'])}</td>"
             f"<td>{html.escape(category)}</td>"
-            f"<td>{evt['id']}</td>"
+            f"<td>{id_cell}</td>"
             f"<td class=\"num\">{evt['priority']}</td>"
             f"<td class=\"num\">{evt['detector_score']:.3f}</td>"
             f"<td>{html.escape(evt['status'])}</td>"
@@ -413,10 +446,65 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
     parts.append("</table></section>")
 
     gps_map = _gps_svg(gps_track, events)
-    if gps_map:
+    if gps_track:
         parts.append('<section class="panel">')
         parts.append("<h2>Location Track</h2>")
+        map_events = []
+        for evt in events:
+            gps = _nearest_gps(gps_track, float(evt["start_sec"]))
+            if gps is None:
+                continue
+            map_events.append(
+                {
+                    "lat": float(gps["lat"]),
+                    "lon": float(gps["lon"]),
+                    "type": str(evt["event_type"]),
+                    "time": _mmss(evt["start_sec"]),
+                    "tone": event_tone(evt["event_type"]),
+                }
+            )
+        payload = json.dumps(
+            {
+                "points": [
+                    {
+                        "lat": float(r["lat"]),
+                        "lon": float(r["lon"]),
+                    }
+                    for r in gps_track
+                ],
+                "events": map_events,
+            }
+        )
+        parts.append('<div id="gps-map" class="gps-map"></div>')
+        parts.append(
+            f'<script type="application/json" id="gps-data">{payload}</script>'
+        )
+        parts.append(
+            '<link rel="stylesheet" '
+            'href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">'
+        )
+        parts.append(
+            '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">'
+            "</script>"
+        )
+        parts.append(f"<script>{THEME_MAP_JS}</script>")
         parts.append(gps_map)
+        parts.append('<p class="note gps-fallback-note">SVG fallback —'
+            " map tiles unavailable (offline)</p>")
+        if geocode and len(gps_track) >= 2:
+            first, last = gps_track[0], gps_track[-1]
+            start_place = geo.reverse_geocode(
+                conn, float(first["lat"]), float(first["lon"])
+            )
+            end_place = geo.reverse_geocode(
+                conn, float(last["lat"]), float(last["lon"])
+            )
+            if start_place or end_place:
+                parts.append(
+                    '<p class="note">'
+                    f"start: {html.escape(start_place or '—')} &middot; "
+                    f"end: {html.escape(end_place or '—')}</p>"
+                )
         parts.append("</section>")
 
     parts.append('<section class="panel">')
@@ -572,20 +660,48 @@ def generate_report(conn: sqlite3.Connection, job_id: int, artifact_dir: Path) -
     parts.append("<h2>Driving Log</h2>")
     if vehicle_tracks:
         parts.append(
-            '<table class="data-table"><tr><th class="num">Track</th>'
-            "<th>First-Last Frame</th>"
+            '<table class="data-table"><tr><th class="num">Vehicle</th>'
+            "<th>Active</th>"
             "<th>Direction</th><th class=\"num\">Weaving Score</th></tr>"
         )
         for vt in vehicle_tracks:
+            linked = db.events_for_plate(conn, job_id, int(vt["track_id"]))
+            first_s = int(vt["first_frame"]) / fps
+            last_s = int(vt["last_frame"]) / fps
+            if not linked:
+                linked = [
+                    e
+                    for e in events
+                    if float(e["start_sec"]) <= last_s and float(e["end_sec"]) >= first_s
+                ]
+            active = f"{_mmss(first_s)}&ndash;{_mmss(last_s)}"
+            if linked:
+                target = linked[0]
+                veh_cell = (
+                    f'<a href="#event-{target["id"]}" '
+                    f'title="frames {vt["first_frame"]}-{vt["last_frame"]}">'
+                    f"#{vt['track_id']}</a>"
+                )
+            else:
+                veh_cell = (
+                    f'<span title="frames {vt["first_frame"]}-{vt["last_frame"]}">'
+                    f"#{vt['track_id']}</span>"
+                )
+            weaving = f"{vt['weaving_score']:.2f}" if vt["weaving_score"] is not None else "—"
             parts.append(
                 f"<tr>"
-                f"<td class=\"num\">{vt['track_id']}</td>"
-                f"<td>{vt['first_frame']}-{vt['last_frame']}</td>"
-                f"<td>{html.escape(vt['direction'] or '')}</td>"
-                f"<td class=\"num\">{vt['weaving_score']}</td>"
+                f'<td class="num">{veh_cell}</td>'
+                f'<td class="num">{active}</td>'
+                f"<td>{html.escape(vt['direction'] or '—')}</td>"
+                f"<td class=\"num\">{weaving}</td>"
                 f"</tr>"
             )
         parts.append("</table>")
+        parts.append(
+            '<p class="note">Vehicle = tracked vehicle ID (hover for frame span)'
+            " &middot; click to jump to its first event &middot; "
+            "Active = when the vehicle was in view</p>"
+        )
     else:
         parts.append("<p>No driving events.</p>")
     parts.append("</section>")

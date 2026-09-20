@@ -114,6 +114,11 @@ class ThreatConfig:
 
 
 @dataclasses.dataclass
+class ReportConfig:
+    reverse_geocode: bool = True
+
+
+@dataclasses.dataclass
 class CameraOverrides:
     osd_mask: list[list[int]] = dataclasses.field(default_factory=list)
     after_hours: list[str] = dataclasses.field(default_factory=list)
@@ -177,6 +182,7 @@ class Config:
     prefilter: PrefilterConfig = dataclasses.field(default_factory=PrefilterConfig)
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
     threat: ThreatConfig = dataclasses.field(default_factory=ThreatConfig)
+    report: ReportConfig = dataclasses.field(default_factory=ReportConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:

@@ -310,7 +310,8 @@ def report_cmd(
     init_db(conn)
     try:
         path = generate_report(
-            conn, job_id, Path(cfg.storage.artifact_dir).expanduser()
+            conn, job_id, Path(cfg.storage.artifact_dir).expanduser(),
+            geocode=cfg.report.reverse_geocode,
         )
         print(path)
     except ReportError as e:
