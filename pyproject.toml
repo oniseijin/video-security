@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-security"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local, resumable security camera footage analysis CLI"
 requires-python = ">=3.12"
 dependencies = [
@@ -27,6 +27,7 @@ vs-search = "video_security.entries:search"
 vs-report = "video_security.entries:report"
 vs-list = "video_security.entries:list_jobs"
 vs-serve = "video_security.entries:serve"
+vs-backfill-media = "video_security.entries:backfill_media"
 
 [dependency-groups]
 dev = [

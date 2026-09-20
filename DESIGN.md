@@ -1031,6 +1031,20 @@ Not in scope for current phases; captured so the intent isn't lost.
 
 ### Shipped (was future work)
 
+- **Web console** (0.3.0): `vs serve` — local read-only web UI over the
+  SQLite catalog (loopback, stdlib server, zero new Python deps):
+  dashboard, jobs/events/plates/search, dynamic report embedding,
+  filmstrip + lightbox + faces, plate gallery with crops + ken, GPS
+  Leaflet map, dual front/rear playback. React source in `web/`, built
+  bundle committed at `src/video_security/web/static/` (rebuild:
+  `npm --prefix web run build`). Full design in the Web Console
+  section, including v2 evolution notes.
+- **Report polish** (0.3.0): keyframe filmstrip scrubbing in the web
+  console event view, side-by-side front/rear pair playback with event
+  ticks, plate gallery across jobs, night raw/enhanced toggle.
+- **Plate crops on disk** (0.3.0): per-plate crop JPEGs at analysis time
+  (`plates/<job_id>/track_<id>.jpg`, q85, 15% padding) +
+  `vs backfill-media` OCR text-locate backfill for pre-crop jobs.
 - **POI theming, dual polarity, lightbox zoom** (0.2.0): Machine dark /
   Samaritan light toggle; zoomable lightbox on every image with
   wheel/pan/controls and face-box preservation; Faces On/Off toggle.

@@ -6,6 +6,65 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-21
+
+### Added
+
+- **Web console (`vs serve`)**: local read-only web UI at
+  `http://127.0.0.1:8377` — loopback only, no auth, stdlib HTTP server
+  with zero new Python dependencies. React + Vite + TypeScript app
+  (source in `web/`, built bundle committed at
+  `src/video_security/web/static/`, Node is dev-only):
+  - Dashboard: job stats, active-job progress, import history, storage,
+    recent-events Leaflet map
+  - Jobs list with status/mode/channel/date/query filters + pagination
+    (URL-param filters)
+  - Job detail with tabbed navigation; the Report tab embeds the
+    on-demand dynamic report render (same renderer as `vs report`,
+    cache-only geocoding, media served from the artifact disk)
+  - Native events browser (cross-job, category/type/status filters) and
+    event detail with a scrubbable keyframe filmstrip, face-box
+    overlays, a faithful lightbox port (wheel zoom toward cursor, pan,
+    +/−/reset, double-click, arrow-key navigation), plate crops + ken,
+    transcript window, and vehicle-track context with strip frames
+  - Plate gallery grouped by plate with crops, sightings across jobs,
+    and per-plate detail pages; grouped search (FTS5 scene text, plates,
+    transcripts, event types)
+  - GPS map tab (Leaflet, CARTO tiles with optional
+    `[map] carto_api_key`, theme-reactive tile swap, SVG offline
+    fallback) and dual front/rear synchronized playback with a
+    tone-colored event-tick timeline (MP4 HTTP Range streaming)
+  - Front/rear pair resolution via `sessions` and recording-timestamp
+    fallback
+- **Plate crops on disk**: analysis now persists per-plate crop JPEGs
+  (`plates/<job_id>/track_<id>.jpg`, quality 85, 15% padding) from the
+  upscaled OCR crop; `plates.crop_path` column. `vs backfill-media`
+  re-locates plates in pre-crop jobs by decoding the best frame and
+  OCR text-matching (idempotent, failures logged and skipped)
+- **Track strips**: up to 5 evenly spaced frames per vehicle track
+  (`frames/<job_id>/track_<id>_<i>.jpg`, `vehicle_tracks.strip_json`)
+  so vehicles can be traced beyond the event window
+- **Night raw keyframes**: night/IR clips additionally store
+  un-enhanced `event_<id>_<i>_raw.jpg` keyframes (bounded dual JPEG
+  cache) for the web console's RAW/ENHANCED toggle; `vs report` output
+  unchanged
+- Schema: `plates.crop_path`, `vehicle_tracks.strip_json`
+  (idempotent migrations), five query indexes (events by job/start and
+  type, plates by norm, jobs by status and import)
+- `vs-serve` and `vs-backfill-media` entry points; `[web] host/port`
+  and `[map] carto_api_key` config sections
+
+### Changed
+
+- `report.py` split into `render_report_html` (returns HTML; supports
+  `geocode_network=False` cache-only mode, `media_base` URL rewriting,
+  `embed` chrome suppression) + `generate_report` wrapper — CLI report
+  output unchanged. Category/scene-description logic extracted to
+  `enrich.py`, shared with the web API
+- `report_theme.THEME_CSS` split into `SHARED_CSS + REPORT_CSS` with
+  the token values defined once in a `TOKENS` dict (single source for
+  the exported `vs-theme.css` + `tokens.json` the React app consumes)
+
 ## [0.2.0] - 2026-09-20
 
 ### Added

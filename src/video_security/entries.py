@@ -47,5 +47,9 @@ def serve() -> None:
     _run("serve")
 
 
+def backfill_media() -> None:
+    _run("backfill-media")
+
+
 def list_jobs() -> None:
     _run("list")

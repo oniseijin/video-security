@@ -348,6 +348,26 @@ def serve_cmd(
     web_serve(cfg, host=host, port=port, open_browser=open_browser)
 
 
+@app.command(name="backfill-media")
+def backfill_media_cmd(
+    ctx: typer.Context,
+    limit: int | None = typer.Option(None, "--limit", help="Max plates to process"),  # noqa: B008
+) -> None:
+    from video_security.backfill import backfill_plate_crops
+
+    conn, cfg = _get_db(ctx)
+    try:
+        report = backfill_plate_crops(conn, cfg, limit=limit)
+        print(
+            f"plate crops: attempted {report.attempted}, written {report.written}, "
+            f"skipped {report.skipped}, failed {report.failed}"
+        )
+        for failure in report.failures:
+            print(f"  {failure}")
+    finally:
+        conn.close()
+
+
 def _rerun_llm_only(
     conn: sqlite3.Connection, cfg: Config, max_llm_events: int | None
 ) -> None:
