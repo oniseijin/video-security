@@ -1,0 +1,244 @@
+.app-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+
+.app-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  display: flex;
+}
+
+.search-box input {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+  color: var(--vs-ink);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+  border-right: none;
+  padding: 0.2rem 0.6rem;
+  width: 10rem;
+}
+
+.search-box input:focus {
+  outline: none;
+  border-color: var(--vs-accent);
+}
+
+.search-box button,
+.app-btn {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+  color: var(--vs-ink-dim);
+  background: transparent;
+  border: 1px solid var(--vs-line);
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+
+.search-box button:hover,
+.app-btn:hover:not(:disabled) {
+  color: var(--vs-accent);
+  border-color: var(--vs-accent);
+}
+
+.app-btn:disabled {
+  color: var(--vs-ink-faint);
+  border-style: dashed;
+  cursor: default;
+}
+
+.app-nav {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--vs-line);
+  padding-top: 0.75rem;
+}
+
+.app-nav-link {
+  font-family: var(--vs-font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+  color: var(--vs-ink-dim);
+  text-decoration: none;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid transparent;
+}
+
+.app-nav-link:hover {
+  color: var(--vs-accent);
+}
+
+.app-nav-link.active {
+  color: var(--vs-accent);
+  border-color: var(--vs-accent);
+}
+
+.breadcrumbs {
+  display: flex;
+  gap: 0.4rem;
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--vs-ink-faint);
+  padding: 0.6rem 0;
+}
+
+.breadcrumbs a {
+  color: var(--vs-ink-dim);
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  color: var(--vs-accent);
+}
+
+.crumb {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.crumb-current {
+  color: var(--vs-ink);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--vs-line-faint);
+  border: 1px solid var(--vs-line);
+}
+
+.stat {
+  background: var(--vs-bg);
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stat-value {
+  font-family: var(--vs-font-mono);
+  font-size: 1.375rem;
+  color: var(--vs-ink);
+}
+
+.stat-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--vs-ink-dim);
+}
+
+.active-line {
+  font-family: var(--vs-font-mono);
+  font-size: 0.8125rem;
+  margin: 0.25rem 0 0;
+}
+
+.path-note {
+  font-family: var(--vs-font-mono);
+  font-size: 0.75rem;
+  color: var(--vs-ink-dim);
+  word-break: break-all;
+  margin: 0.5rem 0 0;
+}
+
+.progress {
+  height: 10px;
+  border: 1px solid var(--vs-line);
+  background: var(--vs-surface-1);
+  margin: 0.5rem 0;
+}
+
+.progress-fill {
+  height: 100%;
+}
+
+.progress-fill--storage {
+  background: var(--vs-success);
+}
+
+.terminal--threat {
+  border-color: var(--vs-threat);
+  color: var(--vs-threat);
+}
+
+.terminal--threat .prompt {
+  color: var(--vs-threat);
+}
+
+.filter-bar {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-bar label {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--vs-ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.filter-bar select,
+.filter-bar input {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  color: var(--vs-ink);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+  padding: 0.2rem 0.4rem;
+}
+
+.filter-bar input {
+  width: 9rem;
+}
+
+.chip-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+
+.chip-row .chip {
+  margin: 0 0.25rem 0 0;
+}
+
+.job-link {
+  color: var(--vs-info);
+  text-decoration: none;
+}
+
+.job-link:hover {
+  color: var(--vs-accent);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.pager-info {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  color: var(--vs-ink-dim);
+  text-transform: uppercase;
+}

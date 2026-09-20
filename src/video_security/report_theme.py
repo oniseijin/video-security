@@ -1,6 +1,66 @@
 from __future__ import annotations
 
-SHARED_CSS = """
+TOKENS: dict[str, dict[str, str]] = {
+    "machine": {
+        "bg": "#000000",
+        "surface-1": "rgba(255, 255, 255, 0.04)",
+        "surface-2": "rgba(255, 255, 255, 0.07)",
+        "line": "#aaa3a3",
+        "line-faint": "rgba(170, 163, 163, 0.35)",
+        "ink": "#ffffff",
+        "ink-dim": "rgba(255, 255, 255, 0.6)",
+        "ink-faint": "rgba(255, 255, 255, 0.35)",
+        "accent": "#ff0000",
+        "threat": "var(--vs-accent)",
+        "asset": "#ffffff",
+        "info": "rgba(20, 140, 252, 0.9)",
+        "success": "rgba(71, 255, 86, 0.85)",
+        "warning": "#ffc400",
+        "selection-bg": "rgba(134, 0, 0, 0.6)",
+        "selection-ink": "rgba(255, 0, 0, 0.95)",
+        "frame-edge": "transparent",
+        "frame-glow": "drop-shadow(0 0 6px var(--tone, var(--vs-ink)))",
+        "face-glow": "0 0 6px rgba(255, 255, 255, 0.7)",
+        "reticle": "none",
+        "rec-glow": "0 0 12px var(--vs-accent)",
+        "scanline-opacity": "1",
+    },
+    "samaritan": {
+        "bg": "#ffffff",
+        "surface-1": "rgba(0, 0, 0, 0.04)",
+        "surface-2": "rgba(0, 0, 0, 0.06)",
+        "line": "rgba(0, 0, 0, 0.45)",
+        "line-faint": "rgba(0, 0, 0, 0.18)",
+        "ink": "#000000",
+        "ink-dim": "rgba(0, 0, 0, 0.55)",
+        "ink-faint": "rgba(0, 0, 0, 0.35)",
+        "accent": "#e8000d",
+        "threat": "var(--vs-accent)",
+        "asset": "#000000",
+        "info": "var(--vs-ink)",
+        "success": "var(--vs-ink)",
+        "warning": "var(--vs-accent)",
+        "selection-bg": "var(--vs-accent)",
+        "selection-ink": "#ffffff",
+        "frame-edge": "var(--vs-line)",
+        "frame-glow": "none",
+        "face-glow": "none",
+        "reticle": "block",
+        "rec-glow": "none",
+        "scanline-opacity": "0",
+    },
+}
+
+
+def _theme_block(selector: str, scheme: str, tokens: dict[str, str]) -> str:
+    lines = [selector + " {", f"  color-scheme: {scheme};"]
+    lines.extend(f"  --vs-{name}: {value};" for name, value in tokens.items())
+    lines.append("}")
+    return "\n".join(lines)
+
+
+SHARED_CSS = (
+    """
 /* Person-of-Interest surveillance theme: dual polarity.
    MACHINE (dark, default): white + neon red on black, glowing corner brackets.
    SAMARITAN (light): black + crisp red on white, hairline edge + reticle.
@@ -10,58 +70,11 @@ SHARED_CSS = """
    Framework-free modern CSS; the same tokens carry to the future web UI. */
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-:root,
-html[data-theme='machine'] {
-  color-scheme: dark;
-  --vs-bg: #000000;
-  --vs-surface-1: rgba(255, 255, 255, 0.04);
-  --vs-surface-2: rgba(255, 255, 255, 0.07);
-  --vs-line: #aaa3a3;
-  --vs-line-faint: rgba(170, 163, 163, 0.35);
-  --vs-ink: #ffffff;
-  --vs-ink-dim: rgba(255, 255, 255, 0.6);
-  --vs-ink-faint: rgba(255, 255, 255, 0.35);
-  --vs-accent: #ff0000;
-  --vs-threat: var(--vs-accent);
-  --vs-asset: #ffffff;
-  --vs-info: rgba(20, 140, 252, 0.9);
-  --vs-success: rgba(71, 255, 86, 0.85);
-  --vs-warning: #ffc400;
-  --vs-selection-bg: rgba(134, 0, 0, 0.6);
-  --vs-selection-ink: rgba(255, 0, 0, 0.95);
-  --vs-frame-edge: transparent;
-  --vs-frame-glow: drop-shadow(0 0 6px var(--tone, var(--vs-ink)));
-  --vs-face-glow: 0 0 6px rgba(255, 255, 255, 0.7);
-  --vs-reticle: none;
-  --vs-rec-glow: 0 0 12px var(--vs-accent);
-  --vs-scanline-opacity: 1;
-}
-
-html[data-theme='samaritan'] {
-  color-scheme: light;
-  --vs-bg: #ffffff;
-  --vs-surface-1: rgba(0, 0, 0, 0.04);
-  --vs-surface-2: rgba(0, 0, 0, 0.06);
-  --vs-line: rgba(0, 0, 0, 0.45);
-  --vs-line-faint: rgba(0, 0, 0, 0.18);
-  --vs-ink: #000000;
-  --vs-ink-dim: rgba(0, 0, 0, 0.55);
-  --vs-ink-faint: rgba(0, 0, 0, 0.35);
-  --vs-accent: #e8000d;
-  --vs-threat: var(--vs-accent);
-  --vs-asset: #000000;
-  --vs-info: var(--vs-ink);
-  --vs-success: var(--vs-ink);
-  --vs-warning: var(--vs-accent);
-  --vs-selection-bg: var(--vs-accent);
-  --vs-selection-ink: #ffffff;
-  --vs-frame-edge: var(--vs-line);
-  --vs-frame-glow: none;
-  --vs-face-glow: none;
-  --vs-reticle: block;
-  --vs-rec-glow: none;
-  --vs-scanline-opacity: 0;
-}
+"""
+    + _theme_block(":root,\nhtml[data-theme='machine']", "dark", TOKENS["machine"])
+    + "\n\n"
+    + _theme_block("html[data-theme='samaritan']", "light", TOKENS["samaritan"])
+    + """
 
 :root {
   --vs-font-display: 'Barlow Semi Condensed', system-ui, -apple-system, sans-serif;
@@ -435,7 +448,7 @@ a.chip:hover { border-color: var(--vs-accent); color: var(--vs-accent); }
   .gps-svg { display: block; }
   .data-table td, .subject figcaption, .filepath { color: #000; }
 }
-"""
+""")
 
 REPORT_CSS = """.wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
 .filepath {

@@ -13,6 +13,7 @@ Silicon. Cheap-first pipeline: dedup → prefilter → LLM triage → detail.
 - No comments unless asked
 - Minimal token output — direct answers, no explanations
 - Plan mode enforced: never make edits in plan mode
+- Rebuild the web bundle (`npm --prefix web run build`) after touching web/
 
 ## Commands
 
