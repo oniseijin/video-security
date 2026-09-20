@@ -712,4 +712,19 @@ new work. Default: 30 days.
 - Dedup fixture with burned-in OSD timestamp overlay.
 - Per-stage perf benchmark tests with throughput floors.
 - Simulated low-disk test: breaker fires, job checkpoints, `--resume` completes.
+
+## Future Work
+
+Not in scope for current phases; captured so the intent isn't lost.
+
+- **Richer report regeneration**: `vs report` renders from the DB alone
+  (events, plates, tracks, GPS, transcripts, keyframes are all persisted),
+  so reports can be re-rendered with more sophistication at any time
+  without re-analysis. Ideas: timeline scrubbing with keyframe filmstrip,
+  map view of GPS/G-force events, side-by-side front/rear pair playback,
+  plate gallery across jobs, night-mode/CLAHE comparison toggles.
+- **Web app for tracking**: a full local web UI over the same SQLite
+  catalog — job list with status/filters, event timeline browsing, plate
+  and dangerous-driving search, report viewing. Read-mostly; the CLI
+  remains the writer, so the app can stay a thin viewer.
 - Memory-pressure test: detail falls back to 4B model.
