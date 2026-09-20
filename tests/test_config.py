@@ -14,9 +14,11 @@ from video_security.config import (
     GsensConfig,
     ImportConfig,
     LLMStageConfig,
+    MapConfig,
     MazdaCx8Config,
     PrefilterConfig,
     StorageConfig,
+    WebConfig,
     WhisperConfig,
     load_config,
 )
@@ -71,6 +73,13 @@ def test_defaults() -> None:
     assert isinstance(cfg.prefilter, PrefilterConfig)
     assert cfg.prefilter.scene_text_sample_sec == 30
 
+    assert isinstance(cfg.map, MapConfig)
+    assert cfg.map.carto_api_key is None
+
+    assert isinstance(cfg.web, WebConfig)
+    assert cfg.web.host == "127.0.0.1"
+    assert cfg.web.port == 8377
+
 
 def test_toml_override_deep_merge(tmp_path: Path) -> None:
     toml_file = tmp_path / "config.toml"
@@ -94,6 +103,25 @@ hard_brake_g = 0.50
     assert cfg.adapter_mazda_cx8.gsens.hard_brake_g == 0.50
     assert cfg.adapter_mazda_cx8.gsens.hard_corner_g == 0.30  # not overridden
     assert cfg.adapter_mazda_cx8.timezone == "Asia/Tokyo"  # not overridden
+
+
+def test_map_and_web_config(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("""\
+[map]
+carto_api_key = "cb1_test_key"
+
+[web]
+port = 9000
+""")
+    cfg = load_config(toml_file)
+    assert cfg.map.carto_api_key == "cb1_test_key"
+    assert cfg.web.port == 9000
+    assert cfg.web.host == "127.0.0.1"  # not overridden
+
+    defaults = load_config()
+    assert defaults.map.carto_api_key is None
+    assert defaults.web.port == 8377
 
 
 def test_unknown_keys_ignored(tmp_path: Path) -> None:

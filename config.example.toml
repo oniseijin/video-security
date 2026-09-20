@@ -74,3 +74,10 @@ merge_gap_sec = 5
 intrusion = 0.9
 loitering = 0.6
 suspicious_behavior = 0.5
+
+[map]
+# carto_api_key = "cb1_..."  (optional — unlocks CARTO basemap features/higher tile limits; local config only)
+
+[web]
+host = "127.0.0.1"
+port = 8377

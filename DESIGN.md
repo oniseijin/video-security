@@ -348,6 +348,9 @@ sessions(
 
 **Removed from plan**: paddleocr (~1 GB saved), separate bytetrack, openai-whisper.
 
+**Web console (Phase 3)**: no new Python runtime deps (stdlib HTTP server).
+Node + npm are dev-only requirements for building the committed React bundle.
+
 ---
 
 ## Hardware Constraints
@@ -465,6 +468,16 @@ intrusion = 0.9
 loitering = 0.6
 suspicious_behavior = 0.5
 
+[report]
+reverse_geocode = true                              # OSM Nominatim, cached in gps_reverse_geocode
+
+[map]
+carto_api_key = null                                # optional CARTO basemap key — local config only, never committed
+
+[web]
+host = "127.0.0.1"                                  # vs serve binding (loopback only)
+port = 8377
+
 [audio]
 rms_window_ms = 100                                # RMS analysis window
 rms_sustain_ms = 500                               # min sustained duration for loud events
@@ -574,6 +587,8 @@ vs-search "ABC1234"              FTS5 search across all captured text
 vs-search --kind dangerous       find dangerous driving events
 vs-report <job-id>               generate human-readable report
 vs-list                         list all jobs with status
+vs-serve                        local web console (read-only viewer, 127.0.0.1)
+vs-backfill-media               regenerate plate crops for pre-crop jobs
 ```
 
 ---
@@ -650,6 +665,244 @@ First import target: existing archive at `/Volumes/lacie8/Ryan/video/CX-8/`
 
 Loop-recording makes frequent imports matter: the card is always near-full, so
 the oldest clips are always at risk of overwrite.
+
+---
+
+## Web Console (Phase 3)
+
+Local web UI over the same SQLite catalog — the only interface necessary
+to see all the reports. Read-only viewer; the CLI remains the only writer.
+Built by sub-agents in 10 phases (implementation plan at the end of this
+section). Absorbs the former future-work items: report polish (filmstrip
+scrubbing, front/rear pair playback, plate gallery, night raw toggle) and
+plate crops on disk.
+
+### Serving
+
+- `vs serve [--port N] [--host H] [--open]` — Python stdlib
+  `ThreadingHTTPServer`, zero new runtime deps (no FastAPI, no ORM — raw
+  `sqlite3` like the rest of the codebase)
+- 127.0.0.1 only, default port 8377 (`[web] host/port`), no auth — a
+  loopback read-only viewer, stated plainly at startup
+- One sqlite3 connection per thread: `file:...?mode=ro` +
+  `PRAGMA query_only=ON` + `busy_timeout=5000`. WAL readers coexist with
+  a live analyzer run. Startup opens one short read-write connection to
+  run idempotent `init_db` migrations, then closes it
+- Module layout: `web/server.py` (regex router, static bundle, SPA
+  fallback) · `web/api.py` (endpoints as `(conn, cfg, params) -> dict`
+  — no HTTP types, testable without sockets) · `web/media.py` (artifact
+  mounts, traversal guard, Range streaming) · `web/static/` (committed
+  React bundle)
+
+### Frontend
+
+- React + Vite + TypeScript; built bundle **committed to the repo**
+  (`web/` source, `src/video_security/web/static/` output). Node is
+  dev-only — `install.sh` stays pure pip. Rebuild:
+  `npm --prefix web run build` (theme export wired as `prebuild`)
+- Runtime deps: react, react-dom, react-router-dom,
+  @tanstack/react-query, leaflet. Filters live in URL search params
+  (shareable, back-button correct); dashboard polls `/api/stats` every
+  5 s — no SSE in v1
+- Routes: `/` dashboard (stats, import history, storage, active-job
+  progress, recent-events map) · `/jobs` filterable paginated list ·
+  `/jobs/:id` tabbed detail · `/jobs/:id/events/:eid` event detail ·
+  `/jobs/:id/tracks/:tid` track detail · `/events` cross-job browser ·
+  `/plates` + `/plates/:norm` gallery · `/search`
+- Recording date (not import date) is the primary label everywhere;
+  import date is secondary — same convention as the reports
+
+### Report serving (dynamic, on demand)
+
+- `report.py` splits: `render_report_html(conn, job_id, artifact_dir,
+  *, geocode, geocode_network=True, media_base=None, embed=False)
+  -> str`; `generate_report` wraps it — `vs report` export unchanged
+- Web route `/api/jobs/{id}/report.html` renders with
+  `geocode_network=False` (cache-only — the server never calls
+  Nominatim), `media_base="/media"` (keyframes/plates served by
+  `media.py`), `embed=True` (report masthead toggles suppressed — the
+  app shell owns them)
+- **Iframe-first with native-tab stubs**: the Report tab embeds the
+  rendered route — every current report feature works day one because
+  it is the same renderer. All native tabs (Events, Captures, Plates,
+  Tracks, Map, Transcript, Playback) ship as live stubs from day one
+  (routing + API-backed skeletons) and are promoted panel-by-panel to
+  full React implementations as each reaches parity. The Report tab
+  stays forever as the canonical full-document view and export path
+- Theme sync: iframe is same-origin and shares the `vs-theme`
+  localStorage key (no-FOUC on load); the shell `postMessage`s theme
+  changes for live swaps
+
+### Theme sharing
+
+- `report_theme.THEME_CSS` splits into `SHARED_CSS + REPORT_CSS`
+  (concatenation byte-identical — existing tests pass unchanged).
+  SHARED_CSS: tokens, fonts, body/scanlines, masthead, toggles, panel,
+  data-table, chips, terminal, subject frames, face boxes, lightbox,
+  print. REPORT_CSS: report-only layout (`.wrap`, `.filepath`,
+  `.gps-*`, footer)
+- `scripts/export_theme.py` (npm `prebuild`) emits
+  `web/src/theme/vs-theme.css` + `tokens.json` (per-theme hexes, tone
+  colors, tile URLs — single source stays `report_theme.py`; both files
+  committed so bundle consumers don't need Python)
+- `web/index.html` inlines the same no-FOUC snippet as `THEME_JS`
+
+### Map tiles (CARTO)
+
+- `[map] carto_api_key` — local config only, **never committed**.
+  Appended to `basemaps.cartocdn.com` tile URLs at render time via a
+  data attribute on the map container; the React TrackMap receives it
+  at serve time (injected into the page, never baked into the
+  committed bundle)
+- Tile keys are client-side by design; loopback-only serving keeps
+  exposure local
+
+### API surface
+
+GET-only JSON; errors `{"error": "..."}`; pagination envelope
+`{items, total, limit, offset}`; times ISO-8601 UTC; category +
+scene-description logic extracted to `enrich.py` and shared with the
+report renderer so web and CLI never diverge.
+
+| Endpoint | Returns |
+|---|---|
+| `/api/health` | version, db mode |
+| `/api/stats` | job counts by status, active-job progress, storage, import history |
+| `/api/jobs` | list w/ filters (status/mode/channel/import_id/recorded range/q) + pagination; per-job counts, `pair_job_id`, archive flag |
+| `/api/jobs/{id}` | detail: clips, pair, event_types, status_counts, has_gps/has_transcript |
+| `/api/jobs/{id}/events` | per-job events (type/category/status filters) |
+| `/api/events` | cross-job browser (category/type/status filters) |
+| `/api/events/{id}` | keyframes (+`raw_url`, faces), plates (+ken, crop_url), transcript window, track strip, location (cache-only geocode) |
+| `/api/categories` | category + event_type counts (30 s in-process cache) |
+| `/api/jobs/{id}/plates`, `/api/plates`, `/api/plates/{norm}` | reads; gallery grouped by norm_text; sightings per plate |
+| `/api/jobs/{id}/tracks` | vehicle tracks (+plate, event_ids, strip) |
+| `/api/jobs/{id}/gps` | decimated track + event markers |
+| `/api/jobs/{id}/transcript` | segments |
+| `/api/search?q=` | grouped: plates (LIKE), frame_text (FTS5), transcripts (LIKE), event types |
+| `/api/map/recent` | recent events with coords for the dashboard map |
+| `/api/jobs/{id}/report.html` | dynamic report render (above) |
+| `/media/frames/...`, `/media/plates/...` | keyframes + plate crops, traversal-guarded |
+| `/api/jobs/{id}/video?channel=` | MP4 with HTTP Range (206/416, HEAD — Safari seeking) |
+
+Front/rear pairing: `sessions.clips_json` → job by `video_path`
+(`db.get_job_by_video_path`).
+
+### Media + data changes
+
+- **Plate crops on disk**: `PlateRead.best_bbox` (normalized bbox from
+  Vision at `best_frame`); `ocr_votes_json` extends to
+  `{"votes": n, "best": {"frame": f, "bbox": [x,y,w,h]}}` (old
+  `{"votes": n}` rows remain valid). Pipeline writes
+  `plates/<job_id>/track_<id>.jpg` (JPEG q85, 15% padding) and sets
+  `plates.crop_path`. Backfill for pre-crop rows: `vs backfill-media`
+  decodes one frame at `best_frame` (ffmpeg), re-runs Vision OCR,
+  locates by text match, crops — idempotent, failures logged
+- **Night raw keyframes**: night/IR frames cache both enhanced and
+  `_raw` JPEGs during decode (bounded by `JPEG_CACHE_LIMIT`);
+  `event_<id>_<i>_raw.jpg` written when a raw exists. Raw/enhanced
+  toggle is a web feature; `vs report` output unchanged. Not
+  backfilled (frame identity not recoverable) — forward-only
+- **Track strips**: ≤5 frames evenly across
+  `[first_frame, last_frame]` → `frames/<job_id>/track_<id>_<i>.jpg`,
+  paths in `vehicle_tracks.strip_json` — trace a vehicle beyond the
+  event window
+- Schema (idempotent, `faces_json` pattern): `plates.crop_path TEXT`,
+  `vehicle_tracks.strip_json TEXT`; MIGRATIONS v3 indexes:
+  `idx_events_job_start`, `idx_events_type`, `idx_plates_norm`,
+  `idx_jobs_status`, `idx_jobs_import`
+- Retention pruning covers `plates/<job_id>/` and the new frame
+  patterns (`frames/<job_id>/` wholesale deletion already covers raw
+  + strips)
+
+```
+artifact_dir/
+  frames/<job_id>/event_<eid>_<i>.jpg        (existing)
+                  event_<eid>_<i>_raw.jpg    (new, night/ir only)
+                  track_<tid>_<i>.jpg        (new)
+  plates/<job_id>/track_<tid>.jpg            (new)
+  clips/<date>/<mode>/<channel>/*.MP4        (existing — video source)
+  reports/                                   (existing — unchanged)
+```
+
+### Playback
+
+DualPlayer: two `<video>` elements, front = master clock, rear slave
+snaps back if |Δ| > 0.25 s (4 Hz corrector). Shared timeline scrubber
+with tone-colored event ticks + keyframe filmstrip. Rear-missing jobs
+degrade to a single player.
+
+### Sub-agent implementation plan
+
+Each phase lands on a green suite (`ruff` + `mypy` + `pytest`) and is a
+self-contained sub-agent task with explicit acceptance criteria.
+
+| # | Phase | Scope + acceptance |
+|---|---|---|
+| 1 | Report render refactor | `render_report_html` extracted (CLI output byte-identical); `enrich.py` owns clip_mode/event_category/scene_description/nearest_gps/gps_track/format_coord/event_description; THEME_CSS split (concat identical); `media_base`/`embed`/`geocode_network` params; cache-only geocode path. Accept: suite green; `vs-dev report` diff identical; old `{"votes": n}` rows still parse |
+| 2 | Schema + analysis-time media | `crop_path` + `strip_json` + `best_bbox` + `ocr_votes_json` extension + MIGRATIONS v3; pipeline writes plate crops, night `_raw`, track strips; retention covers new paths. Accept: idempotent double-init test; real analyze run produces crops/strips/raw |
+| 3 | `vs serve` skeleton | server.py + router + static + SPA fallback + readonly thread-local conns; `/api/health` + `/api/stats`; `vs serve` CLI + entries + pyproject script. Accept: HTTP smoke tests (health 200; `GET /../` → 404; ro conn rejects writes); serves alongside a live analyze run |
+| 4 | Full read API + media | all endpoints above; media.py mounts + Range streaming; report.html route; pair resolution. Accept: seeded-DB endpoint tests; exact `Content-Range` bytes asserted; Japanese search; embed report uses `/media/frames/...` and has no toggle buttons |
+| 5 | React scaffold + theme | Vite+TS+React app; `export_theme.py` prebuild; committed bundle; shell (masthead, ThemeToggle, FacesToggle); Dashboard; `/jobs` list. Accept: clean-checkout build serves at `/`; theme toggle survives reload, no FOUC; `--vs-*` tokens resolve in devtools |
+| 6 | Job detail + report tab + stubs | tab bar; Report tab = iframe (`embed=1`); `#event-N` passthrough; postMessage theme sync; ALL native tabs present as live stubs. Accept: every report feature works inside the app; stubs render API-backed skeletons |
+| 7 | Native events/captures/tracks | Events browser (cross-job filters); EventDetail w/ Filmstrip scrubber + FaceBoxes + React Lightbox port + plates/crops + transcript window + track context; TrackDetail; night RawToggle. Accept: keyboard scrub; face boxes align at all zooms incl. after RawToggle; category counts match `/api/categories` |
+| 8 | Playback + map | DualPlayer sync + shared scrubber w/ event ticks; React TrackMap (theme tiles, CARTO key from serve-time injection, SVG offline fallback). Accept: Safari + Chrome seek (proves Range); drift < 0.25 s; offline → SVG fallback |
+| 9 | Plates gallery + search + dashboard map | `/plates` grouped gallery + `/plates/:norm` sightings; `/search` grouped deep links; dashboard recent-events map. Accept: Japanese query finds plates + scene text; all existing plates grouped; markers link to events |
+| 10 | Backfill + docs + release | `vs backfill-media` (idempotent, OCR text-locate); README + AGENTS.md web sections; CHANGELOG; 0.3.0 + install.sh refresh. Accept: backfill crops ≥80% of existing plates; installed `vs serve` works; `vs report` unchanged |
+
+### Resolved decisions
+
+Committed bundle (Node dev-only) · iframe-first with native-tab stubs →
+incremental React migration · read-only web v1 · polling not SSE ·
+cache-only geocode from the server · no raw-night backfill · port 8377 ·
+stdlib server · plate crops at analysis time + text-locate backfill ·
+track strips as new artifacts.
+
+### v2 thoughts (future evolution)
+
+Direction notes for after v1 ships — not committed work.
+
+**Fully dynamic report (React composition).** v1's iframe report is the
+migration scaffold. Suggested ordering:
+
+1. v1 phases 7-9 already promote the panels (Events, EventDetail,
+   Captures, Plates, Tracks, Map, Playback) to native React alongside
+   the iframe
+2. After Phase 9, compose a native Report view from the promoted
+   panels behind a config toggle (`[web] native_report`), keeping the
+   iframe as fallback — A/B the two while parity is verified
+3. Parity checklist before native becomes default: lightbox zoom/pan +
+   face boxes at all zoom levels, ken chips, theme tile swap,
+   transcript terminal, cross-link navigation, print/export
+4. `report.py` stays the renderer for `vs report` and the dynamic
+   `/report.html` route forever — the export path never depends on
+   React
+5. The iframe route remains afterward for deep links and print;
+   deprecate only if maintaining both proves costlier than it saves
+
+Supporting migrations when volume justifies them: persist event
+category at write time (today computed per request + 30 s cache),
+transcript FTS5, residual plate-crop backfill retries.
+
+**When to switch to FastAPI.** The stdlib server is a deliberate v1
+constraint, not a destination. Swap triggers — any one suffices:
+
+- Writes from the UI (reviewed/resolved flags, re-run buttons) —
+  mutation endpoints want real validation and test ergonomics
+- Live progress via SSE/WebSocket (tailing a running analyze) — when
+  5 s polling stops being enough
+- Auth (LAN access, tokens) — never hand-roll auth
+- Route count keeps growing (watchers, upload import)
+
+The swap is cheap by design: `web/api.py` endpoints are pure
+`(conn, cfg, params) -> dict` functions with no HTTP types — moving
+them behind FastAPI routers is mechanical, no logic rewrite. The
+failure mode to avoid is swapping early: stdlib keeps the installer
+dependency-free while the API surface is still moving.
+
+**Other v2 candidates** (each a deliberate decision, not a default):
+live analyze dispatch from the UI (web becomes a writer — must
+coordinate with the single-writer rule), raw/enhanced toggle in
+`vs report` export, multi-day trip views, notification digests.
 
 ---
 
@@ -770,25 +1023,11 @@ new work. Default: 30 days.
 
 Not in scope for current phases; captured so the intent isn't lost.
 
-- **Web app for tracking**: a full local web UI over the same SQLite
-  catalog — job list with status/filters, event timeline browsing, plate
-  and dangerous-driving search, report viewing. Read-mostly; the CLI
-  remains the writer, so the app can stay a thin viewer. Reuses the
-  `--vs-*` theme tokens from `report_theme.py` and the Leaflet/CARTO
-  map layer from the report's Location Track. Data-model notes for
-  the UI: distinguish recording date (from dashcam filenames) from
-  import date everywhere (timelines, day grouping, navigation);
-  surface the event category (driving/parking/stationary) as a filter;
-  GPS panels are adapter-dependent (CX-8 only) and must degrade
-  gracefully; plates link to events via track_id; reverse-geocoded
-  place names come from the `gps_reverse_geocode` cache table.
-- **Report polish**: timeline scrubbing with a keyframe filmstrip,
-  side-by-side front/rear pair playback, plate gallery across jobs,
-  night-mode/CLAHE comparison toggles.
-- **Plate crops on disk**: persist per-plate crop images at analysis
-  time so reports and the web UI can show the exact plate crop inline
-  (currently only the event keyframes exist).
 - Memory-pressure test: detail falls back to 4B model.
+- Transcript FTS5 index (volume too low to bother yet).
+- Web console writes (e.g. reviewed/resolved event flags) — v1 is
+  read-only by design; any write path is a deliberate later decision
+  (see Web Console → v2 thoughts).
 
 ### Shipped (was future work)
 

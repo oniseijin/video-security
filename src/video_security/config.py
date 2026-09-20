@@ -119,6 +119,17 @@ class ReportConfig:
 
 
 @dataclasses.dataclass
+class MapConfig:
+    carto_api_key: str | None = None
+
+
+@dataclasses.dataclass
+class WebConfig:
+    host: str = "127.0.0.1"
+    port: int = 8377
+
+
+@dataclasses.dataclass
 class CameraOverrides:
     osd_mask: list[list[int]] = dataclasses.field(default_factory=list)
     after_hours: list[str] = dataclasses.field(default_factory=list)
@@ -183,6 +194,8 @@ class Config:
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
     threat: ThreatConfig = dataclasses.field(default_factory=ThreatConfig)
     report: ReportConfig = dataclasses.field(default_factory=ReportConfig)
+    map: MapConfig = dataclasses.field(default_factory=MapConfig)
+    web: WebConfig = dataclasses.field(default_factory=WebConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:
@@ -327,4 +340,8 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                 kwargs["threat"] = _merge_dataclass(config.threat, values, "threat")
         elif section == "prefilter":
             kwargs["prefilter"] = _merge_dataclass(config.prefilter, values, "prefilter")
+        elif section == "map":
+            kwargs["map"] = _merge_dataclass(config.map, values, "map")
+        elif section == "web":
+            kwargs["web"] = _merge_dataclass(config.web, values, "web")
     return dataclasses.replace(config, **kwargs)
