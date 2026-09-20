@@ -12,7 +12,7 @@ function EventLink({ jobId, eventId, tone }: { jobId: number; eventId: number; t
     <Link
       className="event-id"
       style={{ color: toneColor(tone) }}
-      to={`/jobs/${jobId}/report?event=${eventId}`}
+      to={`/jobs/${jobId}/events/${eventId}`}
     >
       #{eventId}
     </Link>
@@ -76,7 +76,9 @@ export function EventsTab({ jobId }: { jobId: number }) {
           ))}
         </tbody>
       </table>
-      <TerminalNote>filmstrip + lightbox arrive in phase 7</TerminalNote>
+      <TerminalNote>
+        click an event id to open the filmstrip + lightbox view
+      </TerminalNote>
     </section>
   )
 }

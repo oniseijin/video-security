@@ -135,7 +135,7 @@ export interface EventSummary {
 export interface EventKeyframe {
   url: string
   raw_url: string | null
-  faces: number[][][]
+  faces: number[][]
 }
 
 export interface EventPlate {
@@ -153,12 +153,43 @@ export interface PlateRow extends EventPlate {
   read_at_sec: number | null
 }
 
+export interface EventTrack {
+  track_id: number
+  first_sec: number | null
+  last_sec: number | null
+  weaving_score: number | null
+  direction: string | null
+  strip: string[]
+}
+
+export interface EventLocation {
+  lat: number
+  lon: number
+  speed_kmh: number | null
+  label: string | null
+}
+
 export interface EventDetail extends EventSummary {
   clip_id: number
   track_id: number | null
   keyframes: EventKeyframe[]
   plates: EventPlate[]
   transcript_window: TranscriptSegment[]
+  track: EventTrack | null
+  location: EventLocation | null
+  links: { report: string }
+}
+
+export interface EventsPage {
+  items: EventSummary[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CategoriesPayload {
+  categories: Record<string, number>
+  types: Record<string, number>
 }
 
 export interface JobEventsPage {
@@ -228,6 +259,14 @@ export function fetchJobEvents(id: number): Promise<JobEventsPage> {
 
 export function fetchEventDetail(id: number): Promise<EventDetail> {
   return fetchJson<EventDetail>(`/api/events/${id}`)
+}
+
+export function fetchEventsPage(params: URLSearchParams): Promise<EventsPage> {
+  return fetchJson<EventsPage>(`/api/events?${params.toString()}`)
+}
+
+export function fetchCategories(): Promise<CategoriesPayload> {
+  return fetchJson<CategoriesPayload>("/api/categories")
 }
 
 export function fetchJobPlates(id: number): Promise<JobPlatesPage> {
