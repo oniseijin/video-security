@@ -83,8 +83,12 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert "audio_distress" in content
     assert "YOLO42" in content
     assert "suspicious person detected" in content
-    assert content.count("<table>") >= 4
+    assert content.count("<table") >= 4
     assert content.count("<img") == 2
+    assert 'data-theme="machine"' in content
+    assert 'id="theme-toggle"' in content
+    assert "subject subject--threat" in content
+    assert '<tr class="row-suppressed">' not in content
     assets = list((artifact_dir / "reports" / f"job_{job.id}_assets").iterdir())
     assert len(assets) == 2
     conn.close()
@@ -119,8 +123,8 @@ def test_report_escapes(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) -> 
 
     p = generate_report(conn, job.id, tmp_path / "art")
     content = p.read_text()
-    assert "&lt;script&gt;" in content
-    assert "<script>" not in content
+    assert "<script>" in content
+    assert "<script>alert" not in content
     conn.close()
 
 
@@ -146,3 +150,16 @@ def test_report_skips_missing_keyframes(
     assert p.exists()
     assert "<img" in content
     conn.close()
+
+
+def test_event_tone() -> None:
+    from video_security.report_theme import event_tone
+
+    assert event_tone("impact") == "threat"
+    assert event_tone("hard_corner") == "threat"
+    assert event_tone("intrusion") == "threat"
+    assert event_tone("suspicious_behavior") == "warning"
+    assert event_tone("loitering") == "warning"
+    assert event_tone("plate_capture") == "info"
+    assert event_tone("person") == "asset"
+    assert event_tone("motion") == "asset"

@@ -6,6 +6,21 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **POI-themed reports**: `vs report` now renders a Person-of-Interest
+  surveillance-style HTML report — masthead with pulsing REC dot,
+  monospace data tables, keyframes framed as targeting subjects with
+  tone-colored corner brackets and designation tags, plate chips, and a
+  transcript terminal. Dual polarity via a masthead toggle: **Machine**
+  (dark: white + neon red on black, glowing brackets, scanlines) and
+  **Samaritan** (light: black + crisp red on white, hairline edges +
+  reticle), persisted to localStorage. Theme is a self-contained
+  modern-CSS token layer (`report_theme.py`), framework-free, and
+  carries forward to the future web UI. Design language adapted from
+  the MIT-licensed poi-web-ui (Krisztián Kis) and positronick-ui
+  (Nicholas Sollazzo).
+
 ### Fixed
 
 - Fresh installs crashed on the first tracked clip with

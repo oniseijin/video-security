@@ -511,6 +511,35 @@ cleanly. `--resume` after remount.
 
 ---
 
+## Theming (Person of Interest design language)
+
+Reports and the future web UI share one visual language, adapted from
+two MIT-licensed references — poi-web-ui (Krisztián Kis, Phresh-IT) and
+positronick-ui (Nicholas Sollazzo) — rewritten as framework-free modern
+CSS custom properties in `report_theme.py`.
+
+- **Two polarities**, one token layer, switched by `data-theme` on the
+  root element:
+  - **Machine** (dark, default): black surface, white ink, neon-red
+    accent `#ff0000` with glow emphasis, graph-paper-free flat black,
+    subtle scanlines, pulsing REC dot.
+  - **Samaritan** (light): white surface, black ink, crisp red
+    `#e8000d` without glow; strictly monochrome (info/success collapse
+    to ink, warning to accent). Hairline frame edges + center reticle
+    instead of glowing corner brackets.
+- **Type**: Barlow Semi Condensed (display, uppercase, 0.08em
+  tracking) + JetBrains Mono (data) via Google Fonts with system
+  fallbacks.
+- **Geometry**: 0px radius, hairline borders, monospace data rows.
+- **Subject frames**: keyframes framed as targets — corner brackets
+  tinted by event tone (threat red, warning amber, info blue, asset
+  white) with a designation tag straddling the top edge.
+- **Accessibility**: `prefers-reduced-motion` disables the pulse;
+  print stylesheet flattens to black-on-white and hides the toggle.
+- The static report embeds the CSS + a tiny vanilla-JS toggle
+  (localStorage persistence, no-FOUC restore). The future web UI
+  reuses the same `--vs-*` tokens.
+
 ## CLI
 
 ```
