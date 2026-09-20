@@ -176,27 +176,51 @@ def _faces_list(evt: sqlite3.Row) -> list[list[list[float]]]:
     return out
 
 
-def _pair_job_id(conn: sqlite3.Connection, job_id: int) -> int | None:
+def _session_paths(raw: str) -> list[str]:
+    try:
+        entries = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(entries, list):
+        return []
+    out: list[str] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            out.append(entry)
+        elif isinstance(entry, dict) and isinstance(entry.get("path"), str):
+            out.append(entry["path"])
+    return out
+
+
+def pair_job_id(conn: sqlite3.Connection, job_id: int) -> int | None:
     row = conn.execute(
         "SELECT clips_json FROM sessions WHERE job_id = ?", (job_id,)
     ).fetchone()
-    if row is None:
+    if row is not None:
+        for path in _session_paths(row["clips_json"]):
+            other = conn.execute(
+                "SELECT id FROM jobs WHERE video_path = ?", (path,)
+            ).fetchone()
+            if other is not None and int(other["id"]) != job_id:
+                return int(other["id"])
+    me = conn.execute(
+        "SELECT video_path, recording_start_utc FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    if me is None or me["recording_start_utc"] is None:
         return None
-    try:
-        paths = json.loads(row["clips_json"])
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(paths, list):
-        return None
-    for path in paths:
-        if not isinstance(path, str):
-            continue
-        other = conn.execute(
-            "SELECT id FROM jobs WHERE video_path = ?", (path,)
-        ).fetchone()
-        if other is not None and int(other["id"]) != job_id:
-            return int(other["id"])
+    my_rear = "/rear/" in str(me["video_path"])
+    for cand in conn.execute(
+        "SELECT id, video_path FROM jobs WHERE recording_start_utc = ? AND id != ?",
+        (me["recording_start_utc"], job_id),
+    ):
+        cand_rear = "/rear/" in str(cand["video_path"])
+        if my_rear != cand_rear:
+            return int(cand["id"])
     return None
+
+
+def _pair_job_id(conn: sqlite3.Connection, job_id: int) -> int | None:
+    return pair_job_id(conn, job_id)
 
 
 def _plates_by_track(conn: sqlite3.Connection, job_id: int) -> dict[int, list[sqlite3.Row]]:

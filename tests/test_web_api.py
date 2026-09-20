@@ -26,6 +26,9 @@ def _seed(base: Path) -> None:
     ensure_table(conn)
     front = str(base / "clips" / "NORMAL" / "front" / "a.mp4")
     rear = str(base / "clips" / "NORMAL" / "rear" / "a.mp4")
+    session_json = json.dumps(
+        [{"channel": "front", "path": front}, {"channel": "rear", "path": rear}]
+    )
     conn.executescript(
         f"""
         INSERT INTO jobs (id, video_path, video_hash, status, recording_start_utc,
@@ -36,16 +39,19 @@ def _seed(base: Path) -> None:
         (2, '{rear}', 'h2', 'done', '2025-09-22 02:57:00', 'imp-1',
          '2025-09-22 03:00:00'),
         (3, '{base}/clips/PARKING/front/b.mp4', 'h3', 'done',
+         '2025-08-01 10:00:00', 'imp-1', '2026-09-20 01:00:00'),
+        (4, '{base}/clips/PARKING/rear/b.mp4', 'h4', 'done',
          '2025-08-01 10:00:00', 'imp-1', '2026-09-20 01:00:00');
         INSERT INTO clips (job_id, clip_id, filename, channel, priority,
                            recording_start_utc, duration_sec, lighting, has_audio)
         VALUES
         (1, 0, 'a.mp4', 'front', 0.3, '2025-09-22 02:57:00', 120.0, 'day', 1),
         (2, 0, 'a.mp4', 'rear', 0.3, '2025-09-22 02:57:00', 120.0, 'day', 1),
-        (3, 0, 'b.mp4', 'front', 0.8, '2025-08-01 10:00:00', 60.0, 'day', 1);
+        (3, 0, 'b.mp4', 'front', 0.8, '2025-08-01 10:00:00', 60.0, 'day', 1),
+        (4, 0, 'b.mp4', 'rear', 0.8, '2025-08-01 10:00:00', 60.0, 'day', 1);
         INSERT INTO sessions (job_id, session_id, clips_json)
-        VALUES (1, 's1', '["{front}", "{rear}"]'),
-               (2, 's1', '["{front}", "{rear}"]');
+        VALUES (1, 's1', '{session_json}'),
+               (2, 's1', '{session_json}');
         INSERT INTO events (id, job_id, event_type, start_sec, end_sec, clip_id,
                             track_id, keyframes_json, faces_json, detector_score,
                             priority, status)
@@ -130,13 +136,15 @@ def _status_of(url: str) -> tuple[int, bytes]:
 
 def test_jobs_list_and_filters(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs")
-    assert data["total"] == 3
+    assert data["total"] == 4
     by_id = {item["id"]: item for item in data["items"]}
     assert by_id[1]["channel"] == "front"
     assert by_id[1]["mode"] == "NORMAL"
     assert by_id[1]["pair_job_id"] == 2
     assert by_id[2]["pair_job_id"] == 1
     assert by_id[3]["mode"] == "PARKING"
+    assert by_id[3]["pair_job_id"] == 4
+    assert by_id[4]["pair_job_id"] == 3
     assert by_id[3]["archive"] is True
     assert by_id[1]["archive"] is False
     assert by_id[1]["has_gps"] is True
@@ -144,17 +152,17 @@ def test_jobs_list_and_filters(base_url: str) -> None:
     assert by_id[1]["counts"] == {"events": 2, "plates": 2, "faces": 1}
 
     pending = _get_json(f"{base_url}/api/jobs?mode=PARKING")
-    assert [item["id"] for item in pending["items"]] == [3]
+    assert [item["id"] for item in pending["items"]] == [4, 3]
 
     chan = _get_json(f"{base_url}/api/jobs?channel=rear")
-    assert [item["id"] for item in chan["items"]] == [2]
+    assert {item["id"] for item in chan["items"]} == {2, 4}
 
     q = _get_json(f"{base_url}/api/jobs?q=a.mp4")
     assert {item["id"] for item in q["items"]} == {1, 2}
 
     page = _get_json(f"{base_url}/api/jobs?limit=2&offset=2&sort=id&order=asc")
-    assert page["total"] == 3
-    assert [item["id"] for item in page["items"]] == [3]
+    assert page["total"] == 4
+    assert [item["id"] for item in page["items"]] == [3, 4]
 
 
 def test_job_detail(base_url: str) -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import mimetypes
 import re
 import sqlite3
@@ -8,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from video_security.config import Config
+from video_security.web.api import pair_job_id
 from video_security.web.server import ApiError, FileRange, Routes
 
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
@@ -62,26 +62,13 @@ def plate_image(
 
 
 def _pair_video_path(conn: sqlite3.Connection, job_id: int) -> str | None:
+    pair_id = pair_job_id(conn, job_id)
+    if pair_id is None:
+        return None
     row = conn.execute(
-        "SELECT clips_json FROM sessions WHERE job_id = ?", (job_id,)
+        "SELECT video_path FROM jobs WHERE id = ?", (pair_id,)
     ).fetchone()
-    if row is None:
-        return None
-    try:
-        paths = json.loads(row["clips_json"])
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(paths, list):
-        return None
-    for path in paths:
-        if not isinstance(path, str):
-            continue
-        other = conn.execute(
-            "SELECT id, video_path FROM jobs WHERE video_path = ?", (path,)
-        ).fetchone()
-        if other is not None and int(other["id"]) != job_id:
-            return str(other["video_path"])
-    return None
+    return str(row["video_path"]) if row is not None else None
 
 
 def serve_video(
