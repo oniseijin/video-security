@@ -45,6 +45,8 @@ Typical card-swap workflow: `vs import /Volumes/CX-8`, eject card, then `vs anal
 
 **Reports are on demand**: `vs analyze` never writes reports — everything lands in the DB and keyframe JPEGs under `frames/<job_id>/`. When you want to review a job, run `vs report <job-id>`, which renders `reports/job_<id>.html` from the DB without re-analyzing. Find interesting jobs with `vs list` (done status) or `vs search`, then report the ones you care about.
 
+Reports are POI-themed (Machine dark / Samaritan light toggle) with: zoomable keyframe lightbox (wheel zoom, pan, face-detection boxes), Japanese plate ken display, GPS location track (interactive Leaflet map, SVG offline fallback), reverse-geocoded place names (`[report] reverse_geocode`, default on — OSM Nominatim, cached), event categories (driving/parking/stationary), scene descriptions, recording-vs-import date flags, and cross-linked navigation (timeline → captures, plates → events, driving log → events).
+
 ### Common Flags
 
 `--stop-after 8h` `--resume` `--watch <dir>` `--only-llm` `--max-llm-events 100` `--retention-days 30` `--retention-days 0` (no cleanup). Global: `--config <path>` `--db <path>`

@@ -6,6 +6,8 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-20
+
 ### Added
 
 - **POI-themed reports**: `vs report` now renders a Person-of-Interest

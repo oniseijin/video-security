@@ -770,17 +770,6 @@ new work. Default: 30 days.
 
 Not in scope for current phases; captured so the intent isn't lost.
 
-- **Richer report regeneration**: `vs report` renders from the DB alone
-  (events, plates, tracks, GPS, transcripts, keyframes are all persisted),
-  so reports can be re-rendered with more sophistication at any time
-  without re-analysis. Shipped already: zoomable lightbox (all images)
-  with face-box preservation, interactive Leaflet Location Track with
-  SVG fallback + reverse-geocoded places, event categories +
-  deterministic scene descriptions, recording-vs-import flags, linked
-  timeline/driving-log/plate navigation. Remaining ideas:
-  timeline scrubbing with a keyframe filmstrip, side-by-side front/rear
-  pair playback, plate gallery across jobs, night-mode/CLAHE comparison
-  toggles.
 - **Web app for tracking**: a full local web UI over the same SQLite
   catalog — job list with status/filters, event timeline browsing, plate
   and dangerous-driving search, report viewing. Read-mostly; the CLI
@@ -793,15 +782,32 @@ Not in scope for current phases; captured so the intent isn't lost.
   GPS panels are adapter-dependent (CX-8 only) and must degrade
   gracefully; plates link to events via track_id; reverse-geocoded
   place names come from the `gps_reverse_geocode` cache table.
-- **Face highlighting**: face detection (Apple Vision
-  `VNDetectFaceRectanglesRequest` — the pyobjc dependency is already
-  present) with boxes drawn on keyframes and face counts as event
-  metadata. Local-only detection; no face recognition or embeddings by
-  default.
-- **Plate-to-event/frame linkage**: plates are already stored with
-  `track_id` and `best_frame`, but reports don't tie them together.
-  Link each plate read to the event(s) its track participated in and
-  to the exact keyframe it was read from — plate crops shown inline in
-  the report timeline, and `vs search <plate>` jumping to the linked
-  events.
+- **Report polish**: timeline scrubbing with a keyframe filmstrip,
+  side-by-side front/rear pair playback, plate gallery across jobs,
+  night-mode/CLAHE comparison toggles.
+- **Plate crops on disk**: persist per-plate crop images at analysis
+  time so reports and the web UI can show the exact plate crop inline
+  (currently only the event keyframes exist).
 - Memory-pressure test: detail falls back to 4B model.
+
+### Shipped (was future work)
+
+- **POI theming, dual polarity, lightbox zoom** (0.2.0): Machine dark /
+  Samaritan light toggle; zoomable lightbox on every image with
+  wheel/pan/controls and face-box preservation; Faces On/Off toggle.
+- **Face highlighting** (0.2.0): Apple Vision
+  `VNDetectFaceRectanglesRequest` on chosen keyframes, `faces_json`
+  per event, boxes over keyframes, counts in designation tags. Local
+  detection only; no recognition or embeddings.
+- **Plate-to-event linkage** (0.2.0): plates link to events via
+  `track_id` (`vs search` prints them; chips, table rows and driving-log
+  vehicles jump to event anchors); Read At timestamps replace raw
+  frame numbers.
+- **GPS location track** (0.2.0): interactive Leaflet map (theme-synced
+  CARTO tiles) with event markers and SVG offline fallback;
+  reverse-geocoded place names (Nominatim, cached).
+- **Event categories + scene descriptions** (0.2.0): driving/parking/
+  stationary from clip mode + GPS speed; deterministic scene
+  descriptions at render time for events without LLM prose.
+- **Recording vs import dates** (0.2.0): recorded time in masthead,
+  archive-import flag, absolute Recorded column in the timeline.
