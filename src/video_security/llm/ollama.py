@@ -143,6 +143,17 @@ class OllamaClient:
             f"Model {model!r} not found in Ollama tags — run: ollama pull {model}"
         )
 
+    def unload(self, model: str) -> None:
+        body = json.dumps({"model": model, "keep_alive": 0}).encode()
+        url = self.base_url + "/api/generate"
+        try:
+            req = urllib.request.Request(
+                url, data=body, headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req, timeout=self.timeout_s).read()
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+            return
+
     def health_check(self, models: list[str]) -> None:
         url = self.base_url + "/api/tags"
         try:

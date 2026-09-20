@@ -130,7 +130,6 @@ def analyze_cmd(
         _rerun_llm_only(conn, cfg, max_llm_events)
         conn.close()
         return
-
     if watch is not None and watch.is_dir():
         _watch_and_run(watch, conn, cfg, no_llm=no_llm, max_llm_events=max_llm_events)
         conn.close()
@@ -191,6 +190,9 @@ def analyze_cmd(
             except (PipelineError, OllamaError, EngineError) as e:
                 print(f"job {job.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(job.id)
+    if client is not None:
+        client.unload(cfg.llm_triage.model)
+        client.unload(cfg.llm_detail.model)
     conn.close()
 
 
@@ -398,6 +400,8 @@ def _rerun_llm_only(
             vsdb.update_event_status(conn, dr.event_id, "detailed", result_id)
         relevant_n = sum(1 for t in triaged if t.relevant)
         print(f"job {job_id}: {relevant_n} triaged, {len(detailed)} detailed")
+    client.unload(cfg.llm_triage.model)
+    client.unload(cfg.llm_detail.model)
 
 
 def _watch_and_run(
@@ -457,6 +461,9 @@ def _watch_and_run(
             except (PipelineError, OllamaError, EngineError) as e:
                 print(f"job {claimed.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(claimed.id)
+    if client is not None:
+        client.unload(cfg.llm_triage.model)
+        client.unload(cfg.llm_detail.model)
 
 
 @app.command(name="config")

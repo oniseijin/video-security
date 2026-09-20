@@ -23,6 +23,9 @@ follow semantic versioning.
     flash attention and q8_0 KV cache: per-request `num_ctx` is still
     honored and `/api/tags` digests are unchanged, so digests and
     health checks are unaffected.
+  - Models are now explicitly unloaded when an analyze run ends
+    (normal finish, Ctrl+C stop or time budget), so nothing stays
+    resident in RAM after the tool exits.
 
 ## [0.1.0] - 2026-09-20
 

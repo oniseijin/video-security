@@ -35,6 +35,21 @@ def test_generate_4xx_no_retry() -> None:
         c.generate("gemma3:4b", "hi")
 
 
+def test_unload_sends_keep_alive_zero() -> None:
+    with MockOllama() as m:
+        c = OllamaClient(base_url=m.base_url, timeout_s=5)
+        c.unload("gemma3:4b")
+        last = m.requests[-1]
+        assert last["path"] == "/api/generate"
+        assert last["body"]["model"] == "gemma3:4b"
+        assert last["body"]["keep_alive"] == 0
+
+
+def test_unload_server_down_is_silent() -> None:
+    c = OllamaClient(base_url="http://127.0.0.1:65530", timeout_s=1)
+    c.unload("gemma3:4b")
+
+
 def test_generate_json_ok() -> None:
     with MockOllama(response_text='{"relevant": true}') as m:
         c = OllamaClient(base_url=m.base_url, timeout_s=5)
