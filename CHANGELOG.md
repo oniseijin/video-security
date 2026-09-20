@@ -6,6 +6,14 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fresh installs crashed on the first tracked clip with
+  `ModuleNotFoundError: No module named 'lap'` — ultralytics needs `lap`
+  for ByteTrack but does not declare it; it is now an explicit dependency.
+- The installer's venv (uv-created) shipped without `pip`; it is now
+  seeded via `ensurepip` for manual debugging.
+
 ## [0.1.0] - 2026-09-20
 
 First working release: local, resumable CLI for overnight dashcam /

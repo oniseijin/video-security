@@ -153,6 +153,12 @@ if [ ! -x "$VENV/bin/python" ]; then
   fi
 fi
 
+if [ ! -x "$VENV/bin/pip" ]; then
+  info "seeding pip into venv"
+  "$VENV/bin/python" -m ensurepip --upgrade > /dev/null
+  [ -x "$VENV/bin/pip3" ] && ln -sf pip3 "$VENV/bin/pip"
+fi
+
 info "installing package (snapshot of current code)"
 if command -v uv >/dev/null 2>&1; then
   uv pip install --python "$VENV/bin/python" "$SCRIPT_DIR"
