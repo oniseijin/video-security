@@ -43,6 +43,8 @@ vs config                     # Show config
 
 Typical card-swap workflow: `vs import /Volumes/CX-8`, eject card, then `vs analyze` (processes all pending jobs). Archive imports work too: `vs import /Volumes/lacie8/Ryan/video/CX-8` recurses date-wrapped folders. Incremental — clips already imported (same content hash) are skipped.
 
+**Reports are on demand**: `vs analyze` never writes reports — everything lands in the DB and keyframe JPEGs under `frames/<job_id>/`. When you want to review a job, run `vs report <job-id>`, which renders `reports/job_<id>.html` from the DB without re-analyzing. Find interesting jobs with `vs list` (done status) or `vs search`, then report the ones you care about.
+
 ### Common Flags
 
 `--stop-after 8h` `--resume` `--watch <dir>` `--only-llm` `--max-llm-events 100` `--retention-days 30` `--retention-days 0` (no cleanup). Global: `--config <path>` `--db <path>`
@@ -55,7 +57,7 @@ SQLite DB at `~/.video-security/db`. Artifacts on external volume: `/Volumes/lac
 
 ## Pipeline Overview
 
-Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking → CLAHE night enhancement → YOLO/ByteTrack vehicle + plate OCR consensus (Apple Vision) + person threat scoring + 30s scene-text OCR → audio: mlx-whisper + Silero VAD + RMS loudness events → NMEA G-sensor events (Mazda CX-8) → LLM triage (gemma3:4b, single keyframe) → detail (gemma4:12b, multi-keyframe + tile escalation) → HTML report.
+Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking → CLAHE night enhancement → YOLO/ByteTrack vehicle + plate OCR consensus (Apple Vision) + person threat scoring + 30s scene-text OCR → audio: mlx-whisper + Silero VAD + RMS loudness events → NMEA G-sensor events (Mazda CX-8) → LLM triage (gemma3:4b, single keyframe) → detail (gemma4:12b, multi-keyframe + tile escalation). Reports are rendered separately on demand via `vs report`.
 
 ## Safety Rules (built-in, automatic)
 
