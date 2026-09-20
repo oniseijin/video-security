@@ -2,36 +2,46 @@ import sys
 
 from video_security.cli import app
 
+GLOBAL_FLAGS = ("--config", "--db")
+
+
+def _run(subcommand: str) -> None:
+    argv = sys.argv[1:]
+    pre: list[str] = []
+    rest: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in GLOBAL_FLAGS and i + 1 < len(argv):
+            pre.extend([arg, argv[i + 1]])
+            i += 2
+        else:
+            rest.append(arg)
+            i += 1
+    sys.argv[0] = "vs"
+    sys.argv[1:] = [*pre, subcommand, *rest]
+    app()
+
 
 def vs_main() -> None:
     app()
 
 
 def analyze() -> None:
-    sys.argv[0] = "vs"
-    sys.argv[1:1] = ["analyze"]
-    app()
+    _run("analyze")
 
 
 def import_clips() -> None:
-    sys.argv[0] = "vs"
-    sys.argv[1:1] = ["import"]
-    app()
+    _run("import")
 
 
 def search() -> None:
-    sys.argv[0] = "vs"
-    sys.argv[1:1] = ["search"]
-    app()
+    _run("search")
 
 
 def report() -> None:
-    sys.argv[0] = "vs"
-    sys.argv[1:1] = ["report"]
-    app()
+    _run("report")
 
 
 def list_jobs() -> None:
-    sys.argv[0] = "vs"
-    sys.argv[1:1] = ["list"]
-    app()
+    _run("list")

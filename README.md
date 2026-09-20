@@ -4,6 +4,19 @@ A local, resumable CLI for overnight security camera / dashcam footage analysis 
 
 ## Install
 
+Two ways:
+
+**Installer (self-contained, recommended for daily use):**
+
+```bash
+./install.sh                    # installs to ~/.local/opt/video-security
+./install.sh --artifact-dir /Volumes/x/vs   # configure for another output volume
+```
+
+Creates a venv snapshot at `~/.local/opt/video-security`, moves the catalog to `~/.local/opt/video-security/var/db` (existing `~/.video-security` DB is copied, original kept), writes `var/config.toml` pointing at the configured artifact dir, and puts `vs`, `vs-analyze`, `vs-import`, `vs-search`, `vs-report`, `vs-list` wrappers on `~/.local/bin` — all pre-configured. `vs-dev` runs the workspace copy instead. Re-run `install.sh` to upgrade (var/ is kept); `--uninstall [--purge]` removes.
+
+**Manual (dev):**
+
 Requires Python 3.12+, ffmpeg on PATH, [Ollama](https://ollama.com) running locally:
 
 ```bash
