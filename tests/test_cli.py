@@ -58,10 +58,29 @@ def test_analyze_no_llm_missing_video(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
-def test_import_stub() -> None:
-    result = runner.invoke(app, ["import", "/Volumes/CX-8"])
+def test_import_command(tmp_path: Path) -> None:
+    card = tmp_path / "card"
+    (card / "EVENT").mkdir(parents=True)
+    (card / "EVENT" / "250807121252.MP4").write_bytes(b"clip")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    cfg_file = tmp_path / "cfg.toml"
+    cfg_file.write_text(
+        f'[storage]\ndb_path = "{tmp_path / "t.db"}"\n'
+        f'artifact_dir = "{artifacts}"\n[import]\npreflight_gb = 0\n'
+    )
+    result = runner.invoke(app, ["--config", str(cfg_file), "import", str(card)])
     assert result.exit_code == 0
-    assert "not implemented" in result.stdout.lower()
+    assert "imported 1 new clips" in result.stdout
+    jobs = [p for p in artifacts.rglob("*.MP4")]
+    assert len(jobs) == 1
+
+
+def test_import_missing_source(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["--db", str(tmp_path / "t.db"), "import", str(tmp_path / "nope")]
+    )
+    assert result.exit_code == 1
 
 
 def test_search_no_query(tmp_path: Path) -> None:

@@ -235,6 +235,76 @@ def update_job_status(conn: sqlite3.Connection, job_id: int, status: str) -> Non
     conn.commit()
 
 
+def set_job_import_meta(
+    conn: sqlite3.Connection,
+    job_id: int,
+    import_id: str,
+    recording_start_utc: str | None,
+) -> None:
+    conn.execute(
+        "UPDATE jobs SET import_id = ?, recording_start_utc = ?, "
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (import_id, recording_start_utc, job_id),
+    )
+    conn.commit()
+
+
+def insert_clip(
+    conn: sqlite3.Connection,
+    job_id: int,
+    clip_id: int,
+    filename: str,
+    channel: str,
+    priority: float,
+    recording_start_utc: str | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO clips "
+        "(job_id, clip_id, filename, channel, priority, recording_start_utc) "
+        "VALUES (?,?,?,?,?,?)",
+        (job_id, clip_id, filename, channel, priority, recording_start_utc),
+    )
+    conn.commit()
+
+
+def insert_session(
+    conn: sqlite3.Connection,
+    job_id: int,
+    session_id: str,
+    clips_json: str,
+) -> None:
+    conn.execute(
+        "DELETE FROM sessions WHERE job_id = ? AND session_id = ?",
+        (job_id, session_id),
+    )
+    conn.execute(
+        "INSERT INTO sessions (job_id, session_id, clips_json) VALUES (?,?,?)",
+        (job_id, session_id, clips_json),
+    )
+    conn.commit()
+
+
+def insert_gps_row(
+    conn: sqlite3.Connection,
+    job_id: int,
+    clip_id: int,
+    time_sec: float,
+    lat: float | None,
+    lon: float | None,
+    speed_kmh: float | None,
+    bearing: float | None,
+    ax: float | None,
+    ay: float | None,
+    az: float | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO clip_gps_data "
+        "(job_id, clip_id, time_sec, lat, lon, speed_kmh, bearing, ax, ay, az) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (job_id, clip_id, time_sec, lat, lon, speed_kmh, bearing, ax, ay, az),
+    )
+
+
 def list_jobs(conn: sqlite3.Connection) -> list[JobRow]:
     rows = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
     return [_row_to_job(r) for r in rows]

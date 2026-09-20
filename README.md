@@ -17,6 +17,7 @@ macOS Vision OCR and mlx-whisper are automatic dependencies.
 ## Quick Start
 
 ```bash
+vs import <card-or-archive>    # Copy + dedup new clips (auto-detects Mazda CX-8)
 vs analyze <video.mp4>          # Full pipeline
 vs analyze <dir>              # Batch directory
 vs analyze <video> --no-llm  # Prefilter only
@@ -26,6 +27,8 @@ vs search "ABC123"            # Search plates/text
 vs search --kind dangerous    # Filter by kind
 vs config                     # Show config
 ```
+
+Typical card-swap workflow: `vs import /Volumes/CX-8`, eject card, then `vs analyze` (processes all pending jobs). Archive imports work too: `vs import /Volumes/lacie8/Ryan/video/CX-8` recurses date-wrapped folders. Incremental — clips already imported (same content hash) are skipped.
 
 ### Common Flags
 
@@ -39,7 +42,7 @@ SQLite DB at `~/.video-security/db`. Artifacts on external volume: `/Volumes/lac
 
 ## Pipeline Overview
 
-Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking → CLAHE night enhancement → YOLO/ByteTrack vehicle + plate OCR consensus (Apple Vision) + person threat scoring + 30s scene-text OCR → audio: mlx-whisper + Silero VAD + RMS loudness events → LLM triage (gemma3:4b, single keyframe) → detail (gemma4:12b, multi-keyframe + tile escalation) → HTML report.
+Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking → CLAHE night enhancement → YOLO/ByteTrack vehicle + plate OCR consensus (Apple Vision) + person threat scoring + 30s scene-text OCR → audio: mlx-whisper + Silero VAD + RMS loudness events → NMEA G-sensor events (Mazda CX-8) → LLM triage (gemma3:4b, single keyframe) → detail (gemma4:12b, multi-keyframe + tile escalation) → HTML report.
 
 ## Safety Rules (built-in, automatic)
 
@@ -51,7 +54,9 @@ Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking �
 
 ## Status
 
-Core complete. Phase-2 (dashcam source adapters, `vs-import` for Mazda CX-8 card) not yet implemented.
+Core complete. Source adapters: `mazda_cx8` (filename timestamps, front/rear pairing, NMEA `$GPRMC`/`$GSENS` → GPS track + hard-brake/corner/impact events), `gopro`, `generic`. `vs import` implements scan → hash dedup → verified copy → job registration.
+
+Mazda CX-8 G-sensor events (`hard_brake`, `hard_corner`, `impact`) are detected from NMEA sidecars at zero vision cost and flow through LLM triage/detail like visual events.
 
 ## Development
 

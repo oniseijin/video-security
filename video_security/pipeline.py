@@ -5,6 +5,7 @@ import sqlite3
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -31,6 +32,32 @@ from video_security.prefilter.vehicles import (
 
 TRANSCRIPT_WINDOW_SEC = 30.0
 JPEG_CACHE_LIMIT = 1000
+GFORCE_KEYFRAME_PAD_SEC = 0.5
+
+
+def _find_nmea_sidecar(path: Path) -> Path | None:
+    for suffix in (".NMEA", ".nmea"):
+        cand = path.with_suffix(suffix)
+        if cand.exists():
+            return cand
+    return None
+
+
+def _frames_in_window(
+    frames_meta: dict[int, FrameData], start_sec: float, end_sec: float, max_n: int = 3
+) -> list[int]:
+    in_window = [
+        fn
+        for fn, meta in frames_meta.items()
+        if start_sec - GFORCE_KEYFRAME_PAD_SEC
+        <= meta.timestamp_sec
+        <= end_sec + GFORCE_KEYFRAME_PAD_SEC
+    ]
+    in_window.sort()
+    if len(in_window) <= max_n:
+        return in_window
+    step = len(in_window) / max_n
+    return [in_window[int(i * step)] for i in range(max_n)]
 
 
 @dataclass
@@ -298,6 +325,40 @@ def analyze_video(
                 read.confidence, 0.6, [read.best_frame],
             )
         )
+
+    nmea_sidecar = _find_nmea_sidecar(path)
+    if nmea_sidecar is not None:
+        from video_security.adapters.mazda_cx8 import (
+            GFORCE_EVENT_PRIORITY,
+            gforce_events,
+            parse_nmea,
+        )
+
+        clip_start = None
+        if job.recording_start_utc:
+            try:
+                clip_start = datetime.fromisoformat(job.recording_start_utc)
+            except ValueError:
+                clip_start = None
+        samples = parse_nmea(nmea_sidecar, clip_start)
+        for gs in samples:
+            db.insert_gps_row(
+                conn, job.id, 0, gs.time_sec, gs.lat, gs.lon,
+                gs.speed_kmh, gs.bearing, gs.ax, gs.ay, gs.az,
+            )
+        conn.commit()
+        for ge in gforce_events(samples, config.adapter_mazda_cx8.gsens):
+            event_specs.append(
+                EventSpec(
+                    ge.event_type,
+                    ge.start_sec,
+                    ge.end_sec,
+                    None,
+                    ge.peak_g,
+                    GFORCE_EVENT_PRIORITY.get(ge.event_type, 0.7),
+                    _frames_in_window(frames_meta, ge.start_sec, ge.end_sec),
+                )
+            )
 
     event_ids: list[int] = []
     for spec in event_specs:

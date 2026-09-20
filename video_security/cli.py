@@ -196,9 +196,28 @@ def analyze_cmd(
 
 @app.command(name="import")
 def import_clips_cmd(
+    ctx: typer.Context,
     source: Path = typer.Argument(..., help="Source path (card mount or archive)"),  # noqa: B008
+    adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|generic)"),  # noqa: B008, E501
 ) -> None:
-    print("import: not implemented")
+    from video_security.engine import EngineError
+    from video_security.importer import run_import
+
+    cfg: Config = ctx.obj["config"]
+    conn = connect(cfg.storage.db_path)
+    init_db(conn)
+    try:
+        report = run_import(source, cfg, conn, adapter)
+    except (EngineError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1) from e
+    print(
+        f"imported {report.imported} new clips, "
+        f"skipped {report.skipped} (already imported), "
+        f"failed {report.failed}"
+    )
+    conn.close()
 
 
 @app.command(name="search")
