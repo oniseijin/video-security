@@ -50,6 +50,18 @@ def test_unload_server_down_is_silent() -> None:
     c.unload("gemma3:4b")
 
 
+def test_model_swap_evicts_previous_model() -> None:
+    with MockOllama() as m:
+        c = OllamaClient(base_url=m.base_url, timeout_s=5)
+        c.generate("gemma3:4b", "hi")
+        c.generate("gemma4:12b", "hi")
+        gens = [r["body"] for r in m.requests if r["path"] == "/api/generate"]
+        assert [g["model"] for g in gens] == ["gemma3:4b", "gemma3:4b", "gemma4:12b"]
+        assert gens[1]["keep_alive"] == 0
+        assert gens[0]["keep_alive"] == "30m"
+        assert gens[2]["keep_alive"] == "30m"
+
+
 def test_generate_json_ok() -> None:
     with MockOllama(response_text='{"relevant": true}') as m:
         c = OllamaClient(base_url=m.base_url, timeout_s=5)

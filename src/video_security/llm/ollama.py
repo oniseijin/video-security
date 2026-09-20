@@ -26,6 +26,13 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
         self.max_attempts = max_attempts
+        self._last_model: str | None = None
+
+    def _evict_other(self, model: str) -> None:
+        if self._last_model is not None and self._last_model != model:
+            previous = self._last_model
+            self._last_model = None
+            self.unload(previous)
 
     def generate(
         self,
@@ -36,6 +43,7 @@ class OllamaClient:
         num_ctx: int = 2048,
         keep_alive: str = "30m",
     ) -> str:
+        self._evict_other(model)
         body: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
@@ -61,11 +69,13 @@ class OllamaClient:
                 try:
                     result: Any = json.loads(resp_body)
                 except json.JSONDecodeError:
+                    self._last_model = model
                     return resp_body  # type: ignore[no-any-return]
                 if "response" not in result:
                     raise OllamaError(
                         f"Missing 'response' key in response from {url}"
                     )
+                self._last_model = model
                 return str(result["response"])
             except urllib.error.HTTPError as e:
                 last_error = e

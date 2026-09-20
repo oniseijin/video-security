@@ -26,6 +26,12 @@ follow semantic versioning.
   - Models are now explicitly unloaded when an analyze run ends
     (normal finish, Ctrl+C stop or time budget), so nothing stays
     resident in RAM after the tool exits.
+  - Only one model is resident at a time during a run: the client
+    tracks the loaded model and evicts the previous one before
+    generating with a different model (e.g. gemma3:4b triage →
+    gemma4:12b detail swaps, never both). Prevents the ~10 GB
+    triage+detail residency that contributed to memory-pressure
+    kills on the 16 GB machine.
 
 ## [0.1.0] - 2026-09-20
 
