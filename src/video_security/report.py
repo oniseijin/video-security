@@ -487,10 +487,10 @@ def generate_report(
             '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">'
             "</script>"
         )
-        parts.append(f"<script>{THEME_MAP_JS}</script>")
         parts.append(gps_map)
         parts.append('<p class="note gps-fallback-note">SVG fallback —'
             " map tiles unavailable (offline)</p>")
+        parts.append(f"<script>{THEME_MAP_JS}</script>")
         if geocode and len(gps_track) >= 2:
             first, last = gps_track[0], gps_track[-1]
             start_place = geo.reverse_geocode(
