@@ -6,6 +6,13 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CARTO tile key parameter**: basemap tile URLs now send the key as
+  `?key=` (CARTO's basemap key format) instead of `?api_key=`, which
+  the CDN silently ignored — all maps rendered "API KEY REQUIRED"
+  error tiles even with a valid key configured.
+
 ## [0.3.1] - 2026-09-21
 
 ### Added
