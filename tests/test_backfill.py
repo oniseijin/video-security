@@ -5,7 +5,11 @@ from pathlib import Path
 
 import numpy as np
 
-from video_security.backfill import backfill_plate_crops, read_frame
+from video_security.backfill import (
+    backfill_face_crops,
+    backfill_plate_crops,
+    read_frame,
+)
 from video_security.config import Config
 from video_security.db import connect, init_db
 from video_security.prefilter.ocr import OCRResult
@@ -140,3 +144,75 @@ def test_read_frame_garbage_file(tmp_path: Path) -> None:
     bad.write_bytes(b"not a video")
     assert read_frame(str(bad), 10) is None
     assert read_frame(str(tmp_path / "missing.mp4"), 10) is None
+
+
+def _jpeg_bytes() -> bytes:
+    import cv2
+
+    ok, buf = cv2.imencode(".jpg", np.full((400, 600, 3), 120, dtype=np.uint8))
+    if not ok:
+        raise RuntimeError("jpeg encode failed")
+    return buf.tobytes()
+
+
+def _seed_faces(base: Path, with_faces: bool = True) -> Path:
+    db_path = base / "faces.db"
+    conn = connect(str(db_path))
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO jobs (id, video_path, video_hash, status) "
+        "VALUES (1, '/tmp/clip.mp4', 'h1', 'done')"
+    )
+    conn.execute(
+        "INSERT INTO events (id, job_id, event_type, start_sec, end_sec, clip_id, "
+        "detector_score, priority, status, keyframes_json, faces_json) "
+        "VALUES (10, 1, 'suspicious_behavior', 5.0, 6.0, 0, 0.9, 0.5, 'detailed', "
+        "?, ?)",
+        (
+            json.dumps([str(base / "artifacts" / "frames" / "1" / "event_10_0.jpg")]),
+            json.dumps([[[0.25, 0.25, 0.3, 0.3]]]) if with_faces else None,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    frames = base / "artifacts" / "frames" / "1"
+    frames.mkdir(parents=True, exist_ok=True)
+    (frames / "event_10_0.jpg").write_bytes(_jpeg_bytes())
+    return db_path
+
+
+def _faces_config(base: Path) -> Config:
+    cfg = Config()
+    cfg.storage.db_path = str(base / "faces.db")
+    cfg.storage.artifact_dir = str(base / "artifacts")
+    return cfg
+
+
+def test_backfill_face_crops(tmp_path: Path) -> None:
+    import cv2
+
+    db_path = _seed_faces(tmp_path)
+    conn = connect(str(db_path))
+    cfg = _faces_config(tmp_path)
+    report = backfill_face_crops(conn, cfg)
+    assert report.attempted == 1
+    assert report.written == 1
+    crop = tmp_path / "artifacts" / "faces" / "1" / "face_10_0_0.jpg"
+    assert crop.is_file()
+    img = cv2.imread(str(crop))
+    assert img is not None
+    assert (tmp_path / "artifacts" / "faces" / "1" / ".metadata_never_index").is_file()
+    second = backfill_face_crops(conn, cfg)
+    assert second.attempted == 1
+    assert second.written == 0
+    assert second.skipped == 1
+    conn.close()
+
+
+def test_backfill_face_crops_no_faces(tmp_path: Path) -> None:
+    db_path = _seed_faces(tmp_path, with_faces=False)
+    conn = connect(str(db_path))
+    cfg = _faces_config(tmp_path)
+    report = backfill_face_crops(conn, cfg)
+    assert report.attempted == 0
+    conn.close()

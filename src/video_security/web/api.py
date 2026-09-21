@@ -590,16 +590,23 @@ def event_detail(
     if not isinstance(kf_paths, list):
         kf_paths = []
     keyframes: list[dict[str, Any]] = []
+    artifact = _artifact_dir(cfg)
     for i, path_str in enumerate(kf_paths):
         p = Path(str(path_str))
+        boxes = faces[i] if i < len(faces) else []
         entry: dict[str, Any] = {
             "url": _frames_url(str(p)),
             "raw_url": None,
-            "faces": faces[i] if i < len(faces) else [],
+            "faces": boxes,
+            "face_crops": [],
         }
         raw = p.with_name(p.stem + "_raw.jpg")
         if raw.is_file():
             entry["raw_url"] = _frames_url(str(raw))
+        for j in range(len(boxes)):
+            crop = artifact / "faces" / str(job_id) / f"face_{event_id}_{i}_{j}.jpg"
+            if crop.is_file():
+                entry["face_crops"].append(f"/media/faces/{job_id}/{crop.name}")
         keyframes.append(entry)
     plate_items: list[dict[str, Any]] = []
     track_id = evt["track_id"]

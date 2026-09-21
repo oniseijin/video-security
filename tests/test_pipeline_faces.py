@@ -47,3 +47,31 @@ def test_faces_json_stored_on_events(
                 assert face == [0.1, 0.2, 0.3, 0.4]
         kf_data = json.loads(ev["keyframes_json"])
         assert len(faces_data) == len(kf_data)
+
+def test_face_crops_written(
+    db_conn: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "video_security.pipeline.detect_faces",
+        lambda _img: [(0.1, 0.2, 0.3, 0.4)],
+    )
+    from tests.golden import golden_clip
+
+    clip = golden_clip(tmp_path / "t.mp4")
+    job, _ = enqueue_video(db_conn, clip)
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    analyze_video(job, config, db_conn, no_llm=True)
+    events = db_conn.execute(
+        "SELECT * FROM events WHERE job_id = ? ORDER BY id", (job.id,)
+    ).fetchall()
+    faces_root = tmp_path / "artifacts" / "faces" / str(job.id)
+    wrote_any = False
+    for ev in events:
+        kf_data = json.loads(ev["keyframes_json"])
+        for i in range(len(kf_data)):
+            crop = faces_root / f"face_{ev['id']}_{i}_0.jpg"
+            if crop.is_file():
+                wrote_any = True
+    assert wrote_any
+    assert (faces_root / ".metadata_never_index").is_file()

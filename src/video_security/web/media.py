@@ -61,6 +61,13 @@ def plate_image(
     return _image_response(path)
 
 
+def face_image(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> tuple[int, str, bytes]:
+    path = _artifact_file(cfg, "faces", int(params["job_id"]), str(params["name"]))
+    return _image_response(path)
+
+
 def _pair_video_path(conn: sqlite3.Connection, job_id: int) -> str | None:
     pair_id = pair_job_id(conn, job_id)
     if pair_id is None:
@@ -122,5 +129,6 @@ def media_routes() -> Routes:
     return [
         ("GET", "/media/frames/{job_id:int}/{name}", frame_image),
         ("GET", "/media/plates/{job_id:int}/{name}", plate_image),
+        ("GET", "/media/faces/{job_id:int}/{name}", face_image),
         ("GET", "/api/jobs/{id:int}/video", serve_video),
     ]

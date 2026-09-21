@@ -154,6 +154,29 @@ def _decode_pass(
     return frame_dets, frames_meta, jpeg_cache, raw_jpeg_cache
 
 
+def _write_face_crop(
+    img: np.ndarray,
+    box: list[float],
+    faces_dir: Path,
+    event_id: int,
+    keyframe_index: int,
+    face_index: int,
+) -> None:
+    h, w = img.shape[:2]
+    bx, by, bw, bh = box[0], box[1], box[2], box[3]
+    x1 = max(0.0, (bx - 0.15 * bw) * w)
+    y1 = max(0.0, (by - 0.15 * bh) * h)
+    x2 = min(float(w), (bx + bw * 1.15) * w)
+    y2 = min(float(h), (by + bh * 1.15) * h)
+    crop = upscale_crop(img[int(y1) : int(y2), int(x1) : int(x2)])
+    if crop.size == 0:
+        return
+    out = faces_dir / f"face_{event_id}_{keyframe_index}_{face_index}.jpg"
+    ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if ok:
+        out.write_bytes(buf.tobytes())
+
+
 def _collect_plate_reads(
     frame_dets: list[FrameDetections],
     jpeg_cache: OrderedDict[int, bytes],
@@ -481,6 +504,7 @@ def analyze_video(
     report.events = len(event_ids)
 
     event_kf_paths: dict[int, list[str]] = {}
+    faces_dir = artifact_dir / "faces" / str(job.id)
     for spec, event_id in zip(event_specs, event_ids, strict=True):
         kf_paths = _select_keyframes(
             spec.frame_numbers,
@@ -495,13 +519,19 @@ def analyze_video(
             db.update_event_keyframes(conn, event_id, json.dumps(kf_paths))
         chosen = _choose_keyframe_numbers(spec.frame_numbers, jpeg_cache)
         faces_per_kf: list[list[list[float]]] = []
-        for fn in chosen:
+        for i, fn in enumerate(chosen):
             raw = jpeg_cache[fn]
             img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
             if img is not None:
-                faces_per_kf.append([list(fb) for fb in detect_faces(img)])
+                boxes = [list(fb) for fb in detect_faces(img)]
+                if boxes:
+                    faces_dir.mkdir(parents=True, exist_ok=True)
+                    spotlight_ignore(faces_dir)
+                    for j, box in enumerate(boxes):
+                        _write_face_crop(img, box, faces_dir, event_id, i, j)
             else:
-                faces_per_kf.append([])
+                boxes = []
+            faces_per_kf.append(boxes)
         db.update_event_faces(conn, event_id, json.dumps(faces_per_kf))
 
     if no_llm or not event_specs:

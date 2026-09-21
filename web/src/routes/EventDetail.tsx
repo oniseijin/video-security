@@ -107,6 +107,30 @@ export function EventDetailRoute() {
         </section>
       ) : null}
 
+      {data.keyframes.some((kf) => kf.face_crops.length > 0) ? (
+        <section className="panel">
+          <h2>Faces</h2>
+          <div className="face-block">
+            {data.keyframes.flatMap((kf, i) =>
+              kf.face_crops.map((url, j) => (
+                <figure className="face-card" key={url}>
+                  <img
+                    alt={`face ${i + 1}-${j + 1}`}
+                    src={url}
+                  />
+                  <figcaption>
+                    face {i + 1}-{j + 1} · {fmtSec(data.start_sec)}
+                  </figcaption>
+                </figure>
+              ))
+            )}
+          </div>
+          <TerminalNote>
+            face crops are local detection only — no recognition or embeddings
+          </TerminalNote>
+        </section>
+      ) : null}
+
       {data.plates.length > 0 ? (
         <section className="panel">
           <h2>Plates</h2>

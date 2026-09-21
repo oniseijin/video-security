@@ -586,7 +586,7 @@ def delete_job_rows(
     conn.commit()
     if artifact_dir:
         import shutil
-        for sub in ("frames", "plates"):
+        for sub in ("frames", "plates", "faces"):
             shutil.rmtree(Path(artifact_dir) / sub / str(job_id), ignore_errors=True)
 
 

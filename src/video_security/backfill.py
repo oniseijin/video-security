@@ -166,6 +166,81 @@ def _keyframe_images(
     return images
 
 
+def _write_face_crop_file(img: np.ndarray, box: list[float], out: Path) -> None:
+    h, w = img.shape[:2]
+    bx, by, bw, bh = box[0], box[1], box[2], box[3]
+    x1 = max(0.0, (bx - 0.15 * bw) * w)
+    y1 = max(0.0, (by - 0.15 * bh) * h)
+    x2 = min(float(w), (bx + bw * 1.15) * w)
+    y2 = min(float(h), (by + bh * 1.15) * h)
+    crop = upscale_crop(img[int(y1) : int(y2), int(x1) : int(x2)])
+    if crop.size == 0:
+        return
+    ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if ok:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        spotlight_ignore(out.parent)
+        out.write_bytes(buf.tobytes())
+
+
+def backfill_face_crops(
+    conn: sqlite3.Connection,
+    config: Config,
+    limit: int | None = None,
+) -> BackfillReport:
+    rows = conn.execute(
+        "SELECT e.id, e.job_id, e.keyframes_json, e.faces_json FROM events e "
+        "WHERE e.faces_json IS NOT NULL AND e.faces_json != '[]' "
+        "AND e.faces_json != 'null' AND e.keyframes_json != '[]' "
+        "ORDER BY e.job_id, e.id"
+    ).fetchall()
+    if limit is not None:
+        rows = rows[: max(0, limit)]
+    report = BackfillReport(attempted=len(rows))
+    artifact = Path(config.storage.artifact_dir).expanduser()
+    for row in rows:
+        event_id = int(row["id"])
+        job_id = int(row["job_id"])
+        try:
+            kf_paths = json.loads(row["keyframes_json"])
+            faces = json.loads(row["faces_json"])
+        except (json.JSONDecodeError, TypeError):
+            report.failed += 1
+            report.failures.append(f"job {job_id} event {event_id}: unparsable json")
+            continue
+        if not isinstance(kf_paths, list) or not isinstance(faces, list):
+            report.failed += 1
+            report.failures.append(f"job {job_id} event {event_id}: unexpected shape")
+            continue
+        wrote = 0
+        for i, path_str in enumerate(kf_paths):
+            boxes = faces[i] if i < len(faces) else []
+            if not boxes:
+                continue
+            p = Path(str(path_str))
+            if not p.is_file():
+                continue
+            img = cv2.imdecode(
+                np.frombuffer(p.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR
+            )
+            if img is None:
+                continue
+            for j, box in enumerate(boxes):
+                if not isinstance(box, list) or len(box) != 4:
+                    continue
+                out = artifact / "faces" / str(job_id) / f"face_{event_id}_{i}_{j}.jpg"
+                if out.is_file():
+                    continue
+                _write_face_crop_file(img, box, out)
+                if out.is_file():
+                    wrote += 1
+        if wrote > 0:
+            report.written += wrote
+        else:
+            report.skipped += 1
+    return report
+
+
 def backfill_plate_crops(
     conn: sqlite3.Connection,
     config: Config,

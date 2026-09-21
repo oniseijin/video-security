@@ -6,6 +6,19 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Face crops on disk**: analysis now persists per-face crop JPEGs
+  (`faces/<job_id>/face_<event_id>_<i>_<j>.jpg`, quality 85, 15% padding,
+  upscaled) from the keyframes where faces were detected; URLs are derived
+  by naming convention (no schema change) and served via
+  `/media/faces/...`. The web console event view gains a Faces section
+  with the crop grid (local detection only — no recognition or
+  embeddings, unchanged). `vs backfill-media` now also backfills face
+  crops for pre-crop events — deterministic, from the stored
+  `faces_json` boxes and keyframe JPEGs. Retention removes
+  `faces/<job_id>/` with job data.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

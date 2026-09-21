@@ -136,6 +136,7 @@ export interface EventKeyframe {
   url: string
   raw_url: string | null
   faces: number[][]
+  face_crops: string[]
 }
 
 export interface EventPlate {

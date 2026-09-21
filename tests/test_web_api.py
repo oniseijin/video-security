@@ -90,12 +90,15 @@ def _seed(base: Path) -> None:
     art = base / "artifacts"
     frames = art / "frames" / "1"
     plates = art / "plates" / "1"
+    faces = art / "faces" / "1"
     frames.mkdir(parents=True)
     plates.mkdir(parents=True)
+    faces.mkdir(parents=True)
     (frames / "event_10_0.jpg").write_bytes(JPEG)
     (frames / "event_10_0_raw.jpg").write_bytes(JPEG)
     (frames / "track_7_0.jpg").write_bytes(JPEG)
     (plates / "track_7.jpg").write_bytes(JPEG)
+    (faces / "face_10_0_0.jpg").write_bytes(JPEG)
     conn = connect(str(db_path))
     conn.execute(
         "UPDATE events SET keyframes_json = ? WHERE id = 10",
@@ -199,6 +202,7 @@ def test_event_detail(base_url: str) -> None:
     assert data["keyframes"][0]["url"] == "/media/frames/1/event_10_0.jpg"
     assert data["keyframes"][0]["raw_url"] == "/media/frames/1/event_10_0_raw.jpg"
     assert data["keyframes"][0]["faces"] == [[0.1, 0.2, 0.3, 0.4]]
+    assert data["keyframes"][0]["face_crops"] == ["/media/faces/1/face_10_0_0.jpg"]
     assert data["plates"][0]["norm_text"] == "習志野5001"
     assert data["plates"][0]["ken"] == "千葉県"
     assert data["plates"][0]["crop_url"] == "/media/plates/1/track_7.jpg"
@@ -286,7 +290,12 @@ def test_media_serves_artifacts(base_url: str) -> None:
     status, body = _status_of(f"{base_url}/media/plates/1/track_7.jpg")
     assert status == 200
     assert body == JPEG
+    status, body = _status_of(f"{base_url}/media/faces/1/face_10_0_0.jpg")
+    assert status == 200
+    assert body == JPEG
     status, _ = _status_of(f"{base_url}/media/frames/1/nope.jpg")
+    assert status == 404
+    status, _ = _status_of(f"{base_url}/media/faces/1/..%2f..%2f..%2ft.db")
     assert status == 404
     status, _ = _status_of(f"{base_url}/media/frames/1/..%2f..%2f..%2ft.db")
     assert status == 404

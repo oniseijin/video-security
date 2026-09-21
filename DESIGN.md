@@ -820,6 +820,7 @@ artifact_dir/
                   event_<eid>_<i>_raw.jpg    (new, night/ir only)
                   track_<tid>_<i>.jpg        (new)
   plates/<job_id>/track_<tid>.jpg            (new)
+  faces/<job_id>/face_<eid>_<i>_<j>.jpg      (face crops, convention-named)
   clips/<date>/<mode>/<channel>/*.MP4        (existing — video source)
   reports/                                   (existing — unchanged)
 ```

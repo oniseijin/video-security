@@ -353,7 +353,7 @@ def backfill_media_cmd(
     ctx: typer.Context,
     limit: int | None = typer.Option(None, "--limit", help="Max plates to process"),  # noqa: B008
 ) -> None:
-    from video_security.backfill import backfill_plate_crops
+    from video_security.backfill import backfill_face_crops, backfill_plate_crops
 
     conn, cfg = _get_db(ctx)
     try:
@@ -363,6 +363,13 @@ def backfill_media_cmd(
             f"skipped {report.skipped}, failed {report.failed}"
         )
         for failure in report.failures:
+            print(f"  {failure}")
+        face_report = backfill_face_crops(conn, cfg, limit=limit)
+        print(
+            f"face crops: events {face_report.attempted}, written {face_report.written}, "
+            f"skipped {face_report.skipped}, failed {face_report.failed}"
+        )
+        for failure in face_report.failures:
             print(f"  {failure}")
     finally:
         conn.close()
