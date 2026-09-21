@@ -270,6 +270,15 @@ MIGRATIONS: list[list[str]] = [
         )""",
         """CREATE INDEX idx_photos_imports_hash ON photos_imports(video_hash)""",
     ],
+    [
+        """CREATE TABLE archived_originals (
+            job_id INTEGER PRIMARY KEY,
+            original_path TEXT NOT NULL,
+            original_bytes INTEGER NOT NULL,
+            proxy_bytes INTEGER,
+            archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ],
 ]
 
 
@@ -784,6 +793,36 @@ def insert_photos_import(
         "INSERT OR REPLACE INTO photos_imports (uuid, job_id, video_hash, filename) "
         "VALUES (?,?,?,?)",
         (uuid, job_id, video_hash, filename),
+    )
+    conn.commit()
+
+
+def get_archived_original(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
+    row: sqlite3.Row | None = conn.execute(
+        "SELECT * FROM archived_originals WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    return row
+
+
+def insert_archived_original(
+    conn: sqlite3.Connection,
+    job_id: int,
+    original_path: str,
+    original_bytes: int,
+    proxy_bytes: int | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO archived_originals "
+        "(job_id, original_path, original_bytes, proxy_bytes) "
+        "VALUES (?,?,?,?)",
+        (job_id, original_path, original_bytes, proxy_bytes),
+    )
+    conn.commit()
+
+
+def delete_archived_original(conn: sqlite3.Connection, job_id: int) -> None:
+    conn.execute(
+        "DELETE FROM archived_originals WHERE job_id = ?", (job_id,)
     )
     conn.commit()
 

@@ -239,3 +239,40 @@ def test_adapter_photos_bad_priority_type(tmp_path: Path) -> None:
     toml_file.write_text("[adapter.photos]\npriority = \"high\"\n")
     with pytest.raises(ConfigError, match="priority"):
         load_config(toml_file)
+
+
+def test_archive_defaults() -> None:
+    cfg = Config()
+    assert cfg.archive.cold_dir is None
+    assert cfg.archive.days == 30
+    assert cfg.archive.video_height == 720
+
+
+def test_archive_toml_merge(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("""\
+[archive]
+cold_dir = "/Volumes/cold"
+days = 7
+""")
+    cfg = load_config(toml_file)
+    assert cfg.archive.cold_dir == "/Volumes/cold"
+    assert cfg.archive.days == 7
+    assert cfg.archive.video_height == 720
+
+
+def test_archive_absent_section(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("[engine]\nheartbeat_sec = 45\n")
+    cfg = load_config(toml_file)
+    assert cfg.archive.cold_dir is None
+    assert cfg.archive.days == 30
+    assert cfg.archive.video_height == 720
+
+
+def test_archive_cold_dir_null(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("[archive]\nvideo_height = 1080\n")
+    cfg = load_config(toml_file)
+    assert cfg.archive.cold_dir is None
+    assert cfg.archive.video_height == 1080

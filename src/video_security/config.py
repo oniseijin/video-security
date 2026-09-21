@@ -228,11 +228,19 @@ class WatchlistConfig:
 
 
 @dataclasses.dataclass
+class ArchiveConfig:
+    cold_dir: str | None = None
+    days: int = 30
+    video_height: int = 720
+
+
+@dataclasses.dataclass
 class Config:
     storage: StorageConfig = dataclasses.field(default_factory=StorageConfig)
     import_: ImportConfig = dataclasses.field(default_factory=ImportConfig)
     adapter_mazda_cx8: MazdaCx8Config = dataclasses.field(default_factory=MazdaCx8Config)
     adapter_photos: AdapterPhotosConfig = dataclasses.field(default_factory=AdapterPhotosConfig)
+    archive: ArchiveConfig = dataclasses.field(default_factory=ArchiveConfig)
     engine: EngineConfig = dataclasses.field(default_factory=EngineConfig)
     llm_triage: LLMStageConfig = dataclasses.field(
         default_factory=lambda: LLMStageConfig(model="gemma3:4b", num_ctx=2048, timeout_s=120)
@@ -419,4 +427,6 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
             kwargs["map"] = _merge_dataclass(config.map, values, "map")
         elif section == "web":
             kwargs["web"] = _merge_dataclass(config.web, values, "web")
+        elif section == "archive":
+            kwargs["archive"] = _merge_dataclass(config.archive, values, "archive")
     return dataclasses.replace(config, **kwargs)

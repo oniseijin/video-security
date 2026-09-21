@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "clip_gps_data",
     "sessions",
     "photos_imports",
+    "archived_originals",
 }
 
 
@@ -211,4 +212,61 @@ def test_photos_import_insert_or_replace_overwrites(db_path: str) -> None:
     assert row is not None
     assert row["job_id"] == 99
     assert row["video_hash"] == "hash99"
+    conn.close()
+
+
+def test_archived_originals_migration_idempotent(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    init_db(conn)
+    tables = get_table_names(conn)
+    assert "archived_originals" in tables
+    conn.execute(
+        "INSERT INTO archived_originals (job_id, original_path, original_bytes) VALUES (?,?,?)",
+        (1, "/cold/storage/original.mp4", 52428800),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM archived_originals WHERE job_id = 1").fetchone()
+    assert row is not None
+    conn.close()
+
+
+def test_archived_originals_get_unknown(db_path: str) -> None:
+    from video_security.db import get_archived_original
+
+    conn = connect(db_path)
+    init_db(conn)
+    assert get_archived_original(conn, 999) is None
+    conn.close()
+
+
+def test_archived_originals_insert_and_get(db_path: str) -> None:
+    from video_security.db import get_archived_original, insert_archived_original
+
+    conn = connect(db_path)
+    init_db(conn)
+    insert_archived_original(conn, 42, "/cold/storage/original.mp4", 52428800, 10485760)
+    row = get_archived_original(conn, 42)
+    assert row is not None
+    assert row["job_id"] == 42
+    assert row["original_path"] == "/cold/storage/original.mp4"
+    assert row["original_bytes"] == 52428800
+    assert row["proxy_bytes"] == 10485760
+    assert row["archived_at"] is not None
+    conn.close()
+
+
+def test_archived_originals_delete_removes(db_path: str) -> None:
+    from video_security.db import (
+        delete_archived_original,
+        get_archived_original,
+        insert_archived_original,
+    )
+
+    conn = connect(db_path)
+    init_db(conn)
+    insert_archived_original(conn, 42, "/cold/storage/original.mp4", 52428800, None)
+    assert get_archived_original(conn, 42) is not None
+    delete_archived_original(conn, 42)
+    assert get_archived_original(conn, 42) is None
     conn.close()
