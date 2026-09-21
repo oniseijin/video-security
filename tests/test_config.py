@@ -24,11 +24,12 @@ from video_security.config import (
 )
 
 
+@pytest.mark.real_defaults
 def test_defaults() -> None:
     cfg = load_config()
     assert isinstance(cfg.storage, StorageConfig)
     assert cfg.storage.db_path == os.path.expanduser("~/.video-security/db")
-    assert cfg.storage.artifact_dir == "/Volumes/lacie8/Ryan/video/vs"
+    assert cfg.storage.artifact_dir == os.path.expanduser("~/.video-security/artifacts")
     assert cfg.storage.staging_dir is None
 
     assert isinstance(cfg.import_, ImportConfig)

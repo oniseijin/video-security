@@ -31,7 +31,7 @@ class MazdaCx8Config:
 @dataclasses.dataclass
 class StorageConfig:
     db_path: str = "~/.video-security/db"
-    artifact_dir: str = "/Volumes/lacie8/Ryan/video/vs"
+    artifact_dir: str = "~/.video-security/artifacts"
     staging_dir: str | None = None
 
 

@@ -173,7 +173,12 @@ def test_delete_job_rows(tmp_path: Path) -> None:
 
 def test_prune_old_jobs(tmp_path: Path) -> None:
     db_path = str(tmp_path / "t.db")
-    config = Config(storage=StorageConfig(db_path=db_path), engine=EngineConfig(retention_days=1))
+    config = Config(
+        storage=StorageConfig(
+            db_path=db_path, artifact_dir=str(tmp_path / "artifacts")
+        ),
+        engine=EngineConfig(retention_days=1),
+    )
     engine = BatchEngine(config)
     conn = engine._connect()
     old_job = create_job(conn, "/v/old.mp4", "ho")

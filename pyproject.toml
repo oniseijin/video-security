@@ -57,4 +57,5 @@ pythonpath = ["src"]
 addopts = "-m 'not benchmark'"
 markers = [
     "benchmark: performance benchmarks with throughput floors (deselected by default)",
+    "real_defaults: test inspects real config defaults (skips test-isolation patch)",
 ]

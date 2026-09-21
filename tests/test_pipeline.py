@@ -129,8 +129,10 @@ def test_analyze_missing_video(db_conn: sqlite3.Connection, tmp_path: Path) -> N
     real.unlink()
     from video_security.pipeline import PipelineError
 
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
     with pytest.raises(PipelineError):
-        analyze_video(job, Config(), db_conn, no_llm=True)
+        analyze_video(job, config, db_conn, no_llm=True)
 
 
 def test_phase_split_flow(db_conn: sqlite3.Connection, tmp_path: Path) -> None:
