@@ -526,8 +526,8 @@ THEME_MAP_JS = """
   var LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
   var KEY = mapEl.getAttribute('data-carto-key');
   if (KEY) {
-    DARK += '?api_key=' + encodeURIComponent(KEY);
-    LIGHT += '?api_key=' + encodeURIComponent(KEY);
+    DARK += '?key=' + encodeURIComponent(KEY);
+    LIGHT += '?key=' + encodeURIComponent(KEY);
   }
   var ATTR =
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap' +

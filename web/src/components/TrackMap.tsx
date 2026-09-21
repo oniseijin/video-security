@@ -127,7 +127,7 @@ export function TrackMap({
     }
     const apiKey = appConfig?.carto_api_key ?? null
     const base = theme === "machine" ? DARK_TILES : LIGHT_TILES
-    const url = apiKey ? `${base}?api_key=${encodeURIComponent(apiKey)}` : base
+    const url = apiKey ? `${base}?key=${encodeURIComponent(apiKey)}` : base
     const map = L.map(container, { zoomControl: true, attributionControl: true })
     const layer = L.tileLayer(url, { attribution: ATTRIBUTION }).addTo(map)
     const latlngs = points.map((p) => [p.lat, p.lon] as [number, number])
