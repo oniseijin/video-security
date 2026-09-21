@@ -842,3 +842,7 @@ a.count-chip:hover {
 .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.7);
 }
+
+.app-btn.active {
+  outline: 1px solid var(--vs-accent, #ffc400);
+}

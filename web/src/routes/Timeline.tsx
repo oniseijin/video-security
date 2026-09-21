@@ -33,10 +33,14 @@ function CalendarHeat({
   days,
   selected,
   onSelect,
+  skipEmpty,
+  onToggleSkip,
 }: {
   days: DayBucket[]
   selected: string | null
   onSelect: (day: string) => void
+  skipEmpty: boolean
+  onToggleSkip: () => void
 }) {
   const [cursor, setCursor] = useState(() => {
     const first = days[0]?.date ?? dayKey(new Date())
@@ -52,12 +56,41 @@ function CalendarHeat({
     const key = dayKey(new Date(cursor.year, cursor.month, i))
     cells.push(byDate.get(key) ?? null)
   }
+  const monthKey = (y: number, m: number) =>
+    `${y}-${String(m + 1).padStart(2, "0")}`
+  const hasData = (y: number, m: number) =>
+    days.some((d) => d.date.startsWith(monthKey(y, m)))
   const shift = (delta: number) => {
+    if (skipEmpty) {
+      const keys = [
+        ...new Set(days.map((d) => d.date.slice(0, 7))),
+      ].sort()
+      const cur = monthKey(cursor.year, cursor.month)
+      const idx = keys.indexOf(cur)
+      if (idx === -1) {
+        const next = keys.find((k) =>
+          delta > 0 ? k > cur : k < cur
+        )
+        if (next) {
+          setCursor({
+            year: Number(next.slice(0, 4)),
+            month: Number(next.slice(5, 7)) - 1,
+          })
+        }
+        return
+      }
+      const target = keys[idx + delta]
+      if (target) {
+        setCursor({
+          year: Number(target.slice(0, 4)),
+          month: Number(target.slice(5, 7)) - 1,
+        })
+      }
+      return
+    }
     const next = new Date(cursor.year, cursor.month + delta, 1)
     setCursor({ year: next.getFullYear(), month: next.getMonth() })
   }
-  const hasData = (y: number, m: number) =>
-    days.some((d) => d.date.startsWith(`${y}-${String(m + 1).padStart(2, "0")}`))
 
   return (
     <div className="cal-heat">
@@ -70,6 +103,14 @@ function CalendarHeat({
         </span>
         <button className="app-btn" onClick={() => shift(1)} type="button">
           NEXT ▶
+        </button>
+        <button
+          className={"app-btn" + (skipEmpty ? " active" : "")}
+          onClick={onToggleSkip}
+          title="prev/next jumps only to months with recordings"
+          type="button"
+        >
+          SKIP EMPTY {skipEmpty ? "ON" : "OFF"}
         </button>
       </div>
       <div className="cal-heat-grid">
@@ -205,6 +246,7 @@ function DayTimeline({ day }: { day: string }) {
 
 export function Timeline() {
   const [selected, setSelected] = useState<string | null>(null)
+  const [skipEmpty, setSkipEmpty] = useState(true)
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["days"],
     queryFn: fetchDays,
@@ -241,6 +283,8 @@ export function Timeline() {
             days={days}
             onSelect={setSelected}
             selected={selected}
+            skipEmpty={skipEmpty}
+            onToggleSkip={() => setSkipEmpty(!skipEmpty)}
           />
           {selected != null ? (
             <DayTimeline day={selected} />

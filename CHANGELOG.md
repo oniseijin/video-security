@@ -6,6 +6,8 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-21
+
 ### Added
 
 - **People tracking (cross-job person sightings)**: person-class YOLO
@@ -30,6 +32,14 @@ follow semantic versioning.
   PATH, imports capture device metadata (make/model, firmware, original
   datetime, embedded GPS, duration) into a `jobs.metadata_json` column;
   absent tool = no change in behavior.
+
+### Added
+
+- **Events date pickers**: FROM/TO native date inputs on the Events
+  filter bar (arbitrary ranges without scrolling the day strip); the
+  day strip is capped to the 14 most recent days. Timeline month
+  navigation gains a SKIP EMPTY toggle (default on) — prev/next jumps
+  only between months that have recordings.
 
 ### Fixed
 
