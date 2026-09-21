@@ -5,13 +5,19 @@ import re
 import sqlite3
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from video_security import db
 from video_security.config import Config, ConfigError, load_config
 from video_security.db import connect, init_db, list_jobs
+
+if TYPE_CHECKING:
+    from video_security.engine import BatchEngine, SignalGuard
+    from video_security.llm.ollama import OllamaClient
 
 app = typer.Typer()
 
@@ -95,7 +101,7 @@ def analyze_cmd(
         SignalGuard,
         on_ac_power,
     )
-    from video_security.pipeline import PipelineError, enqueue_video
+    from video_security.pipeline import enqueue_video
 
     cfg: Cfg = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
@@ -183,11 +189,6 @@ def analyze_cmd(
         print("Warning: not on AC power — running anyway (overnight runs should be AC)")
 
     from video_security.engine import CaffeinateGuard, set_watermark_config
-    from video_security.pipeline import (
-        detail_job,
-        harvest_job,
-        triage_job,
-    )
 
     set_watermark_config(cfg.engine.disk_watermark_gb)
 
@@ -196,50 +197,200 @@ def analyze_cmd(
 
     guard = SignalGuard()
     with guard, CaffeinateGuard():
-        for phase in phase_list:
-            if guard.stop_requested or budget_hit():
-                if guard.stop_requested:
-                    print("stop requested — finishing")
-                else:
-                    print("time budget reached — stopping")
-                break
-            print(f"— phase {phase} sweep —")
-            processed = 0
-            while True:
-                if guard.stop_requested:
-                    print("stop requested — finishing")
-                    break
-                if budget_hit():
-                    print("time budget reached — stopping")
-                    break
-                claimed = engine.claim_next_job(phase)
-                if claimed is None:
-                    break
-                job = claimed
-                print(f"job {job.id}: {job.video_path}")
-                try:
-                    if phase == 1:
-                        report = harvest_job(job, cfg, conn)
-                        print(
-                            f"job {job.id} harvested: {report.events} events, "
-                            f"{report.plates} plates, {report.kept_frames} frames kept"
-                        )
-                    elif phase == 2:
-                        n = triage_job(job, cfg, conn, client) if client else 0
-                        print(f"job {job.id} triaged: {n} relevant events")
-                    else:
-                        n = detail_job(job, cfg, conn, client) if client else 0
-                        print(f"job {job.id} detailed: {n} events")
-                    processed += 1
-                except (PipelineError, OllamaError, EngineError) as e:
-                    print(f"job {job.id} failed: {e}", file=sys.stderr)
-                    engine.mark_failed(job.id)
-            print(f"phase {phase} sweep complete: {processed} jobs processed")
+        _phase_sweeps(
+            engine, conn, cfg, phase_list, client, budget_hit, guard
+        )
     if client is not None:
         if 2 in phase_list:
             client.unload(cfg.llm_triage.model)
         if 3 in phase_list:
             client.unload(cfg.llm_detail.model)
+    conn.close()
+
+
+def _phase_sweeps(
+    engine: BatchEngine,
+    conn: sqlite3.Connection,
+    cfg: Config,
+    phase_list: list[int],
+    client: OllamaClient | None,
+    budget_hit: Callable[[], bool],
+    guard: SignalGuard,
+) -> None:
+    from video_security.engine import EngineError
+    from video_security.llm.ollama import OllamaError
+    from video_security.pipeline import (
+        PipelineError,
+        detail_job,
+        harvest_job,
+        triage_job,
+    )
+
+    ollama_client = client
+    for phase in phase_list:
+        if guard.stop_requested or budget_hit():
+            if guard.stop_requested:
+                print("stop requested — finishing")
+            else:
+                print("time budget reached — stopping")
+            break
+        print(f"— phase {phase} sweep —")
+        processed = 0
+        while True:
+            if guard.stop_requested:
+                print("stop requested — finishing")
+                break
+            if budget_hit():
+                print("time budget reached — stopping")
+                break
+            claimed = engine.claim_next_job(phase)
+            if claimed is None:
+                break
+            job = claimed
+            print(f"job {job.id}: {job.video_path}")
+            try:
+                if phase == 1:
+                    report = harvest_job(job, cfg, conn)
+                    print(
+                        f"job {job.id} harvested: {report.events} events, "
+                        f"{report.plates} plates, {report.kept_frames} frames kept"
+                    )
+                elif phase == 2:
+                    n = triage_job(job, cfg, conn, ollama_client) if ollama_client else 0
+                    print(f"job {job.id} triaged: {n} relevant events")
+                else:
+                    n = detail_job(job, cfg, conn, ollama_client) if ollama_client else 0
+                    print(f"job {job.id} detailed: {n} events")
+                processed += 1
+            except (PipelineError, OllamaError, EngineError) as e:
+                print(f"job {job.id} failed: {e}", file=sys.stderr)
+                engine.mark_failed(job.id)
+        print(f"phase {phase} sweep complete: {processed} jobs processed")
+
+
+@app.command(name="run")
+def run_cmd(
+    ctx: typer.Context,
+    source: Path | None = typer.Option(None, "--source", help="Import source (card mount or archive) before analysis"),  # noqa: B008, E501
+    phases: str = typer.Option("1,2,3", "--phases", help="Pipeline phases to run: 1, 1,2 or 1,2,3"),  # noqa: B008
+    stop_after: str | None = typer.Option(None, "--stop-after", help="Stop after duration"),  # noqa: B008
+    resume: bool = typer.Option(False, "--resume", help="Resume incomplete jobs"),  # noqa: B008
+) -> None:
+    from video_security.engine import (
+        BatchEngine,
+        CaffeinateGuard,
+        EngineError,
+        SignalGuard,
+        on_ac_power,
+        set_watermark_config,
+    )
+    from video_security.llm.ollama import OllamaClient, OllamaError
+
+    cfg: Config = ctx.obj["config"]
+    conn = connect(cfg.storage.db_path)
+    init_db(conn)
+
+    if source is not None:
+        from video_security.importer import run_import
+
+        if not source.exists():
+            print(f"Error: {source} not found", file=sys.stderr)
+            conn.close()
+            raise typer.Exit(code=1)
+        try:
+            report = run_import(source, cfg, conn, "auto")
+        except (EngineError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            conn.close()
+            raise typer.Exit(code=1) from e
+        print(
+            f"import: {report.imported} new, {report.skipped} skipped, "
+            f"{report.failed} failed"
+        )
+
+    try:
+        phase_list = sorted({int(p.strip()) for p in phases.split(",") if p.strip()})
+    except ValueError as e:
+        print(f"Error: invalid --phases value: {phases!r}", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1) from e
+    if not phase_list or any(p not in (1, 2, 3) for p in phase_list):
+        print(f"Error: --phases must be 1, 2, and/or 3 (got: {phases!r})", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1)
+    needs_llm = any(p in (2, 3) for p in phase_list)
+
+    engine = BatchEngine(cfg)
+    if resume:
+        reclaimed = engine.reclaim_stale_jobs()
+        if reclaimed:
+            print(f"reclaimed {reclaimed} stale jobs")
+
+    before = {
+        "events": conn.execute("SELECT COUNT(*) FROM events").fetchone()[0],
+        "plates": conn.execute("SELECT COUNT(*) FROM plates").fetchone()[0],
+        "faces": conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0],
+        "done": conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'done'"
+        ).fetchone()[0],
+    }
+
+    budget_s: float | None = parse_duration(stop_after) if stop_after else None
+    started = time.monotonic()
+
+    client: OllamaClient | None = None
+    if needs_llm:
+        client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
+        try:
+            health_models = []
+            if 2 in phase_list:
+                health_models.append(cfg.llm_triage.model)
+            if 3 in phase_list:
+                health_models.append(cfg.llm_detail.model)
+            client.health_check(health_models)
+        except OllamaError as e:
+            print(f"Warning: {e} — running harvest-only phases")
+            client = None
+            phase_list = [p for p in phase_list if p == 1]
+
+    try:
+        engine.preflight()
+    except EngineError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1) from e
+    if not on_ac_power():
+        print("Warning: not on AC power — running anyway (overnight runs should be AC)")
+
+    set_watermark_config(cfg.engine.disk_watermark_gb)
+
+    def budget_hit() -> bool:
+        return budget_s is not None and time.monotonic() - started >= budget_s
+
+    guard = SignalGuard()
+    with guard, CaffeinateGuard():
+        _phase_sweeps(engine, conn, cfg, phase_list, client, budget_hit, guard)
+    if client is not None:
+        if 2 in phase_list:
+            client.unload(cfg.llm_triage.model)
+        if 3 in phase_list:
+            client.unload(cfg.llm_detail.model)
+
+    after = {
+        "events": conn.execute("SELECT COUNT(*) FROM events").fetchone()[0],
+        "plates": conn.execute("SELECT COUNT(*) FROM plates").fetchone()[0],
+        "faces": conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0],
+        "done": conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'done'"
+        ).fetchone()[0],
+    }
+    print("— run digest —")
+    print(f"jobs done: {before['done']} -> {after['done']}")
+    print(
+        f"events: +{after['events'] - before['events']}, "
+        f"plates: +{after['plates'] - before['plates']}, "
+        f"faces: +{after['faces'] - before['faces']}"
+    )
     conn.close()
 
 
@@ -274,6 +425,8 @@ def search_cmd(
     ctx: typer.Context,
     query: str | None = typer.Argument(None, help="FTS5 search query string"),  # noqa: B008
     kind: str | None = typer.Option(None, "--kind", help="Event kind filter"),  # noqa: B008
+    date_from: str | None = typer.Option(None, "--from", help="Events recorded on/after date (YYYY-MM-DD)"),  # noqa: B008, E501
+    date_to: str | None = typer.Option(None, "--to", help="Events recorded on/before date (YYYY-MM-DD)"),  # noqa: B008, E501
 ) -> None:
     cfg: Config = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
@@ -339,8 +492,78 @@ def search_cmd(
                 f"  {row['id']}: {row['event_type']}"
                 f" {row['start_sec']}s-{row['end_sec']}s {row['status']}"
             )
+    elif date_from is not None or date_to is not None:
+        clauses = []
+        args: list[str] = []
+        if date_from is not None:
+            clauses.append("date(j.recording_start_utc) >= ?")
+            args.append(date_from)
+        if date_to is not None:
+            clauses.append("date(j.recording_start_utc) <= ?")
+            args.append(date_to)
+        if kind is not None:
+            clauses.append("e.event_type = ?")
+            args.append(kind)
+        rows = conn.execute(
+            "SELECT e.id, e.event_type, e.start_sec, e.status, "
+            "j.recording_start_utc, j.id AS job_id "
+            "FROM events e JOIN jobs j ON j.id = e.job_id "
+            f"WHERE {' AND '.join(clauses)} "
+            "ORDER BY j.recording_start_utc, e.id LIMIT 500",
+            args,
+        ).fetchall()
+        print(f"EVENTS {date_from or '...'}..{date_to or '...'}:")
+        for row in rows:
+            print(
+                f"  {row['id']}: {row['event_type']}"
+                f" @ {row['recording_start_utc']} job={row['job_id']}"
+                f" {row['start_sec']}s ({row['status']})"
+            )
     else:
         print("Usage: vs-search <query> OR vs-search --kind <event-type>")
+    conn.close()
+
+
+@app.command(name="diff")
+def diff_cmd(
+    ctx: typer.Context,
+    job_id: int = typer.Argument(..., help="Job id"),
+    version_a: str = typer.Argument(..., help="Prompt version A"),
+    version_b: str = typer.Argument(..., help="Prompt version B"),
+) -> None:
+    cfg: Config = ctx.obj["config"]
+    conn = connect(cfg.storage.db_path)
+    init_db(conn)
+    rows = conn.execute(
+        "SELECT event_id, analysis_type, prompt_version, raw_response "
+        "FROM analysis_results WHERE job_id = ? "
+        "AND prompt_version IN (?, ?) ORDER BY event_id, id",
+        (job_id, version_a, version_b),
+    ).fetchall()
+    by_event: dict[int, dict[str, str]] = {}
+    for r in rows:
+        by_event.setdefault(int(r["event_id"]), {})[
+            f"{r['analysis_type']}:{r['prompt_version']}"
+        ] = r["raw_response"]
+    compared = 0
+    changed = 0
+    for event_id, versions in sorted(by_event.items()):
+        a = next((v for k, v in versions.items() if k.endswith(f":{version_a}")), None)
+        b = next((v for k, v in versions.items() if k.endswith(f":{version_b}")), None)
+        if a is None or b is None:
+            continue
+        compared += 1
+        try:
+            da = json.loads(a).get("description", "")
+            db_ = json.loads(b).get("description", "")
+        except json.JSONDecodeError:
+            da, db_ = a, b
+        if da != db_:
+            changed += 1
+            print(f"event {event_id} CHANGED:")
+            print(f"  [{version_a}] {da}")
+            print(f"  [{version_b}] {db_}")
+    print(f"compared {compared} events, {changed} changed")
     conn.close()
 
 

@@ -153,3 +153,71 @@ def test_analyze_phase1_only_no_jobs(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0
     assert "phase 1 sweep complete: 0 jobs" in result.stdout
+
+
+def test_search_date_range(tmp_path: Path) -> None:
+    import video_security.db as db_module
+
+    db_file = tmp_path / "t.db"
+    conn = db_module.connect(str(db_file))
+    db_module.init_db(conn)
+    j1 = db_module.create_job(conn, "/v/a.mp4", "h1")
+    conn.execute(
+        "UPDATE jobs SET recording_start_utc = '2026-09-20 10:00:00' "
+        "WHERE id = ?",
+        (j1.id,),
+    )
+    db_module.insert_event(
+        conn, j1.id, "intrusion", 5.0, 6.0, 0, None, "[]", 0.5, 0.5
+    )
+    conn.commit()
+    conn.close()
+    result = runner.invoke(
+        app,
+        [
+            "--db",
+            str(db_file),
+            "search",
+            "--from",
+            "2026-09-20",
+            "--to",
+            "2026-09-21",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "EVENTS 2026-09-20..2026-09-21" in result.output
+    assert "intrusion" in result.output
+    empty = runner.invoke(
+        app, ["--db", str(db_file), "search", "--from", "2020-01-01", "--to", "2020-01-02"]
+    )
+    assert empty.exit_code == 0
+    assert "intrusion" not in empty.output
+
+
+def test_diff_prompt_versions(tmp_path: Path) -> None:
+    import video_security.db as db_module
+
+    db_file = tmp_path / "t.db"
+    conn = db_module.connect(str(db_file))
+    db_module.init_db(conn)
+    j1 = db_module.create_job(conn, "/v/a.mp4", "h1")
+    ev = db_module.insert_event(
+        conn, j1.id, "intrusion", 5.0, 6.0, 0, None, "[]", 0.5, 0.5
+    )
+    db_module.insert_analysis_result(
+        conn, j1.id, ev, "d1", "1", "detail",
+        '{"description": "person near gate"}', None, 0, None,
+    )
+    db_module.insert_analysis_result(
+        conn, j1.id, ev, "d1", "2", "detail",
+        '{"description": "two people near gate"}', None, 0, None,
+    )
+    conn.commit()
+    conn.close()
+    result = runner.invoke(
+        app, ["--db", str(db_file), "diff", str(j1.id), "1", "2"]
+    )
+    assert result.exit_code == 0
+    assert "compared 1 events, 1 changed" in result.output
+    assert "person near gate" in result.output
+    assert "two people near gate" in result.output

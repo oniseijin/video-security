@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  video-security nightly run template (adjust HOME paths if installed elsewhere).
+
+  Install:
+    cp extras/com.video-security.nightly.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.video-security.nightly.plist
+
+  Runs the full cycle nightly at 02:00 with an 8-hour budget:
+  import from the mounted CX-8 card (if present), then analyze all phases.
+  Logs to ~/.local/opt/video-security/var/nightly.log
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.video-security.nightly.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.video-security.nightly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ryan/.local/bin/vs</string>
+        <string>run</string>
+        <string>--source</string>
+        <string>/Volumes/CX-8</string>
+        <string>--phases</string>
+        <string>1,2,3</string>
+        <string>--stop-after</string>
+        <string>8h</string>
+        <string>--resume</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/ryan/.local/opt/video-security/var/nightly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ryan/.local/opt/video-security/var/nightly.log</string>
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>
