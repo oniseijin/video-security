@@ -851,3 +851,59 @@ a.count-chip:hover {
   border-style: dashed;
   opacity: 0.65;
 }
+
+.year-heat-grid {
+  display: grid;
+  grid-template-columns: 3.2rem repeat(31, 1fr);
+  gap: 2px;
+  max-width: 56rem;
+  margin-top: 0.5rem;
+}
+
+.year-heat-dow {
+  font-size: 0.55rem;
+  text-align: center;
+  color: var(--vs-ink-dim);
+}
+
+.year-heat-month {
+  font-size: 0.65rem;
+  background: transparent;
+  border: none;
+  color: var(--vs-ink-dim);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.year-heat-month:hover {
+  color: var(--vs-ink);
+  text-decoration: underline;
+}
+
+.year-heat-month.empty {
+  cursor: default;
+}
+
+.year-heat-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--vs-border, rgba(128, 128, 128, 0.3));
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.year-heat-cell.empty,
+.year-heat-cell.blank {
+  border: none;
+  cursor: default;
+}
+
+.year-heat-cell.selected {
+  outline: 2px solid var(--vs-accent, #ffc400);
+}
+
+.year-heat-cell.unanalyzed {
+  border-style: dashed;
+  opacity: 0.65;
+}

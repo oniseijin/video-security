@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { fetchDays, fetchEventsPage } from "../api"
 import type { DayBucket, EventsPage } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
@@ -34,15 +34,18 @@ function CalendarHeat({
   selected,
   onSelect,
   skipEmpty,
-  onToggleSkip,
+  initialMonth,
 }: {
   days: DayBucket[]
   selected: string | null
   onSelect: (day: string) => void
   skipEmpty: boolean
-  onToggleSkip: () => void
+  initialMonth: { year: number; month: number } | null
 }) {
   const [cursor, setCursor] = useState(() => {
+    if (initialMonth) {
+      return initialMonth
+    }
     const first = days[0]?.date ?? dayKey(new Date())
     return { year: Number(first.slice(0, 4)), month: Number(first.slice(5, 7)) - 1 }
   })
@@ -103,14 +106,6 @@ function CalendarHeat({
         </span>
         <button className="app-btn" onClick={() => shift(1)} type="button">
           NEXT ▶
-        </button>
-        <button
-          className={"app-btn" + (skipEmpty ? " active" : "")}
-          onClick={onToggleSkip}
-          title="prev/next jumps only to months with recordings"
-          type="button"
-        >
-          SKIP EMPTY {skipEmpty ? "ON" : "OFF"}
         </button>
       </div>
       <div className="cal-heat-grid">
@@ -251,9 +246,143 @@ function DayTimeline({ day }: { day: string }) {
   )
 }
 
+function YearHeat({
+  days,
+  selected,
+  onSelect,
+  onDrill,
+  skipEmpty,
+  year,
+  setYear,
+}: {
+  days: DayBucket[]
+  selected: string | null
+  onSelect: (day: string) => void
+  onDrill: (year: number, month: number) => void
+  skipEmpty: boolean
+  year: number
+  setYear: (y: number) => void
+}) {
+  const byDate = new Map(days.map((d) => [d.date, d]))
+  const yearsWithData = [
+    ...new Set(days.map((d) => Number(d.date.slice(0, 4)))),
+  ].sort()
+  const maxEvents = Math.max(1, ...days.map((d) => d.events))
+  const shift = (delta: number) => {
+    if (skipEmpty && yearsWithData.length > 0) {
+      const idx = yearsWithData.indexOf(year)
+      if (idx === -1) {
+        const next = yearsWithData.find((y) => (delta > 0 ? y > year : y < year))
+        if (next !== undefined) {
+          setYear(next)
+        }
+        return
+      }
+      const target = yearsWithData[idx + delta]
+      if (target !== undefined) {
+        setYear(target)
+      }
+      return
+    }
+    setYear(year + delta)
+  }
+  const yearDays = days.filter((d) => d.date.startsWith(String(year)))
+  const yearEvents = yearDays.reduce((a, d) => a + d.events, 0)
+  return (
+    <div className="year-heat">
+      <div className="cal-heat-nav">
+        <button className="app-btn" onClick={() => shift(-1)} type="button">
+          ◀ PREV
+        </button>
+        <span className="cal-heat-title">{year}</span>
+        <button className="app-btn" onClick={() => shift(1)} type="button">
+          NEXT ▶
+        </button>
+        <span className="note">
+          {yearDays.length} recorded days · {yearEvents} events · click a
+          month label to drill in
+        </span>
+      </div>
+      <div className="year-heat-grid">
+        <span className="year-heat-month empty" />
+        {Array.from({ length: 31 }, (_, i) => (
+          <span className="year-heat-dow" key={i}>
+            {i === 0 || (i + 1) % 5 === 0 ? i + 1 : ""}
+          </span>
+        ))}
+        {MONTHS.map((m, mi) => {
+          const dim = new Date(year, mi + 1, 0).getDate()
+          return (
+            <Fragment key={m}>
+              <button
+                className="year-heat-month"
+                onClick={() => onDrill(year, mi)}
+                type="button"
+              >
+                {m}
+              </button>
+              {Array.from({ length: 31 }, (_, di) => {
+                const key = `${year}-${String(mi + 1).padStart(2, "0")}-${String(
+                  di + 1
+                ).padStart(2, "0")}`
+                if (di + 1 > dim) {
+                  return (
+                    <span className="year-heat-cell blank" key={key} />
+                  )
+                }
+                const cell = byDate.get(key)
+                if (!cell) {
+                  return (
+                    <span className="year-heat-cell empty" key={key} />
+                  )
+                }
+                const intensity = cell.events / maxEvents
+                const unanalyzed = cell.jobs > 0 && cell.analyzed === 0
+                return (
+                  <button
+                    className={
+                      "year-heat-cell" +
+                      (selected === cell.date ? " selected" : "") +
+                      (unanalyzed ? " unanalyzed" : "")
+                    }
+                    key={key}
+                    onClick={() => onSelect(cell.date)}
+                    style={
+                      cell.events > 0
+                        ? {
+                            background: `color-mix(in srgb, var(--vs-threat) ${
+                              20 + 70 * intensity
+                            }%, transparent)`,
+                          }
+                        : undefined
+                    }
+                    title={
+                      unanalyzed
+                        ? `${cell.date}: ${cell.jobs} clips recorded, not yet analyzed`
+                        : `${cell.date}: ${cell.jobs} jobs, ${cell.events} events`
+                    }
+                    type="button"
+                  />
+                )
+              })}
+            </Fragment>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function Timeline() {
   const [selected, setSelected] = useState<string | null>(null)
   const [skipEmpty, setSkipEmpty] = useState(true)
+  const [mode, setMode] = useState<"month" | "year">("month")
+  const [year, setYear] = useState<number>(() =>
+    Number((new Date().getFullYear()))
+  )
+  const [drill, setDrill] = useState<{ year: number; month: number } | null>(
+    null
+  )
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["days"],
     queryFn: fetchDays,
@@ -286,13 +415,55 @@ export function Timeline() {
         <TerminalNote>no recordings indexed yet</TerminalNote>
       ) : (
         <>
+          <div className="cal-heat-nav">
+            <button
+              className={"app-btn" + (mode === "month" ? " active" : "")}
+              onClick={() => setMode("month")}
+              type="button"
+            >
+              MONTH
+            </button>
+            <button
+              className={"app-btn" + (mode === "year" ? " active" : "")}
+              onClick={() => setMode("year")}
+              type="button"
+            >
+              YEAR
+            </button>
+            <button
+              className="app-btn"
+              onClick={() => {
+                setSkipEmpty(!skipEmpty)
+              }}
+              title="prev/next jumps only to months/years with recordings"
+              type="button"
+            >
+              SKIP EMPTY {skipEmpty ? "ON" : "OFF"}
+            </button>
+          </div>
+          {mode === "year" ? (
+            <YearHeat
+              days={days}
+              selected={selected}
+              onSelect={setSelected}
+              onDrill={(y, m) => {
+                setDrill({ year: y, month: m })
+                setMode("month")
+              }}
+              skipEmpty={skipEmpty}
+              setYear={setYear}
+              year={year}
+            />
+          ) : (
           <CalendarHeat
+            key={drill ? `${drill.year}-${drill.month}` : "default"}
             days={days}
+            initialMonth={drill}
             onSelect={setSelected}
             selected={selected}
             skipEmpty={skipEmpty}
-            onToggleSkip={() => setSkipEmpty(!skipEmpty)}
           />
+          )}
           {selected != null ? (
             <DayTimeline day={selected} />
           ) : (
