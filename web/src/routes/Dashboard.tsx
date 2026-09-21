@@ -1,13 +1,22 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { fetchMapRecent, fetchStats, fetchWatchlistHits } from "../api"
+import {
+  fetchAnalyticsHours,
+  fetchAnalyticsLocations,
+  fetchMapRecent,
+  fetchStats,
+  fetchWatchlistHits,
+} from "../api"
 import type {
   GpsEventMarker,
   GpsPoint,
+  HoursResponse,
+  LocationsResponse,
   MapRecent,
   Stats,
   WatchlistHitsPage,
 } from "../api"
+import { HeatMap } from "../components/HeatMap"
 import { TerminalNote } from "../components/TerminalNote"
 import { TrackMap } from "../components/TrackMap"
 import { fmtBytes, fmtDate } from "../format"
@@ -98,6 +107,139 @@ function RecentEvents() {
       <TrackMap events={events} height={340} points={points} route={false} />
       <p className="note">recent {data.items.length} events with GPS</p>
     </section>
+  )
+}
+
+function HoursChart({ data }: { data: HoursResponse }) {
+  const W = 240
+  const H = 120
+  const pad = { top: 10, right: 8, bottom: 18, left: 28 }
+  const chartW = W - pad.left - pad.right
+  const chartH = H - pad.top - pad.bottom
+  const maxCount = Math.max(1, ...data.hours.map((h) => h.count))
+  const barW = Math.max(2, Math.floor(chartW / 24) - 2)
+  const gap = (chartW - barW * 24) / 23
+  return (
+    <svg
+      className="chart-svg"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="events by hour"
+    >
+      {[0, Math.floor(maxCount / 2), maxCount].map((v, i) => (
+        <text
+          key={i}
+          x={pad.left - 4}
+          y={pad.top + chartH - (v / maxCount) * chartH + 3}
+          textAnchor="end"
+          className="chart-label"
+        >
+          {v}
+        </text>
+      ))}
+      <line
+        x1={pad.left}
+        y1={pad.top}
+        x2={pad.left}
+        y2={pad.top + chartH}
+        style={{ stroke: "var(--vs-line)" }}
+      />
+      <line
+        x1={pad.left}
+        y1={pad.top + chartH}
+        x2={pad.left + chartW}
+        y2={pad.top + chartH}
+        style={{ stroke: "var(--vs-line)" }}
+      />
+      {Array.from({ length: 24 }, (_, h) => {
+        const bar = data.hours.find((b) => b.hour === h)
+        const count = bar ? bar.count : 0
+        const barH = Math.max(0, (count / maxCount) * chartH)
+        const x = pad.left + h * (barW + gap)
+        return (
+          <g key={h}>
+            <rect
+              x={x}
+              y={pad.top + chartH - barH}
+              width={barW}
+              height={barH}
+              style={{ fill: "var(--vs-accent)", opacity: 0.7 + (count / maxCount) * 0.3 }}
+            />
+            {h % 3 === 0 ? (
+              <text
+                x={x + barW / 2}
+                y={H - 3}
+                textAnchor="middle"
+                className="chart-label"
+              >
+                {h}
+              </text>
+            ) : null}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+function Analytics() {
+  const hours = useQuery<HoursResponse, Error>({
+    queryKey: ["analytics-hours"],
+    queryFn: fetchAnalyticsHours,
+  })
+  const locations = useQuery<LocationsResponse, Error>({
+    queryKey: ["analytics-locations"],
+    queryFn: fetchAnalyticsLocations,
+  })
+
+  return (
+    <>
+      <section className="panel">
+        <h2>Route Heatmap</h2>
+        <HeatMap height={360} />
+        <p className="note">decimated GPS points</p>
+      </section>
+      <section className="panel">
+        <h2>Events by Hour</h2>
+        {hours.isPending ? (
+          <TerminalNote>loading...</TerminalNote>
+        ) : hours.isError ? (
+          <TerminalNote tone="threat">hours error: {hours.error.message}</TerminalNote>
+        ) : !hours.data || hours.data.hours.length === 0 ? (
+          <TerminalNote>no event hour data</TerminalNote>
+        ) : (
+          <HoursChart data={hours.data} />
+        )}
+      </section>
+      <section className="panel">
+        <h2>Top Locations</h2>
+        {locations.isPending ? (
+          <TerminalNote>loading...</TerminalNote>
+        ) : locations.isError ? (
+          <TerminalNote tone="threat">locations error: {locations.error.message}</TerminalNote>
+        ) : !locations.data || locations.data.locations.length === 0 ? (
+          <TerminalNote>no location data</TerminalNote>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th className="num">Events</th>
+              </tr>
+            </thead>
+            <tbody>
+              {locations.data.locations.map((loc) => (
+                <tr key={loc.name}>
+                  <td>{loc.name}</td>
+                  <td className="num">{loc.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </>
   )
 }
 
@@ -242,6 +384,7 @@ export function Dashboard() {
         )}
       </section>
       <RecentEvents />
+      <Analytics />
     </>
   )
 }

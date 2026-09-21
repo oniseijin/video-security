@@ -464,3 +464,51 @@ def test_search_semantic_with_stub(tmp_path: Path) -> None:
     assert any(h["event_id"] == 11 for h in result["semantic"])
     assert all(isinstance(h["score"], float) for h in result["semantic"])
     conn.close()
+
+
+def test_events_date_filter(base_url: str) -> None:
+    all_data = _get_json(f"{base_url}/api/events")
+    assert all_data["total"] == 3
+    before = _get_json(f"{base_url}/api/events?to=2025-08-01")
+    assert before["total"] == 0
+    after = _get_json(f"{base_url}/api/events?from=2025-09-21")
+    assert after["total"] == 3
+    range_q = _get_json(
+        f"{base_url}/api/events?from=2025-09-21&to=2025-09-23"
+    )
+    assert range_q["total"] == 3
+
+
+def test_days_endpoint(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/days")
+    assert "days" in data
+    assert len(data["days"]) == 2
+    dates = [d["date"] for d in data["days"]]
+    assert "2025-08-01" in dates
+    assert "2025-09-22" in dates
+    for d in data["days"]:
+        assert isinstance(d["jobs"], int)
+        assert isinstance(d["events"], int)
+        assert d["jobs"] >= 0
+        assert d["events"] >= 0
+
+
+def test_analytics_hours_endpoint(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/analytics/hours")
+    assert "hours" in data
+    assert isinstance(data["hours"], list)
+    for h in data["hours"]:
+        assert isinstance(h["hour"], int)
+        assert isinstance(h["count"], int)
+        assert 0 <= h["hour"] <= 23
+        assert h["count"] >= 0
+
+
+def test_analytics_locations_endpoint(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/analytics/locations")
+    assert "locations" in data
+    assert isinstance(data["locations"], list)
+    for loc in data["locations"]:
+        assert isinstance(loc["name"], str)
+        assert isinstance(loc["count"], int)
+        assert loc["count"] >= 1

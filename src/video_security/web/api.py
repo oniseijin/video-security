@@ -527,6 +527,7 @@ def events_list(
 ) -> dict[str, Any]:
     where: list[str] = []
     args: list[Any] = []
+    join_jobs = False
     if params.get("type"):
         where.append("e.event_type = ?")
         args.append(params["type"])
@@ -536,9 +537,19 @@ def events_list(
     if params.get("job_id"):
         where.append("e.job_id = ?")
         args.append(int(params["job_id"]))
+    if params.get("from"):
+        join_jobs = True
+        where.append("j.recording_start_utc >= ?")
+        args.append(params["from"])
+    if params.get("to"):
+        if not join_jobs:
+            join_jobs = True
+        where.append("j.recording_start_utc <= ?")
+        args.append(params["to"])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
+    table = "events e JOIN jobs j ON j.id = e.job_id" if join_jobs else "events e"
     rows = conn.execute(
-        "SELECT e.* FROM events e" + clause + " ORDER BY e.id DESC LIMIT 5000", args
+        f"SELECT e.* FROM {table}{clause} ORDER BY e.id DESC LIMIT 5000", args
     ).fetchall()
     job_cache: dict[int, sqlite3.Row] = {}
     track_cache: dict[int, list[sqlite3.Row]] = {}
@@ -1320,6 +1331,102 @@ def report_html(
     return 200, "text/html; charset=utf-8", html_str.encode("utf-8")
 
 
+def days(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    job_rows = conn.execute(
+        "SELECT date(recording_start_utc) AS day, COUNT(*) AS cnt "
+        "FROM jobs WHERE recording_start_utc IS NOT NULL "
+        "GROUP BY day ORDER BY day"
+    ).fetchall()
+    event_rows = conn.execute(
+        "SELECT date(j.recording_start_utc) AS day, COUNT(*) AS cnt "
+        "FROM events e JOIN jobs j ON j.id = e.job_id "
+        "WHERE j.recording_start_utc IS NOT NULL "
+        "GROUP BY day ORDER BY day"
+    ).fetchall()
+    jobs_map: dict[str, int] = {str(r["day"]): int(r["cnt"]) for r in job_rows}
+    events_map: dict[str, int] = {str(r["day"]): int(r["cnt"]) for r in event_rows}
+    all_days = sorted(set(jobs_map.keys()) | set(events_map.keys()))
+    return {
+        "days": [
+            {"date": d, "jobs": jobs_map.get(d, 0), "events": events_map.get(d, 0)}
+            for d in all_days
+        ]
+    }
+
+
+def analytics_heatmap(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    rows = conn.execute(
+        "SELECT lat, lon FROM clip_gps_data WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    ).fetchall()
+    total = len(rows)
+    max_points = 2000
+    stride = max(1, total // max_points) if total > max_points else 1
+    cells: dict[tuple[float, float], int] = {}
+    for i, r in enumerate(rows):
+        if total > max_points and i % stride != 0:
+            continue
+        k = (round(float(r["lat"]) * 1000) / 1000, round(float(r["lon"]) * 1000) / 1000)
+        cells[k] = cells.get(k, 0) + 1
+    max_count = max(cells.values()) if cells else 1
+    return {
+        "cells": [
+            {"lat": k[0], "lon": k[1], "count": c, "weight": c / max_count}
+            for k, c in cells.items()
+        ]
+    }
+
+
+def analytics_hours(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    rows = conn.execute(
+        "SELECT strftime('%H', j.recording_start_utc) AS hour, COUNT(*) AS count "
+        "FROM events e JOIN jobs j ON j.id = e.job_id "
+        "WHERE j.recording_start_utc IS NOT NULL "
+        "GROUP BY hour ORDER BY hour"
+    ).fetchall()
+    return {
+        "hours": [
+            {"hour": int(r["hour"]), "count": int(r["count"])} for r in rows
+        ]
+    }
+
+
+def analytics_locations(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    from video_security.enrich import nearest_gps
+
+    gps_all = conn.execute(
+        "SELECT job_id, time_sec, lat, lon FROM clip_gps_data "
+        "WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY job_id, time_sec"
+    ).fetchall()
+    gps_by_job: dict[int, list[sqlite3.Row]] = {}
+    for r in gps_all:
+        gps_by_job.setdefault(int(r["job_id"]), []).append(r)
+    events = conn.execute(
+        "SELECT job_id, start_sec FROM events ORDER BY job_id"
+    ).fetchall()
+    location_counts: dict[str, int] = {}
+    for evt in events:
+        job_id = int(evt["job_id"])
+        gps_list = gps_by_job.get(job_id)
+        if not gps_list:
+            continue
+        gps = nearest_gps(gps_list, float(evt["start_sec"]))
+        if gps is None or gps["lat"] is None:
+            continue
+        desc = cached_description(conn, float(gps["lat"]), float(gps["lon"]))
+        if desc:
+            location_counts[desc] = location_counts.get(desc, 0) + 1
+    top = sorted(location_counts.items(), key=lambda x: -x[1])[:10]
+    return {"locations": [{"name": n, "count": c} for n, c in top]}
+
+
 def api_routes() -> list[Route]:
     return [
         ("GET", "/api/health", health),
@@ -1345,4 +1452,8 @@ def api_routes() -> list[Route]:
         ("GET", "/api/faces", faces),
         ("GET", "/api/search", search),
         ("GET", "/api/map/recent", map_recent),
+        ("GET", "/api/days", days),
+        ("GET", "/api/analytics/heatmap", analytics_heatmap),
+        ("GET", "/api/analytics/hours", analytics_hours),
+        ("GET", "/api/analytics/locations", analytics_locations),
     ]

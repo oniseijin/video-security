@@ -512,3 +512,58 @@ export function fetchWatchlistHits(
 ): Promise<WatchlistHitsPage> {
   return fetchJson<WatchlistHitsPage>(`/api/watchlist-hits?${params.toString()}`)
 }
+
+export interface DayBucket {
+  date: string
+  jobs: number
+  events: number
+}
+
+export interface DaysResponse {
+  days: DayBucket[]
+}
+
+export function fetchDays(): Promise<DaysResponse> {
+  return fetchJson<DaysResponse>("/api/days")
+}
+
+export interface HeatmapCell {
+  lat: number
+  lon: number
+  count: number
+  weight: number
+}
+
+export interface HeatmapResponse {
+  cells: HeatmapCell[]
+}
+
+export function fetchAnalyticsHeatmap(): Promise<HeatmapResponse> {
+  return fetchJson<HeatmapResponse>("/api/analytics/heatmap")
+}
+
+export interface HourBucket {
+  hour: number
+  count: number
+}
+
+export interface HoursResponse {
+  hours: HourBucket[]
+}
+
+export function fetchAnalyticsHours(): Promise<HoursResponse> {
+  return fetchJson<HoursResponse>("/api/analytics/hours")
+}
+
+export interface LocationBucket {
+  name: string
+  count: number
+}
+
+export interface LocationsResponse {
+  locations: LocationBucket[]
+}
+
+export function fetchAnalyticsLocations(): Promise<LocationsResponse> {
+  return fetchJson<LocationsResponse>("/api/analytics/locations")
+}

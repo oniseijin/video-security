@@ -676,3 +676,65 @@ a.count-chip:hover {
   width: 100%;
   object-fit: cover;
 }
+
+.date-strip {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding: 0.4rem 0 0.6rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.date-chip {
+  flex-shrink: 0;
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+  color: var(--vs-ink-dim);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 3.2rem;
+}
+
+.date-chip:hover {
+  color: var(--vs-accent);
+  border-color: var(--vs-accent);
+}
+
+.date-chip.active {
+  color: var(--vs-ink);
+  border-color: var(--vs-accent);
+  background: var(--vs-surface-2);
+}
+
+.date-chip-count {
+  font-size: 0.5625rem;
+  color: var(--vs-ink-faint);
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+}
+
+.chart-label {
+  font-family: var(--vs-font-mono);
+  font-size: 0.5625rem;
+  fill: var(--vs-ink-dim);
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}

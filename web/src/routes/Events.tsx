@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { useSearchParams } from "react-router-dom"
-import { fetchCategories, fetchEventsPage } from "../api"
-import type { CategoriesPayload, EventsPage } from "../api"
+import { fetchCategories, fetchDays, fetchEventsPage } from "../api"
+import type { CategoriesPayload, DaysResponse, EventsPage } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate } from "../format"
 import { toneColor } from "../theme"
@@ -10,11 +10,52 @@ import type { Tone } from "../theme"
 
 const LIMIT = 50
 
+function DateStrip({
+  selected,
+  onSelect,
+}: {
+  selected: string | null
+  onSelect: (date: string | null) => void
+}) {
+  const { data, isPending } = useQuery<DaysResponse, Error>({
+    queryKey: ["days"],
+    queryFn: fetchDays,
+  })
+  if (isPending || !data || data.days.length === 0) {
+    return null
+  }
+  return (
+    <div className="date-strip">
+      <button
+        type="button"
+        className={`date-chip${selected === null ? " active" : ""}`}
+        onClick={() => onSelect(null)}
+      >
+        ALL
+      </button>
+      {data.days.map((d) => (
+        <button
+          key={d.date}
+          type="button"
+          className={`date-chip${selected === d.date ? " active" : ""}`}
+          onClick={() => onSelect(d.date)}
+          title={`${d.events} events · ${d.jobs} jobs`}
+        >
+          {d.date.slice(5)}
+          <span className="date-chip-count">{d.events}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Events() {
   const [params, setParams] = useSearchParams()
   const category = params.get("category") ?? ""
   const type = params.get("type") ?? ""
   const status = params.get("status") ?? ""
+  const fromDate = params.get("from") ?? ""
+  const toDate = params.get("to") ?? ""
   const offset = Number(params.get("offset") ?? 0)
   const query = new URLSearchParams()
   if (category) {
@@ -25,6 +66,12 @@ export function Events() {
   }
   if (status) {
     query.set("status", status)
+  }
+  if (fromDate) {
+    query.set("from", fromDate)
+  }
+  if (toDate) {
+    query.set("to", toDate)
   }
   query.set("limit", String(LIMIT))
   query.set("offset", String(offset))
@@ -48,6 +95,18 @@ export function Events() {
     next.delete("offset")
     setParams(next)
   }
+  const setDate = (date: string | null) => {
+    const next = new URLSearchParams(params)
+    if (date) {
+      next.set("from", date)
+      next.set("to", date)
+    } else {
+      next.delete("from")
+      next.delete("to")
+    }
+    next.delete("offset")
+    setParams(next)
+  }
   const page = (delta: number) => {
     const next = new URLSearchParams(params)
     next.set("offset", String(Math.max(0, offset + delta)))
@@ -65,6 +124,7 @@ export function Events() {
               .join(" · ")}
           </p>
         ) : null}
+        <DateStrip selected={fromDate || null} onSelect={setDate} />
         <div className="filter-bar">
           <label>
             CATEGORY
