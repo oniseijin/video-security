@@ -164,6 +164,29 @@ class OllamaClient:
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
             return
 
+    def embed(self, model: str, text: str) -> list[float]:
+        body = json.dumps({"model": model, "prompt": text}).encode()
+        url = self.base_url + "/api/embeddings"
+        req = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                result: Any = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            raise OllamaError(
+                f"HTTP {e.code} from {url}: {e.reason}"
+            ) from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise OllamaError(
+                f"Ollama not reachable at {self.base_url}"
+            ) from e
+        if "embedding" not in result:
+            raise OllamaError(
+                f"Missing 'embedding' key in response from {url}"
+            )
+        return [float(v) for v in result["embedding"]]
+
     def health_check(self, models: list[str]) -> None:
         url = self.base_url + "/api/tags"
         try:

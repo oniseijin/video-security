@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import struct
 import threading
 import urllib.error
 import urllib.parse
@@ -86,6 +87,34 @@ def _seed(base: Path) -> None:
                              lighting_condition)
         VALUES (1, 0, 900, 30.0, 1, 'day'), (1, 0, 2700, 90.0, 2, 'day');
         """
+    )
+    conn.execute(
+        "UPDATE events SET llm_result_id = 1 WHERE id = 10"
+    )
+    conn.execute(
+        "INSERT INTO analysis_results (id, job_id, event_id, model_digest, "
+        "prompt_version, analysis_type, raw_response, confidence, retry_count) VALUES "
+        "(1, 1, 10, 'sha256:abc', 'v1', 'detail', "
+        "'{\"description\": \"blue car captured on plate\"}', NULL, 0)"
+    )
+    conn.execute(
+        "UPDATE events SET llm_result_id = 2 WHERE id = 12"
+    )
+    conn.execute(
+        "INSERT INTO analysis_results (id, job_id, event_id, model_digest, "
+        "prompt_version, analysis_type, raw_response, confidence, retry_count) VALUES "
+        "(2, 1, 12, 'sha256:def', 'v1', 'detail', "
+        "'{\"description\": \"person walking suspiciously near driveway\"}', NULL, 0)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, x'00000000000000000000000000000000', 'nomic-embed-text')",
+        (10,),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, x'00000000000000000000000000000001', 'nomic-embed-text')",
+        (12,),
     )
     conn.commit()
     conn.close()
@@ -193,7 +222,7 @@ def test_job_events_category_and_faces(base_url: str) -> None:
     items = {item["event_id"]: item for item in data["items"]}
     assert items[10]["category"] == "driving"
     assert items[10]["face_count"] == 1
-    assert items[10]["description_source"] == "synthesized"
+    assert items[10]["description_source"] == "llm"
     assert items[10]["plate_norm"] == "習志野5001"
     assert items[10]["recorded_at"] is not None
     driving = _get_json(f"{base_url}/api/jobs/1/events?category=driving")
@@ -289,6 +318,13 @@ def test_search_japanese(base_url: str) -> None:
     assert bad[0] == 400
 
 
+def test_search_semantic_unavailable_without_ollama(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/search?q=blue car")
+    assert "semantic_available" in data
+    assert isinstance(data["semantic"], list)
+    assert data["semantic_available"] or data["semantic"] == []
+
+
 def test_map_recent(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/map/recent")
     ids = [item["event_id"] for item in data["items"]]
@@ -374,3 +410,57 @@ def test_persons_endpoints(base_url: str) -> None:
     assert s["crop_url"] == "/media/faces/1/face_10_0_0.jpg"
     status, _b = _status_of(f"{base_url}/api/persons/999")
     assert status == 404
+
+
+def test_search_semantic_with_stub(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from video_security.config import Config
+    from video_security.db import connect, init_db
+    from video_security.web.api import search
+
+    db_path = tmp_path / "ts.db"
+    conn = connect(str(db_path))
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO jobs (id, video_path, video_hash, status) VALUES "
+        "(1, '/tmp/clips/NORMAL/front/a.mp4', 'h1', 'done')"
+    )
+    conn.execute(
+        "INSERT INTO events (id, job_id, event_type, start_sec, end_sec, "
+        "clip_id, detector_score, priority, status, llm_result_id) VALUES "
+        "(10, 1, 'intrusion', 32.0, 33.0, 0, 0.9, 0.9, 'detailed', NULL),"
+        "(11, 1, 'loitering', 48.0, 50.0, 0, 0.5, 0.5, 'detailed', 1)"
+    )
+    conn.execute(
+        "INSERT INTO analysis_results (id, job_id, event_id, model_digest, "
+        "prompt_version, analysis_type, raw_response, confidence, retry_count) VALUES "
+        "(1, 1, 11, 'sha256:abc', 'v1', 'detail', "
+        "'{\"description\": \"person loitering near gate\"}', NULL, 0)"
+    )
+    conn.commit()
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, ?, 'nomic-embed-text')",
+        (10, struct.pack("768f", *([0.1] * 768))),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, ?, 'nomic-embed-text')",
+        (11, struct.pack("768f", *([0.3] * 768))),
+    )
+    conn.commit()
+
+    q_embed = [0.5] * 768
+
+    def fake_embed_query(client: Any, model: str, text: str) -> list[float]:
+        return q_embed
+
+    with patch("video_security.llm.embeddings.embed_query", fake_embed_query):
+        cfg = Config()
+        result = search(conn, cfg, {"q": "loitering"})
+    assert result["semantic_available"] is True
+    assert len(result["semantic"]) > 0
+    assert any(h["event_id"] == 11 for h in result["semantic"])
+    assert all(isinstance(h["score"], float) for h in result["semantic"])
+    conn.close()

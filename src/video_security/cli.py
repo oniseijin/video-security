@@ -382,6 +382,30 @@ def list_cmd(ctx: typer.Context) -> None:
         conn.close()
 
 
+@app.command(name="index")
+def index_cmd(
+    ctx: typer.Context,
+    refresh: bool = typer.Option(False, "--refresh", help="Re-embed already indexed events"),
+) -> None:
+    from video_security.llm.embeddings import EMBED_MODEL, embed_events
+    from video_security.llm.ollama import OllamaClient, OllamaError
+
+    conn, cfg = _get_db(ctx)
+    client = OllamaClient(timeout_s=120)
+    try:
+        count = embed_events(client, EMBED_MODEL, conn, refresh=refresh)
+    except OllamaError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1) from e
+    print(f"embedded {count} events")
+    try:
+        client.unload(EMBED_MODEL)
+    except Exception:
+        pass
+    conn.close()
+
+
 @app.command(name="serve")
 def serve_cmd(
     ctx: typer.Context,

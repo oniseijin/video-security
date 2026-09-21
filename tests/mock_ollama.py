@@ -127,6 +127,17 @@ class MockOllama:
                                 "done": True,
                             },
                         )
+                elif parsed.path == "/api/embeddings":
+                    prompt = body.get("prompt", "") if body else ""
+                    dim = 768
+                    import hashlib as _hl
+
+                    seed = int(_hl.sha256(prompt.encode()).hexdigest()[:16], 16) % (2**31)
+                    import numpy as _np
+
+                    rng = _np.random.default_rng(seed)
+                    emb = rng.random(dim).astype(_np.float32).tolist()
+                    self._send_json(200, {"embedding": emb})
                 elif parsed.path == "/api/show":
                     model = body.get("model", "") if body else ""
                     self._send_json(

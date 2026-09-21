@@ -236,6 +236,14 @@ MIGRATIONS: list[list[str]] = [
         "CREATE INDEX IF NOT EXISTS idx_watchlist_hits_job ON watchlist_hits(job_id)",
         "CREATE INDEX IF NOT EXISTS idx_watchlist_hits_wl ON watchlist_hits(watchlist_id)",
     ],
+    [
+        """CREATE TABLE IF NOT EXISTS event_embeddings (
+            event_id INTEGER PRIMARY KEY,
+            embedding BLOB NOT NULL,
+            model TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ],
 ]
 
 

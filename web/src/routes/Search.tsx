@@ -27,7 +27,8 @@ export function Search() {
     (data.plates.length > 0 ||
       data.text.length > 0 ||
       data.transcripts.length > 0 ||
-      data.events.length > 0)
+      data.events.length > 0 ||
+      data.semantic.length > 0)
 
   return (
     <>
@@ -71,6 +72,9 @@ export function Search() {
             plates {data.plates.length} · scene text {data.text.length} ·
             transcripts {data.transcripts.length} · events{" "}
             {data.events.length}
+            {data.semantic.length > 0
+              ? ` · semantic ${data.semantic.length}`
+              : ""}
           </p>
         ) : null}
       </section>
@@ -215,6 +219,42 @@ export function Search() {
                         </Link>
                       </td>
                       <td>{hit.event_type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+          <section className="panel">
+            <h2>Semantic</h2>
+            {!data.semantic_available ? (
+              <TerminalNote>
+                semantic search requires Ollama with nomic-embed-text
+              </TerminalNote>
+            ) : data.semantic.length === 0 ? (
+              <TerminalNote>no semantic matches</TerminalNote>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th className="num">Score</th>
+                    <th>Snippet</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.semantic.map((hit) => (
+                    <tr key={hit.event_id}>
+                      <td>
+                        <Link
+                          className="event-id"
+                          to={`/events/${hit.event_id}`}
+                        >
+                          #{hit.event_id}
+                        </Link>
+                      </td>
+                      <td className="num">{hit.score.toFixed(3)}</td>
+                      <td className="wrap-cell">{hit.snippet}</td>
                     </tr>
                   ))}
                 </tbody>

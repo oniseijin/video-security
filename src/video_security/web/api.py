@@ -1035,12 +1035,27 @@ def search(
             (f"%{q}%",),
         )
     ]
+    semantic_available = False
+    semantic: list[dict[str, Any]] = []
+    try:
+        from video_security.llm.embeddings import EMBED_MODEL, embed_query
+        from video_security.llm.embeddings import semantic_search as sem_search
+        from video_security.llm.ollama import OllamaClient
+
+        client = OllamaClient(timeout_s=10)
+        q_embed = embed_query(client, EMBED_MODEL, q)
+        semantic = sem_search(conn, q_embed, top_k=10)
+        semantic_available = True
+    except Exception:
+        pass
     return {
         "q": q,
         "plates": plates,
         "text": text,
         "transcripts": transcripts,
         "events": events,
+        "semantic_available": semantic_available,
+        "semantic": semantic,
     }
 
 

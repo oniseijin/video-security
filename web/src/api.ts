@@ -364,12 +364,20 @@ export interface SearchEventHit {
   start_sec: number
 }
 
+export interface SearchSemanticHit {
+  event_id: number
+  score: number
+  snippet: string
+}
+
 export interface SearchResults {
   q: string
   plates: SearchPlateHit[]
   text: SearchTextHit[]
   transcripts: SearchTranscriptHit[]
   events: SearchEventHit[]
+  semantic_available: boolean
+  semantic: SearchSemanticHit[]
 }
 
 export interface MapRecentItem {
