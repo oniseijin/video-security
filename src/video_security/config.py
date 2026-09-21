@@ -208,6 +208,14 @@ class SoundConfig:
 
 
 @dataclasses.dataclass
+class AdapterPhotosConfig:
+    priority: float = 0.7
+    device_priorities: dict[str, float] = dataclasses.field(
+        default_factory=lambda: {"meta_glasses": 0.8, "iphone": 0.7}
+    )
+
+
+@dataclasses.dataclass
 class IdentityConfig:
     enabled: bool = True
     min_quality: float = 0.2
@@ -224,6 +232,7 @@ class Config:
     storage: StorageConfig = dataclasses.field(default_factory=StorageConfig)
     import_: ImportConfig = dataclasses.field(default_factory=ImportConfig)
     adapter_mazda_cx8: MazdaCx8Config = dataclasses.field(default_factory=MazdaCx8Config)
+    adapter_photos: AdapterPhotosConfig = dataclasses.field(default_factory=AdapterPhotosConfig)
     engine: EngineConfig = dataclasses.field(default_factory=EngineConfig)
     llm_triage: LLMStageConfig = dataclasses.field(
         default_factory=lambda: LLMStageConfig(model="gemma3:4b", num_ctx=2048, timeout_s=120)
@@ -353,6 +362,25 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                 if adapter_kwargs:
                     kwargs["adapter_mazda_cx8"] = dataclasses.replace(
                         config.adapter_mazda_cx8, **adapter_kwargs
+                    )
+            if "photos" in values and isinstance(values["photos"], dict):
+                photos = values["photos"]
+                photos_kwargs: dict[str, Any] = {}
+                if "priority" in photos:
+                    photos_kwargs["priority"] = _merge_value(
+                        config.adapter_photos.priority,
+                        photos["priority"],
+                        "adapter.photos.priority",
+                    )
+                if "device_priorities" in photos:
+                    photos_kwargs["device_priorities"] = _merge_value(
+                        config.adapter_photos.device_priorities,
+                        photos["device_priorities"],
+                        "adapter.photos.device_priorities",
+                    )
+                if photos_kwargs:
+                    kwargs["adapter_photos"] = dataclasses.replace(
+                        config.adapter_photos, **photos_kwargs
                     )
         elif section == "engine":
             kwargs["engine"] = _merge_dataclass(config.engine, values, "engine")

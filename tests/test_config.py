@@ -212,3 +212,30 @@ def test_load_config_none() -> None:
     cfg = load_config(None)
     assert isinstance(cfg, Config)
     assert cfg.engine.heartbeat_sec == 30
+
+
+def test_adapter_photos_defaults() -> None:
+    cfg = Config()
+    assert cfg.adapter_photos.priority == 0.7
+    assert cfg.adapter_photos.device_priorities == {"meta_glasses": 0.8, "iphone": 0.7}
+
+
+def test_adapter_photos_toml_override(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("""\
+[adapter.photos]
+priority = 0.55
+
+[adapter.photos.device_priorities]
+iphone = 0.6
+""")
+    cfg = load_config(toml_file)
+    assert cfg.adapter_photos.priority == 0.55
+    assert cfg.adapter_photos.device_priorities == {"meta_glasses": 0.8, "iphone": 0.6}
+
+
+def test_adapter_photos_bad_priority_type(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text("[adapter.photos]\npriority = \"high\"\n")
+    with pytest.raises(ConfigError, match="priority"):
+        load_config(toml_file)

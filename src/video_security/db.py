@@ -260,6 +260,16 @@ MIGRATIONS: list[list[str]] = [
             UNIQUE (job_id, clip_id, segment_id, model)
         )""",
     ],
+    [
+        """CREATE TABLE photos_imports (
+            uuid TEXT PRIMARY KEY,
+            job_id INTEGER NOT NULL,
+            video_hash TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX idx_photos_imports_hash ON photos_imports(video_hash)""",
+    ],
 ]
 
 
@@ -758,6 +768,24 @@ def nearest_event_to_seconds(
     if not rows:
         return None
     return min(rows, key=lambda r: abs((r["start_sec"] + r["end_sec"]) / 2 - target_seconds))
+
+
+def get_photos_import(conn: sqlite3.Connection, uuid: str) -> sqlite3.Row | None:
+    row: sqlite3.Row | None = conn.execute(
+        "SELECT * FROM photos_imports WHERE uuid = ?", (uuid,)
+    ).fetchone()
+    return row
+
+
+def insert_photos_import(
+    conn: sqlite3.Connection, uuid: str, job_id: int, video_hash: str, filename: str
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO photos_imports (uuid, job_id, video_hash, filename) "
+        "VALUES (?,?,?,?)",
+        (uuid, job_id, video_hash, filename),
+    )
+    conn.commit()
 
 
 def clip_fps(conn: sqlite3.Connection, job_id: int) -> float:

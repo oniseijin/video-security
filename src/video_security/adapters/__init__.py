@@ -16,6 +16,7 @@ class ClipInfo:
     recording_start_utc: str | None
     pair_path: Path | None = None
     nmea_path: Path | None = None
+    source_uuid: str | None = None
 
 
 class SourceAdapter(Protocol):

@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "clips",
     "clip_gps_data",
     "sessions",
+    "photos_imports",
 }
 
 
@@ -155,4 +156,59 @@ def test_user_version_tracks_migration_count(db_path: str) -> None:
     init_db(conn)
     version: int = conn.execute("PRAGMA user_version").fetchone()[0]
     assert version == len(MIGRATIONS)
+    conn.close()
+
+
+def test_photos_imports_migration_idempotent(db_path: str) -> None:
+    conn = connect(db_path)
+    init_db(conn)
+    init_db(conn)
+    tables = get_table_names(conn)
+    assert "photos_imports" in tables
+    conn.execute(
+        "INSERT INTO photos_imports (uuid, job_id, video_hash, filename) VALUES (?,?,?,?)",
+        ("test-uuid", 1, "abc123", "test.mov"),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM photos_imports WHERE uuid = ?", ("test-uuid",)).fetchone()
+    assert row is not None
+    conn.close()
+
+
+def test_photos_import_get_unknown(db_path: str) -> None:
+    from video_security.db import get_photos_import
+
+    conn = connect(db_path)
+    init_db(conn)
+    assert get_photos_import(conn, "nonexistent") is None
+    conn.close()
+
+
+def test_photos_import_insert_and_get(db_path: str) -> None:
+    from video_security.db import get_photos_import, insert_photos_import
+
+    conn = connect(db_path)
+    init_db(conn)
+    insert_photos_import(conn, "uuid-1", 42, "hash42", "clip.mov")
+    row = get_photos_import(conn, "uuid-1")
+    assert row is not None
+    assert row["uuid"] == "uuid-1"
+    assert row["job_id"] == 42
+    assert row["video_hash"] == "hash42"
+    assert row["filename"] == "clip.mov"
+    assert row["imported_at"] is not None
+    conn.close()
+
+
+def test_photos_import_insert_or_replace_overwrites(db_path: str) -> None:
+    from video_security.db import get_photos_import, insert_photos_import
+
+    conn = connect(db_path)
+    init_db(conn)
+    insert_photos_import(conn, "uuid-1", 42, "hash42", "clip.mov")
+    insert_photos_import(conn, "uuid-1", 99, "hash99", "clip.mov")
+    row = get_photos_import(conn, "uuid-1")
+    assert row is not None
+    assert row["job_id"] == 99
+    assert row["video_hash"] == "hash99"
     conn.close()
