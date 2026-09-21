@@ -590,6 +590,32 @@ def render_report_html(
         parts.append("<p>No plates detected.</p>")
     parts.append("</section>")
 
+    hits_rows = conn.execute(
+        "SELECT h.detail, h.event_id, w.kind, w.pattern, w.note "
+        "FROM watchlist_hits h JOIN watchlists w ON w.id = h.watchlist_id "
+        "WHERE h.job_id = ? ORDER BY h.id",
+        (job_id,),
+    ).fetchall()
+    if hits_rows:
+        parts.append('<section class="panel threat">')
+        parts.append("<h2>Watchlist</h2>")
+        parts.append('<table class="kv">')
+        parts.append("<tr><th>Match</th><th>Kind</th><th>Pattern</th><th>Note</th></tr>")
+        for h in hits_rows:
+            event_link = (
+                f'<a href="#ev-{h["event_id"]}">event {h["event_id"]}</a>'
+                if h["event_id"]
+                else ""
+            )
+            parts.append(
+                f"<tr><td>{html.escape(str(h['detail']))} {event_link}</td>"
+                f"<td>{html.escape(str(h['kind']))}</td>"
+                f"<td>{html.escape(str(h['pattern']))}</td>"
+                f"<td>{html.escape(str(h['note'] or ''))}</td></tr>"
+            )
+        parts.append("</table>")
+        parts.append("</section>")
+
     parts.append('<section class="panel">')
     parts.append("<h2>Transcript</h2>")
     if transcript_rows:

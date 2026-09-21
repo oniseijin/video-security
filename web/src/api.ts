@@ -466,3 +466,41 @@ export function fetchPersons(params: URLSearchParams): Promise<PersonsPage> {
 export function fetchPersonDetail(id: number): Promise<PersonDetail> {
   return fetchJson<PersonDetail>(`/api/persons/${id}`)
 }
+
+export interface WatchlistRow {
+  id: number
+  kind: string
+  pattern: string
+  note: string | null
+  created_at: string
+  hits: number
+}
+
+export interface WatchlistHitItem {
+  hit_id: number
+  watchlist_id: number
+  kind: string
+  pattern: string
+  note: string | null
+  job_id: number
+  event_id: number | null
+  detail: string | null
+  created_at: string
+}
+
+export interface WatchlistHitsPage {
+  items: WatchlistHitItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function fetchWatchlists(): Promise<{ items: WatchlistRow[] }> {
+  return fetchJson<{ items: WatchlistRow[] }>("/api/watchlists")
+}
+
+export function fetchWatchlistHits(
+  params: URLSearchParams
+): Promise<WatchlistHitsPage> {
+  return fetchJson<WatchlistHitsPage>(`/api/watchlist-hits?${params.toString()}`)
+}

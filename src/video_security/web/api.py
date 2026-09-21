@@ -1082,6 +1082,44 @@ def map_recent(
     return {"items": items}
 
 
+def watchlists(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    from video_security.watchlist import list_watchlists
+
+    return {"items": list_watchlists(conn)}
+
+
+def watchlist_hits(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    limit, offset = _limit_offset(params)
+    rows = conn.execute(
+        "SELECT h.id, h.watchlist_id, h.job_id, h.event_id, h.detail, "
+        "h.created_at, w.kind, w.pattern, w.note "
+        "FROM watchlist_hits h JOIN watchlists w ON w.id = h.watchlist_id "
+        "ORDER BY h.id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    ).fetchall()
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "hit_id": int(r["id"]),
+                "watchlist_id": int(r["watchlist_id"]),
+                "kind": str(r["kind"]),
+                "pattern": str(r["pattern"]),
+                "note": r["note"],
+                "job_id": int(r["job_id"]),
+                "event_id": int(r["event_id"]) if r["event_id"] else None,
+                "detail": r["detail"],
+                "created_at": r["created_at"],
+            }
+        )
+    total = conn.execute("SELECT COUNT(*) FROM watchlist_hits").fetchone()[0]
+    return {"items": items, "total": int(total), "limit": limit, "offset": offset}
+
+
 def persons(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1285,6 +1323,8 @@ def api_routes() -> list[Route]:
         ("GET", "/api/categories", categories),
         ("GET", "/api/plates", plates_gallery),
         ("GET", "/api/plates/{norm_text}", plate_detail),
+        ("GET", "/api/watchlists", watchlists),
+        ("GET", "/api/watchlist-hits", watchlist_hits),
         ("GET", "/api/persons", persons),
         ("GET", "/api/persons/{id}", person_detail),
         ("GET", "/api/faces", faces),

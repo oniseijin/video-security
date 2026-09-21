@@ -217,6 +217,25 @@ MIGRATIONS: list[list[str]] = [
         "CREATE INDEX IF NOT EXISTS idx_faces_event ON faces(event_id)",
         "CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id)",
     ],
+    [
+        """CREATE TABLE watchlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            note TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE watchlist_hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            watchlist_id INTEGER NOT NULL,
+            job_id INTEGER NOT NULL,
+            event_id INTEGER,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_watchlist_hits_job ON watchlist_hits(job_id)",
+        "CREATE INDEX IF NOT EXISTS idx_watchlist_hits_wl ON watchlist_hits(watchlist_id)",
+    ],
 ]
 
 
@@ -642,7 +661,7 @@ def delete_job_rows(
     tables = [
         "frames", "events", "vehicle_tracks", "plates", "frame_text",
         "transcript_segments", "analysis_results", "sessions", "clips",
-        "clip_gps_data", "faces",
+        "clip_gps_data", "faces", "watchlist_hits",
     ]
     for table in tables:
         conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))

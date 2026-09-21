@@ -185,6 +185,11 @@ class IdentityConfig:
 
 
 @dataclasses.dataclass
+class WatchlistConfig:
+    notify_command: str | None = None
+
+
+@dataclasses.dataclass
 class Config:
     storage: StorageConfig = dataclasses.field(default_factory=StorageConfig)
     import_: ImportConfig = dataclasses.field(default_factory=ImportConfig)
@@ -204,6 +209,7 @@ class Config:
     map: MapConfig = dataclasses.field(default_factory=MapConfig)
     web: WebConfig = dataclasses.field(default_factory=WebConfig)
     identity: IdentityConfig = dataclasses.field(default_factory=IdentityConfig)
+    watchlist: WatchlistConfig = dataclasses.field(default_factory=WatchlistConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:

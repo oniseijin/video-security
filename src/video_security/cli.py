@@ -422,6 +422,51 @@ def backfill_media_cmd(
         conn.close()
 
 
+@app.command(name="watch")
+def watch_cmd(
+    ctx: typer.Context,
+    add: bool = typer.Option(False, "--add", help="Add a watchlist entry"),  # noqa: B008
+    remove: int | None = typer.Option(None, "--remove", help="Remove watchlist by id"),  # noqa: B008
+    kind: str = typer.Option("plate", "--kind", help="plate|text|person"),  # noqa: B008
+    pattern: str | None = typer.Option(None, "--pattern", help="Pattern (plate LIKE / FTS query / person id)"),  # noqa: B008, E501
+    note: str | None = typer.Option(None, "--note", help="Note attached to hits"),  # noqa: B008
+) -> None:
+    from video_security.watchlist import (
+        add_watchlist,
+        list_watchlists,
+        remove_watchlist,
+    )
+
+    conn, _cfg = _get_db(ctx)
+    try:
+        if remove is not None:
+            ok = remove_watchlist(conn, remove)
+            print(f"removed watchlist {remove}" if ok else f"no watchlist {remove}")
+            return
+        if add:
+            if pattern is None:
+                print("Error: --pattern is required with --add", file=sys.stderr)
+                raise typer.Exit(code=1)
+            try:
+                wl_id = add_watchlist(conn, kind, pattern, note)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                raise typer.Exit(code=1) from e
+            print(f"watchlist {wl_id}: {kind} / {pattern}")
+            return
+        rows = list_watchlists(conn)
+        if not rows:
+            print("no watchlists — add with: vs watch --add --kind plate --pattern L1208")
+            return
+        for r in rows:
+            print(
+                f"{r['id']:3d} {r['kind']:6s} {r['pattern']:20s} "
+                f"hits={r['hits']} {r['note'] or ''}"
+            )
+    finally:
+        conn.close()
+
+
 @app.command(name="index-faces")
 def index_faces_cmd(ctx: typer.Context) -> None:
     from video_security.identity import index_existing_faces

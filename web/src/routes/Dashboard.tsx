@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchMapRecent, fetchStats } from "../api"
+import { Link } from "react-router-dom"
+import { fetchMapRecent, fetchStats, fetchWatchlistHits } from "../api"
 import type {
   GpsEventMarker,
   GpsPoint,
   MapRecent,
   Stats,
+  WatchlistHitsPage,
 } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
 import { TrackMap } from "../components/TrackMap"
@@ -16,6 +18,32 @@ function progressPct(current: number, total: number | null): number {
     return 0
   }
   return Math.min(100, Math.round((current / total) * 100))
+}
+
+function WatchlistBanner() {
+  const { data } = useQuery<WatchlistHitsPage, Error>({
+    queryKey: ["watchlist-hits-banner"],
+    queryFn: () => fetchWatchlistHits(new URLSearchParams({ limit: "5" })),
+    refetchInterval: 15000,
+  })
+  if (!data || data.total === 0) {
+    return null
+  }
+  return (
+    <section className="panel threat">
+      <h2>
+        <Link to="/events">WATCHLIST — {data.total} hit(s)</Link>
+      </h2>
+      <div className="terminal">
+        {data.items.map((h) => (
+          <p key={h.hit_id}>
+            [{h.kind}] {h.pattern} matched {h.detail} · job {h.job_id}
+            {h.note != null && h.note !== "" ? ` · ${h.note}` : ""}
+          </p>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -108,6 +136,7 @@ export function Dashboard() {
 
   return (
     <>
+      <WatchlistBanner />
       <section className="panel">
         <h2>System</h2>
         <div className="stat-grid">

@@ -671,6 +671,9 @@ def harvest_job(
         event_specs=event_specs,
     )
     db.update_job_evidence(conn, job.id, json.dumps(evidence))
+    from video_security.watchlist import evaluate_job
+
+    evaluate_job(conn, config, job.id)
     db.update_job_status(conn, job.id, "harvested")
     return report
 
