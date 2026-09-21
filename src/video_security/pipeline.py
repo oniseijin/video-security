@@ -220,14 +220,37 @@ def _choose_keyframe_numbers(
     frame_numbers: list[int],
     jpeg_cache: OrderedDict[int, bytes],
     max_keyframes: int = 3,
+    conf_by_frame: dict[int, float] | None = None,
+    quality_cache: dict[int, float] | None = None,
 ) -> list[int]:
     available = [fn for fn in frame_numbers if fn in jpeg_cache]
     if not available:
         return []
     if len(available) <= max_keyframes:
         return available
-    step = len(available) / max_keyframes
-    return [available[int(i * step)] for i in range(max_keyframes)]
+    if quality_cache is None:
+        quality_cache = {}
+    conf_by_frame = conf_by_frame or {}
+
+    def score(fn: int) -> float:
+        if fn in quality_cache:
+            return quality_cache[fn]
+        img = cv2.imdecode(
+            np.frombuffer(jpeg_cache[fn], dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        if img is None:
+            quality_cache[fn] = -1.0
+            return -1.0
+        from video_security.prefilter.ocr import sharpness_luma
+
+        sharp, luma = sharpness_luma(img)
+        luma_factor = 1.0 if 40.0 <= luma <= 220.0 else 0.5
+        val = sharp * luma_factor * (1.0 + conf_by_frame.get(fn, 0.0))
+        quality_cache[fn] = val
+        return val
+
+    top = sorted(available, key=score, reverse=True)[:max_keyframes]
+    return sorted(top)
 
 
 def _select_keyframes(
@@ -238,8 +261,16 @@ def _select_keyframes(
     event_id: int,
     max_keyframes: int = 3,
     raw_jpeg_cache: OrderedDict[int, bytes] | None = None,
+    conf_by_frame: dict[int, float] | None = None,
+    quality_cache: dict[int, float] | None = None,
 ) -> list[str]:
-    chosen = _choose_keyframe_numbers(frame_numbers, jpeg_cache, max_keyframes)
+    chosen = _choose_keyframe_numbers(
+        frame_numbers,
+        jpeg_cache,
+        max_keyframes,
+        conf_by_frame=conf_by_frame,
+        quality_cache=quality_cache,
+    )
     if not chosen:
         return []
     out_dir = artifact_dir / "frames" / str(job_id)
@@ -425,6 +456,12 @@ def harvest_job(
 
     plate_reads = _collect_plate_reads(frame_dets, jpeg_cache, images_lookup, config)
     report.plates = len(plate_reads)
+
+    conf_by_frame: dict[int, float] = {}
+    for fd in frame_dets:
+        if fd.detections:
+            conf_by_frame[fd.frame_number] = max(d.conf for d in fd.detections)
+    quality_cache: dict[int, float] = {}
 
     plates_dir = artifact_dir / "plates" / str(job.id)
     spotlight_ignore(plates_dir)
@@ -621,10 +658,17 @@ def harvest_job(
             job.id,
             event_id,
             raw_jpeg_cache=raw_jpeg_cache,
+            conf_by_frame=conf_by_frame,
+            quality_cache=quality_cache,
         )
         if kf_paths:
             db.update_event_keyframes(conn, event_id, json.dumps(kf_paths))
-        chosen = _choose_keyframe_numbers(spec.frame_numbers, jpeg_cache)
+        chosen = _choose_keyframe_numbers(
+            spec.frame_numbers,
+            jpeg_cache,
+            conf_by_frame=conf_by_frame,
+            quality_cache=quality_cache,
+        )
         faces_per_kf: list[list[list[float]]] = []
         for i, fn in enumerate(chosen):
             raw = jpeg_cache[fn]

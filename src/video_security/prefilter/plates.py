@@ -8,7 +8,14 @@ from dataclasses import dataclass
 import numpy as np
 
 from video_security.config import Config
-from video_security.prefilter.ocr import LEVEL_ACCURATE, OCRResult, upscale_crop, vision_ocr
+from video_security.prefilter.ocr import (
+    LEVEL_ACCURATE,
+    OCRResult,
+    median_stack,
+    sharpness_luma,
+    upscale_crop,
+    vision_ocr,
+)
 from video_security.prefilter.vehicles import crop_vehicle
 
 _OCR_FN = Callable[[np.ndarray], list[OCRResult]]
@@ -49,12 +56,17 @@ def extract_plate_reads(
     groups: dict[str, list[tuple[str, float, int, tuple[float, float, float, float] | None]]] = (
         defaultdict(list)
     )
+    sharpness: dict[int, float] = {}
+    vehicle_crops: dict[int, np.ndarray] = {}
     for frame_number in sorted(track_bboxes):
         image = images_by_frame.get(frame_number)
         if image is None:
             continue
         crop = crop_vehicle(image, track_bboxes[frame_number])
+        vehicle_crops[frame_number] = crop
         up = upscale_crop(crop)
+        crop_sharp, _luma = sharpness_luma(up)
+        sharpness[frame_number] = crop_sharp
         for r in ocr_fn(up):
             if r.confidence < config.prefilter.ocr_min_conf:
                 continue
@@ -65,13 +77,29 @@ def extract_plate_reads(
             )
     if not groups:
         return None
+    max_sharp = max(sharpness.values(), default=1.0)
+    if max_sharp <= 0.0:
+        max_sharp = 1.0
+
+    def vote_weight(frame_number: int) -> float:
+        return 0.5 + 0.5 * (sharpness.get(frame_number, 0.0) / max_sharp)
+
     winner_norm = max(
-        groups, key=lambda n: (len(groups[n]), sum(c for _, c, _f, _b in groups[n]))
+        groups,
+        key=lambda n: (
+            len(groups[n]),
+            sum(c * vote_weight(f) for _, c, f, _b in groups[n]),
+        ),
     )
     reads = groups[winner_norm]
     if len(reads) < config.prefilter.plate_min_votes:
         return None
     raw, conf, frame, bbox = max(reads, key=lambda r: r[1])
+    stacked_read = _night_stack_read(
+        reads, vehicle_crops, ocr_fn, config
+    )
+    if stacked_read is not None:
+        raw, conf, bbox = stacked_read
     return PlateRead(
         track_id=track_id,
         raw_text=raw,
@@ -81,3 +109,30 @@ def extract_plate_reads(
         votes=len(reads),
         best_bbox=bbox,
     )
+
+
+def _night_stack_read(
+    reads: list[tuple[str, float, int, tuple[float, float, float, float] | None]],
+    vehicle_crops: dict[int, np.ndarray],
+    ocr_fn: _OCR_FN,
+    config: Config,
+) -> tuple[str, float, tuple[float, float, float, float] | None] | None:
+    night_luma = config.prefilter.night_luma_threshold
+    frames = sorted({f for _r, _c, f, _b in reads if f in vehicle_crops})
+    if not frames:
+        return None
+    reference = vehicle_crops[frames[0]]
+    _sharp, ref_luma = sharpness_luma(upscale_crop(reference))
+    if ref_luma >= night_luma:
+        return None
+    crops = [vehicle_crops[f] for f in frames]
+    stacked = upscale_crop(median_stack(crops))
+    best: tuple[str, float, tuple[float, float, float, float] | None] | None = None
+    for r in ocr_fn(stacked):
+        if r.confidence < config.prefilter.ocr_min_conf:
+            continue
+        if not plate_like(r.text):
+            continue
+        if best is None or r.confidence > best[1]:
+            best = (r.text, r.confidence, r.bbox)
+    return best
