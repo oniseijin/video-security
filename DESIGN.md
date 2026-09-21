@@ -679,6 +679,8 @@ STATUS (2026-09-21): R1-R8 are implemented and shipped in [Unreleased];
 treat the sections below as the design record for what shipped. R8
 sound classification currently no-ops on macOS 26 (pyobjc/SoundAnalysis
 bridge segfault) and activates where the framework is reachable.
+R9 (Photos library import + device detection) and R10 (Photos & device
+refinements) are designed but NOT yet implemented.
 
 ### Phase R1 — Face identity & people search
 
@@ -790,6 +792,81 @@ bridge segfault) and activates where the framework is reachable.
 - **Depends on**: —
 - **Priority**: P2
 
+### Phase R9 — Photos library import + device detection
+
+- **Goal**: ingest security-relevant videos that live in the Apple Photos
+  app (iPhone clips, Ray-Ban Meta glasses exports) through the existing
+  import pipeline, immune to iCloud "Optimize Storage" eviction; give
+  every job a device identity regardless of source.
+- **Approach**:
+  - `adapters/photos.py`: osxphotos enumeration (`photos(movies=True)`,
+    skip hidden, `exists()` TOCTOU guard); `detect_adapter()` maps a
+    `.photoslibrary` suffix to the adapter. `ClipInfo` gains
+    `source_uuid`; mode `"PHOTOS"` (constant, not album-derived), channel
+    `"front"`, priority from `[adapter.photos]` (default 0.7),
+    `recording_start_utc` from asset creation date.
+  - Copy-at-import — never reference in place; eviction is the threat
+    model. Destination follows the existing convention
+    `clips/<YYYYMMDD>/<PHOTOS>/front/`, filename preserved; collision →
+    `<name>-<hash8>.<ext>`. `import_id` label uses the sanitized library
+    stem (e.g. `20260921-Photos-Library`).
+  - Lifecycle: insert-only `photos_imports` table
+    (uuid PK, job_id, video_hash, filename). Known UUIDs skip without
+    touching the file — stable across eviction+redownload and across
+    job pruning (rows intentionally outlive pruned jobs, ~100 B each).
+    Hash-hit on an unknown UUID also writes the mapping. Cloud-only
+    assets are skipped and counted (`skipped_cloud` in the import
+    report); idempotent re-runs pick them up after a manual download.
+    No deferred/promote state machine — copy-at-import has exactly one
+    transition (absent → imported), so phototext's offload machinery
+    would only promise auto-download work this tool won't do.
+  - `--since YYYY-MM-DD` import filter (asset creation date) bounds the
+    first-run blast radius against a full-library import.
+  - Device detection for ALL adapters, not just Photos: `devices.py`
+    `probe()` shells out to `exiftool -s2 -json` (optional binary,
+    `shutil.which` guard — absent binary never blocks import) reading
+    Make/Model from the copied file. Precedence: file EXIF →
+    adapter-declared (Mazda CX-8 clips embed no make/model — verified;
+    the adapter knows) → `unknown`. Mapping: `Make=Apple, Model=iPhone*`
+    → `iphone`; `Ray-Ban`/`Meta` → `meta_glasses`; adapters declare
+    `dashcam` where structure is the only signal. Result stored in
+    `jobs.metadata_json` (`device_kind`, `device_make`, `device_model`),
+    surfaced via `/api/jobs/{id}`, web job header, and report.
+  - `osxphotos>=0.76` joins dependencies (pin proven in phototext);
+    lazy import inside the adapter keeps card-only runs free of it.
+    Test seam: `VIDEO_SECURITY_TEST_PHOTOS_ASSETS` env var feeds
+    `[uuid, path, date, hidden]` rows in place of a real library.
+  - CLI: `vs import "~/Pictures/Photos Library.photoslibrary"
+    [--since ...]` — auto-detect via suffix, no `--photos` flag;
+    `vs run --source <library>` composes import → analyze unchanged, so
+    the nightly wrapper needs no change. Retention stays uniform —
+    30-day pruning removes rows + derived artifacts, the copied clip in
+    `clips/` persists (same as cards).
+- **Effort**: S–M
+- **Depends on**: —
+- **Priority**: P1
+- **Verification notes**: iPhone MOV make/model via exiftool and the
+  Ray-Ban Meta EXIF shape are unverified on this machine (the library
+  currently holds no videos) — confirm at implementation time; `unknown`
+  is the graceful default either way.
+
+### Phase R10 — Photos & device refinements
+
+- **Goal**: curation and device-aware semantics on top of R9.
+- **Approach**: `--album` filter (osxphotos album membership); per-device
+  priorities (e.g. `meta_glasses` 0.8 > `iphone` 0.7 — glasses clips are
+  first-person and most security-relevant); device-aware LLM triage
+  context (first-person bodycam vs handheld phone vs vehicle dashcam);
+  web filter chips and report grouping by device; GPS extraction via the
+  same exiftool probe (phone/glasses GPS → `clip_gps_data` → map presence
+  + driving/stationary categories for non-dashcam clips, which today
+  categorize as `unknown`); optional `--wait-download` (PhotoKit download
+  request with hard timeout) only if cloud-only skips prove painful in
+  practice.
+- **Effort**: M
+- **Depends on**: R9
+- **Priority**: P2
+
 ### Rejected ideas
 
 | Idea | Why rejected |
@@ -804,6 +881,7 @@ bridge segfault) and activates where the framework is reachable.
 | Deblur / GPU super-resolution for plates (Real-ESRGAN) | Heavy dep for marginal OCR gain over upscale + consensus + R3 stacking. |
 | Perf push (deeper frame skipping, ANE tuning, artifact recompression) | 4-6× overnight headroom by design — "don't spend it; spend nothing." |
 | Parallel/distributed workers | Single machine; hard stage serialization is a Mandatory Rule. |
+| Phototext-style offload demote/deferred lifecycle for Photos imports | Copy-at-import has one transition (absent → imported); deferred rows would promise auto-download work the tool won't do — a skip count is the honest state. |
 
 ### Library research (2026-09 scan)
 
