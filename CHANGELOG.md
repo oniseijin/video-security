@@ -6,6 +6,8 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-21
+
 ### Added
 
 - **Three-phase analysis pipeline with resumable phase state**: analysis is
