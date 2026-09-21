@@ -46,6 +46,12 @@ def _find_nmea_sidecar(path: Path) -> Path | None:
         cand = path.with_suffix(suffix)
         if cand.exists():
             return cand
+    if path.parent.name.lower() == "rear":
+        front_dir = path.parent.parent / "front"
+        for suffix in (".NMEA", ".nmea"):
+            cand = front_dir / (path.stem + suffix)
+            if cand.exists():
+                return cand
     return None
 
 

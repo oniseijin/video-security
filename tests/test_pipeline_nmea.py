@@ -121,3 +121,33 @@ def test_analyze_without_sidecar_no_gps_rows(
     analyze_video(job, config, db_conn, no_llm=True)
     rows = db_conn.execute("SELECT * FROM clip_gps_data").fetchall()
     assert rows == []
+
+
+def test_rear_clip_uses_front_twin_nmea(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    rear_dir = tmp_path / "clips" / "NORMAL" / "rear"
+    rear_dir.mkdir(parents=True)
+    clip = golden_clip(rear_dir / "g.mp4")
+    start = datetime(2025, 8, 7, 3, 12, 52, tzinfo=UTC)
+    front_dir = tmp_path / "clips" / "NORMAL" / "front"
+    front_dir.mkdir(parents=True)
+    (front_dir / "g.NMEA").write_text(_nmea_with_hard_brake(start))
+    job, _ = enqueue_video(db_conn, clip)
+    db_conn.execute(
+        "UPDATE jobs SET recording_start_utc = ? WHERE id = ?",
+        (start.isoformat(), job.id),
+    )
+    db_conn.commit()
+    fresh = db.get_job_by_hash(db_conn, job.video_hash)
+    assert fresh is not None
+    job = fresh
+
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    analyze_video(job, config, db_conn, client=FakeOllama())
+
+    gps_rows = db_conn.execute(
+        "SELECT COUNT(*) FROM clip_gps_data WHERE job_id = ?", (job.id,)
+    ).fetchone()[0]
+    assert gps_rows >= 40
