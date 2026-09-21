@@ -354,3 +354,30 @@ def test_restore_deleted_fails_clearly(
     assert report.restored == 0
     assert report.failed == 1
     assert "deleted" in report.failures[0]
+
+
+def test_restore_after_cold_dir_moved(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "20250910" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "move.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    run_archive(db_conn, cfg, job_ids=[job_id])
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    assert row["location"] == "cold"
+    assert Path(str(row["original_path"])).is_file()
+    assert clip.is_file()
+
+    moved = tmp_path / "cold-moved"
+    (tmp_path / "cold").rename(moved)
+    cfg.archive.cold_dir = str(moved)
+
+    report = run_archive(db_conn, cfg, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert report.failed == 0
+    assert clip.exists()
+    assert db.get_archived_original(db_conn, job_id) is None

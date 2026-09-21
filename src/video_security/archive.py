@@ -182,8 +182,20 @@ def delete_job(
         report.failures.append(f"job {job_id}: {e}")
 
 
+def _resolve_cold_path(recorded: str, cold_root: Path | None) -> Path:
+    p = Path(recorded)
+    if p.exists() or cold_root is None:
+        return p
+    parts = p.parts
+    if "clips" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("clips")
+        return cold_root.joinpath(*parts[idx:])
+    return cold_root / p.name
+
+
 def restore_job(
     conn: sqlite3.Connection,
+    config: Config,
     job_id: int,
     report: ArchiveReport,
 ) -> None:
@@ -204,7 +216,12 @@ def restore_job(
         return
 
     src = Path(job.video_path)
-    cold = Path(row["original_path"])
+    cold_root = (
+        Path(config.archive.cold_dir).expanduser()
+        if config.archive.cold_dir
+        else None
+    )
+    cold = _resolve_cold_path(str(row["original_path"]), cold_root)
     if not cold.exists():
         report.failed += 1
         report.failures.append(f"job {job_id}: archived original not found at {cold}")
@@ -232,7 +249,7 @@ def run_archive(
         if not job_ids:
             raise EngineError("--restore requires explicit --job")
         for jid in job_ids:
-            restore_job(conn, jid, report)
+            restore_job(conn, config, jid, report)
         return report
 
     if job_ids:
