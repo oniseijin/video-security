@@ -493,6 +493,32 @@ export function fetchPersonDetail(id: number): Promise<PersonDetail> {
   return fetchJson<PersonDetail>(`/api/persons/${id}`)
 }
 
+export interface JobFaceCrop {
+  event_id: number
+  event_type: string
+  tone: Tone
+  start_sec: number
+  quality: number | null
+  person_id: number | null
+  crop_url: string
+}
+
+export interface JobFaceGroup {
+  person_id: number | null
+  count: number
+  crops: JobFaceCrop[]
+}
+
+export interface JobFaces {
+  job_id: number
+  total: number
+  groups: JobFaceGroup[]
+}
+
+export function fetchJobFaces(jobId: number): Promise<JobFaces> {
+  return fetchJson<JobFaces>(`/api/jobs/${jobId}/faces`)
+}
+
 export interface PersonTrackSighting {
   job_id: number
   track_id: number

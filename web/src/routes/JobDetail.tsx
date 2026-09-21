@@ -8,6 +8,7 @@ import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate, fmtSec } from "../format"
 import { CapturesTab } from "./tabs/CapturesTab"
 import { EventsTab } from "./tabs/EventsTab"
+import { FacesTab } from "./tabs/FacesTab"
 import { MapTab } from "./tabs/MapTab"
 import { PlaybackTab } from "./tabs/PlaybackTab"
 import { PlatesTab } from "./tabs/PlatesTab"
@@ -19,6 +20,7 @@ const TABS = [
   "report",
   "events",
   "captures",
+  "faces",
   "plates",
   "tracks",
   "map",
@@ -81,7 +83,7 @@ function Header({ job }: { job: JobDetailData }) {
         <Link className="count-chip" to={`/jobs/${job.id}/plates`}>
           plates {job.counts.plates}
         </Link>
-        <Link className="count-chip" to={`/jobs/${job.id}/captures`}>
+        <Link className="count-chip" to={`/jobs/${job.id}/faces`}>
           faces {job.counts.faces}
         </Link>
         <Link className="count-chip" to={`/jobs/${job.id}/transcript`}>
@@ -167,6 +169,7 @@ export function JobDetail() {
       {active === "report" ? <ReportTab jobId={jobId} /> : null}
       {active === "events" ? <EventsTab jobId={jobId} /> : null}
       {active === "captures" ? <CapturesTab jobId={jobId} /> : null}
+      {active === "faces" ? <FacesTab jobId={jobId} /> : null}
       {active === "plates" ? <PlatesTab jobId={jobId} /> : null}
       {active === "tracks" ? <TracksTab jobId={jobId} /> : null}
       {active === "map" ? <MapTab jobId={jobId} /> : null}

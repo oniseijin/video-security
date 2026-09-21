@@ -1322,6 +1322,53 @@ def person_detail(
     }
 
 
+def job_faces(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    job_id = int(params["id"])
+    rows = conn.execute(
+        "SELECT f.event_id, f.person_id, f.quality, f.crop_path, "
+        "e.event_type, e.start_sec "
+        "FROM faces f JOIN events e ON e.id = f.event_id "
+        "WHERE f.job_id = ? "
+        "ORDER BY (f.person_id IS NULL), f.person_id, f.quality DESC, f.id",
+        (job_id,),
+    ).fetchall()
+    crops: list[dict[str, Any]] = []
+    for r in rows:
+        crop = r["crop_path"]
+        url = None
+        if crop and Path(crop).is_file():
+            m = re.match(r"^.*?/faces/(\d+)/(.+)$", crop)
+            if m:
+                url = f"/media/faces/{m.group(1)}/{m.group(2)}"
+        if url is None:
+            continue
+        crops.append(
+            {
+                "event_id": int(r["event_id"]),
+                "event_type": str(r["event_type"]),
+                "tone": event_tone(str(r["event_type"])),
+                "start_sec": float(r["start_sec"]),
+                "quality": r["quality"],
+                "person_id": int(r["person_id"]) if r["person_id"] else None,
+                "crop_url": url,
+            }
+        )
+    groups: list[dict[str, Any]] = []
+    index: dict[int | None, dict[str, Any]] = {}
+    for crop in crops:
+        pid = crop["person_id"]
+        group = index.get(pid)
+        if group is None:
+            group = {"person_id": pid, "count": 0, "crops": []}
+            index[pid] = group
+            groups.append(group)
+        group["count"] += 1
+        group["crops"].append(crop)
+    return {"job_id": job_id, "total": len(crops), "groups": groups}
+
+
 def faces(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1584,6 +1631,7 @@ def api_routes() -> list[Route]:
         ("GET", "/api/jobs/{id:int}/events", job_events),
         ("GET", "/api/jobs/{id:int}/plates", job_plates),
         ("GET", "/api/jobs/{id:int}/tracks", job_tracks),
+        ("GET", "/api/jobs/{id:int}/faces", job_faces),
         ("GET", "/api/jobs/{id:int}/gps", job_gps),
         ("GET", "/api/jobs/{id:int}/transcript", job_transcript),
         ("GET", "/api/jobs/{id:int}/report.html", report_html),

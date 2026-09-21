@@ -412,6 +412,23 @@ def test_faces_gallery_person_ids(base_url: str) -> None:
     assert item["person_ids"] == [1]
 
 
+def test_job_faces_grouped(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/jobs/1/faces")
+    assert data["job_id"] == 1
+    assert data["total"] == 2
+    assert len(data["groups"]) == 1
+    group = data["groups"][0]
+    assert group["person_id"] == 1
+    assert group["count"] == 2
+    assert {c["event_id"] for c in group["crops"]} == {10, 13}
+    assert {c["crop_url"] for c in group["crops"]} == {
+        "/media/faces/1/face_10_0_0.jpg"
+    }
+    empty = _get_json(f"{base_url}/api/jobs/3/faces")
+    assert empty["total"] == 0
+    assert empty["groups"] == []
+
+
 def test_persons_endpoints(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/persons")
     assert data["total"] == 1

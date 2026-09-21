@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from video_security.backfill import (
     backfill_face_crops,
@@ -215,4 +216,44 @@ def test_backfill_face_crops_no_faces(tmp_path: Path) -> None:
     cfg = _faces_config(tmp_path)
     report = backfill_face_crops(conn, cfg)
     assert report.attempted == 0
+    conn.close()
+
+
+def test_backfill_face_crops_detect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "video_security.prefilter.faces.detect_faces",
+        lambda _img: [(0.25, 0.25, 0.3, 0.3)],
+    )
+    monkeypatch.setattr(
+        "video_security.identity.face_capture_quality", lambda _img: 0.9
+    )
+    monkeypatch.setattr(
+        "video_security.identity.feature_print",
+        lambda _img: np.ones(4, dtype=np.float32) / 2.0,
+    )
+    db_path = _seed_faces(tmp_path, with_faces=False)
+    conn = connect(str(db_path))
+    cfg = _faces_config(tmp_path)
+    report = backfill_face_crops(conn, cfg, detect=True)
+    assert report.attempted == 1
+    assert report.written == 1
+    crop = tmp_path / "artifacts" / "faces" / "1" / "face_10_0_0.jpg"
+    assert crop.is_file()
+    row = conn.execute(
+        "SELECT faces_json FROM events WHERE id = 10"
+    ).fetchone()
+    assert json.loads(row["faces_json"]) == [[[0.25, 0.25, 0.3, 0.3]]]
+    faces_rows = conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
+    assert faces_rows == 1
+    persons = conn.execute(
+        "SELECT sightings FROM persons"
+    ).fetchall()
+    assert len(persons) == 1
+    assert persons[0]["sightings"] == 1
+    second = backfill_face_crops(conn, cfg, detect=True)
+    assert second.written == 0
+    assert second.skipped == 1
+    assert conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 1
     conn.close()

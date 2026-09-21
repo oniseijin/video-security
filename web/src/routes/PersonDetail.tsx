@@ -49,6 +49,12 @@ export function PersonDetailRoute() {
                   {fmtDate(s.recorded_at)} ·{" "}
                   <Link className="job-link" to={`/jobs/${s.job_id}`}>
                     job {s.job_id}
+                  </Link>{" "}
+                  <Link
+                    className="job-link"
+                    to={`/jobs/${s.job_id}/faces`}
+                  >
+                    faces
                   </Link>
                 </figcaption>
               </figure>

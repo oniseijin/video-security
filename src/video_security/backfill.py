@@ -166,14 +166,18 @@ def _keyframe_images(
     return images
 
 
-def _write_face_crop_file(img: np.ndarray, box: list[float], out: Path) -> None:
+def _face_crop(img: np.ndarray, box: list[float]) -> np.ndarray:
     h, w = img.shape[:2]
     bx, by, bw, bh = box[0], box[1], box[2], box[3]
     x1 = max(0.0, (bx - 0.15 * bw) * w)
     y1 = max(0.0, (by - 0.15 * bh) * h)
     x2 = min(float(w), (bx + bw * 1.15) * w)
     y2 = min(float(h), (by + bh * 1.15) * h)
-    crop = upscale_crop(img[int(y1) : int(y2), int(x1) : int(x2)])
+    return upscale_crop(img[int(y1) : int(y2), int(x1) : int(x2)])
+
+
+def _write_face_crop_file(img: np.ndarray, box: list[float], out: Path) -> None:
+    crop = _face_crop(img, box)
     if crop.size == 0:
         return
     ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -183,15 +187,65 @@ def _write_face_crop_file(img: np.ndarray, box: list[float], out: Path) -> None:
         out.write_bytes(buf.tobytes())
 
 
+def _detect_faces_for_event(
+    conn: sqlite3.Connection,
+    config: Config,
+    job_id: int,
+    event_id: int,
+    kf_paths: list[str],
+    artifact: Path,
+) -> int:
+    from video_security import db as vsdb
+    from video_security.identity import register_face
+    from video_security.prefilter.faces import detect_faces
+
+    wrote = 0
+    faces_per_kf: list[list[list[float]]] = []
+    for i, path_str in enumerate(kf_paths):
+        boxes_out: list[list[float]] = []
+        p = Path(str(path_str))
+        img = None
+        if p.is_file():
+            img = cv2.imdecode(
+                np.frombuffer(p.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR
+            )
+        if img is not None:
+            for j, box in enumerate(detect_faces(img)):
+                if not isinstance(box, (list, tuple)) or len(box) != 4:
+                    continue
+                norm = [float(v) for v in box]
+                boxes_out.append(norm)
+                out = artifact / "faces" / str(job_id) / f"face_{event_id}_{i}_{j}.jpg"
+                _write_face_crop_file(img, norm, out)
+                if out.is_file():
+                    wrote += 1
+                    register_face(
+                        conn,
+                        config,
+                        job_id,
+                        event_id,
+                        i,
+                        j,
+                        str(out),
+                        _face_crop(img, norm),
+                    )
+        faces_per_kf.append(boxes_out)
+    vsdb.update_event_faces(conn, event_id, json.dumps(faces_per_kf))
+    return wrote
+
+
 def backfill_face_crops(
     conn: sqlite3.Connection,
     config: Config,
     limit: int | None = None,
+    detect: bool = False,
 ) -> BackfillReport:
+    where = "e.keyframes_json != '[]'"
+    if not detect:
+        where += " AND e.faces_json GLOB '*[0-9]*'"
     rows = conn.execute(
-        "SELECT e.id, e.job_id, e.keyframes_json, e.faces_json FROM events e "
-        "WHERE e.faces_json GLOB '*[0-9]*' "
-        "AND e.keyframes_json != '[]' "
+        f"SELECT e.id, e.job_id, e.keyframes_json, e.faces_json FROM events e "
+        f"WHERE {where} "
         "ORDER BY e.job_id, e.id"
     ).fetchall()
     if limit is not None:
@@ -203,7 +257,7 @@ def backfill_face_crops(
         job_id = int(row["job_id"])
         try:
             kf_paths = json.loads(row["keyframes_json"])
-            faces = json.loads(row["faces_json"])
+            faces = json.loads(row["faces_json"]) if row["faces_json"] else []
         except (json.JSONDecodeError, TypeError):
             report.failed += 1
             report.failures.append(f"job {job_id} event {event_id}: unparsable json")
@@ -211,6 +265,16 @@ def backfill_face_crops(
         if not isinstance(kf_paths, list) or not isinstance(faces, list):
             report.failed += 1
             report.failures.append(f"job {job_id} event {event_id}: unexpected shape")
+            continue
+        has_detections = any(isinstance(f, list) and f for f in faces)
+        if detect and not has_detections:
+            wrote = _detect_faces_for_event(
+                conn, config, job_id, event_id, kf_paths, artifact
+            )
+            if wrote > 0:
+                report.written += wrote
+            else:
+                report.skipped += 1
             continue
         wrote = 0
         for i, path_str in enumerate(kf_paths):

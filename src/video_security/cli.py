@@ -652,6 +652,7 @@ def serve_cmd(
 def backfill_media_cmd(
     ctx: typer.Context,
     limit: int | None = typer.Option(None, "--limit", help="Max plates to process"),  # noqa: B008
+    detect_faces: bool = typer.Option(False, "--detect-faces", help="Run face detection on keyframes of events without face data"),  # noqa: B008, E501
 ) -> None:
     from video_security.backfill import backfill_face_crops, backfill_plate_crops
 
@@ -664,7 +665,9 @@ def backfill_media_cmd(
         )
         for failure in report.failures:
             print(f"  {failure}")
-        face_report = backfill_face_crops(conn, cfg, limit=limit)
+        face_report = backfill_face_crops(
+            conn, cfg, limit=limit, detect=detect_faces
+        )
         print(
             f"face crops: events {face_report.attempted}, written {face_report.written}, "
             f"skipped {face_report.skipped}, failed {face_report.failed}"
