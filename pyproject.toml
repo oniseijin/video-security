@@ -17,6 +17,7 @@ dependencies = [
     "onnxruntime>=1.18",
     "mlx-whisper>=0.4",
     "pyobjc-framework-Vision>=10.0",
+    "pyobjc-framework-SoundAnalysis>=10.0",
 ]
 
 [project.scripts]

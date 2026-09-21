@@ -79,6 +79,7 @@ class PrefilterConfig:
     yolo_coreml_path: str | None = None
     ocr_min_conf: float = 0.3
     plate_min_votes: int = 2
+    night_luma_threshold: float = 40.0
 
 
 @dataclasses.dataclass
@@ -178,6 +179,35 @@ class CameraOverrides:
 
 
 @dataclasses.dataclass
+class SoundConfig:
+    enabled: bool = True
+    min_confidence: float = 0.5
+    allowlist: list[str] = dataclasses.field(
+        default_factory=lambda: [
+            "glass_breaking",
+            "alarm_clock",
+            "smoke_detector",
+            "siren",
+            "civil_defense_siren",
+            "police_siren",
+            "ambulance_siren",
+            "fire_engine_siren",
+            "car_horn",
+            "air_horn",
+            "gunshot_gunfire",
+            "boom",
+            "explosion",
+            "fireworks",
+            "firecracker",
+            "door_slam",
+            "screaming",
+            "shout",
+            "yell",
+        ]
+    )
+
+
+@dataclasses.dataclass
 class IdentityConfig:
     enabled: bool = True
     min_quality: float = 0.2
@@ -204,6 +234,7 @@ class Config:
     whisper: WhisperConfig = dataclasses.field(default_factory=WhisperConfig)
     prefilter: PrefilterConfig = dataclasses.field(default_factory=PrefilterConfig)
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
+    sound: SoundConfig = dataclasses.field(default_factory=SoundConfig)
     threat: ThreatConfig = dataclasses.field(default_factory=ThreatConfig)
     report: ReportConfig = dataclasses.field(default_factory=ReportConfig)
     map: MapConfig = dataclasses.field(default_factory=MapConfig)
@@ -338,6 +369,8 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
             kwargs["whisper"] = _merge_dataclass(config.whisper, values, "whisper")
         elif section == "audio":
             kwargs["audio"] = _merge_dataclass(config.audio, values, "audio")
+        elif section == "sound":
+            kwargs["sound"] = _merge_dataclass(config.sound, values, "sound")
         elif section == "threat":
             if "priority" in values and isinstance(values["priority"], dict):
                 kwargs["threat"] = _merge_dataclass(

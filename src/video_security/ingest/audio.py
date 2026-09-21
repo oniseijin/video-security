@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from video_security.config import AudioConfig, Config
+from video_security.ingest.sound import SoundEvent, classify_sounds
 
 
 class AudioError(Exception):
@@ -29,6 +30,7 @@ class AudioResult:
     segments: list[TranscriptSegment]
     loud_regions: list[tuple[float, float]]
     keyword_hits: list[tuple[float, float, str]]
+    sound_events: list[SoundEvent] = field(default_factory=list)
 
 
 def extract_pcm(path: Path, sample_rate: int = 16000) -> np.ndarray:
@@ -192,9 +194,11 @@ def analyze_audio(path: Path, config: Config) -> AudioResult:
     segs = transcribe_regions(pcm, sr, sp_regions, config)
     l_regions = rms_loud_regions(pcm, sr, config.audio)
     hits = distress_keyword_hits(segs, config.audio)
+    sevents = classify_sounds(path, config)
     return AudioResult(
         speech_regions=sp_regions,
         segments=segs,
         loud_regions=l_regions,
         keyword_hits=hits,
+        sound_events=sevents,
     )
