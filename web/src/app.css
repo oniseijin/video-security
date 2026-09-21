@@ -738,3 +738,94 @@ a.count-chip:hover {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1.5rem;
 }
+
+.cal-heat {
+  margin-top: 0.75rem;
+}
+
+.cal-heat-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.cal-heat-title {
+  min-width: 8rem;
+  text-align: center;
+}
+
+.cal-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  max-width: 28rem;
+}
+
+.cal-heat-dow {
+  font-size: 0.65rem;
+  text-align: center;
+  color: var(--vs-ink-dim);
+}
+
+.cal-heat-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--vs-border, rgba(128, 128, 128, 0.3));
+  color: var(--vs-ink);
+  font-size: 0.65rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cal-heat-cell.empty {
+  border: none;
+  cursor: default;
+}
+
+.cal-heat-cell.muted {
+  opacity: 0.45;
+}
+
+.cal-heat-cell.selected {
+  outline: 2px solid var(--vs-accent, #ffc400);
+}
+
+.day-timeline {
+  margin-top: 1rem;
+}
+
+.day-timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6rem;
+  color: var(--vs-ink-dim);
+  margin-bottom: 0.25rem;
+}
+
+.day-timeline-track {
+  position: relative;
+  height: 2.25rem;
+  border: 1px solid var(--vs-border, rgba(128, 128, 128, 0.3));
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(12.5% - 1px),
+    var(--vs-ink-dim) calc(12.5% - 1px),
+    var(--vs-ink-dim) 12.5%
+  );
+}
+
+.day-timeline-marker {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--vs-bg, #000);
+}
+
+.timeline-row-link {
+  display: block;
+  padding: 0.75rem 0.5rem;
+}

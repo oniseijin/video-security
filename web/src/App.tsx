@@ -14,6 +14,7 @@ import { Persons } from "./routes/Persons"
 import { PlateDetailRoute } from "./routes/PlateDetail"
 import { Plates } from "./routes/Plates"
 import { Search } from "./routes/Search"
+import { Timeline } from "./routes/Timeline"
 import { TrackDetailRoute } from "./routes/TrackDetail"
 
 export function App() {
@@ -31,6 +32,7 @@ export function App() {
             <Route path="/jobs/:id/events/:eid" element={<EventDetailRoute />} />
             <Route path="/jobs/:id/tracks/:tid" element={<TrackDetailRoute />} />
             <Route path="/events" element={<Events />} />
+            <Route path="/timeline" element={<Timeline />} />
             <Route path="/plates" element={<Plates />} />
             <Route path="/plates/:norm" element={<PlateDetailRoute />} />
             <Route path="/faces" element={<Faces />} />
