@@ -7,8 +7,9 @@
     cp extras/com.video-security.nightly.plist ~/Library/LaunchAgents/
     launchctl load ~/Library/LaunchAgents/com.video-security.nightly.plist
 
-  Runs the full cycle nightly at 23:00 with a 6-hour budget (until 05:00):
+  Runs the full cycle nightly at 23:00 with a 3-hour budget (until 02:00;
   import from the mounted CX-8 card (if present), then analyze all phases.
+  Phototext-nightly takes the second half of the night (02:15, cron).
   Logs to ~/.local/opt/video-security/var/nightly.log
 
   Uninstall:
@@ -27,7 +28,7 @@
         <string>--phases</string>
         <string>1,2,3</string>
         <string>--stop-after</string>
-        <string>6h</string>
+        <string>3h</string>
         <string>--resume</string>
     </array>
     <key>StartCalendarInterval</key>
