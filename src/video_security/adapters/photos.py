@@ -33,6 +33,7 @@ def _to_utc_iso(dt: datetime | None) -> str | None:
 class PhotosAdapter:
     config: Config
     since: datetime | None = None
+    album: str | None = None
     name: str = "photos"
     skipped_cloud_only: int = 0
 
@@ -50,8 +51,12 @@ class PhotosAdapter:
             path_str: str | None = row[1]
             date_str: str | None = row[2]
             hidden: bool = row[3] if len(row) > 3 else False
+            albums: list[str] = row[4] if len(row) > 4 else []
 
             if hidden:
+                continue
+
+            if self.album is not None and self.album not in albums:
                 continue
 
             date: datetime | None = None
@@ -104,6 +109,15 @@ class PhotosAdapter:
             hidden = self._get(photo, "hidden", False)
             if hidden:
                 continue
+            if self.album is not None:
+                photo_albums = self._get(photo, "albums", [])
+                album_titles = []
+                for a in photo_albums:
+                    t = self._get(a, "title")
+                    if t:
+                        album_titles.append(t)
+                if self.album not in album_titles:
+                    continue
             original_path = self._get(photo, "original_path") or self._get(
                 photo, "path"
             )

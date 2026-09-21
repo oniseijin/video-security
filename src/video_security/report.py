@@ -230,6 +230,23 @@ def render_report_html(
             'aria-label="Toggle Machine/Samaritan theme">Machine</button>'
         )
 
+    device_line = ""
+    meta_row = conn.execute(
+        "SELECT metadata_json FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    if meta_row and meta_row["metadata_json"]:
+        try:
+            meta = json.loads(meta_row["metadata_json"])
+            dk = meta.get("device_kind")
+            dm = meta.get("device_model")
+            if dk:
+                label = html.escape(dk.replace("_", " "))
+                if dm:
+                    label += f" &middot; {html.escape(dm)}"
+                device_line = f'<p class="filepath">Device: {label}</p>'
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     parts: list[str] = [
         "<!DOCTYPE html>",
         '<html lang="en" data-theme="machine">',
@@ -248,6 +265,7 @@ def render_report_html(
         face_button,
         "</header>",
         archive_flag,
+        device_line,
         f'<p class="filepath">{html.escape(job_row["video_path"])}</p>',
     ]
 

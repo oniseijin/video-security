@@ -225,3 +225,41 @@ def test_evidence_summary_text() -> None:
     assert "plate_capture x1" in text
     assert evidence_summary_text(None) == ""
     assert evidence_summary_text({}) == ""
+
+
+def test_evidence_summary_device_context() -> None:
+    from video_security.pipeline import evidence_summary_text
+
+    text = evidence_summary_text({"device_context": "first-person smart-glasses bodycam footage"})
+    assert "first-person smart-glasses bodycam footage" in text
+
+    text_no = evidence_summary_text({"plates": [{"norm": "ABC", "confidence": 0.9}]})
+    assert "device" not in text_no
+
+
+def test_evidence_includes_device_context_from_metadata(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from video_security.pipeline import harvest_job
+
+    clip = golden_clip(tmp_path / "g.mp4")
+    job, _ = enqueue_video(db_conn, clip)
+    db_conn.execute(
+        "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+        ('{"device_kind": "meta_glasses",'
+         ' "device_make": "Ray-Ban",'
+         ' "device_model": "Meta"}', job.id),
+    )
+    db_conn.commit()
+
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    harvest_job(job, config, db_conn)
+
+    evidence = db_conn.execute(
+        "SELECT evidence_json FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert evidence is not None
+    ev_data = json.loads(evidence["evidence_json"])
+    assert "device_context" in ev_data
+    assert "first-person smart-glasses bodycam footage" in str(ev_data["device_context"])

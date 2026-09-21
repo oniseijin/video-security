@@ -110,3 +110,49 @@ def test_from_adapter_no_make_model() -> None:
     assert result.kind == KIND_DASHCAM
     assert result.make is None
     assert result.model is None
+
+
+def test_gps_position_parsing() -> None:
+    runner = _runner('[{"Make": "Apple", "Model": "iPhone 15 Pro", '
+        '"GPSPosition": "35 deg 39\' 44.52\\\" N, 139 deg 39\' 55.92\\\" E"}]')
+    result = probe(Path("/fake/test.mov"), runner=runner)
+    assert result.kind == KIND_IPHONE
+    assert result.gps is not None
+    lat, lon = result.gps
+    assert lat == pytest.approx(35.0 + 39 / 60 + 44.52 / 3600)
+    assert lon == pytest.approx(139.0 + 39 / 60 + 55.92 / 3600)
+
+
+def test_gps_lat_lon_ref_parsing() -> None:
+    runner = _runner('[{"GPSLatitude": "35 deg 39\' 44.52\\\"", '
+        '"GPSLatitudeRef": "N", '
+        '"GPSLongitude": "139 deg 39\' 55.92\\\"", '
+        '"GPSLongitudeRef": "E"}]')
+    result = probe(Path("/fake/test.mov"), runner=runner)
+    assert result.gps is not None
+    lat, lon = result.gps
+    assert lat == pytest.approx(35.0 + 39 / 60 + 44.52 / 3600)
+    assert lon == pytest.approx(139.0 + 39 / 60 + 55.92 / 3600)
+
+
+def test_gps_southern_western_negative() -> None:
+    runner = _runner('[{"GPSPosition": "33 deg 55\' 22.00\\\" S, 18 deg 25\' 30.00\\\" W"}]')
+    result = probe(Path("/fake/test.mov"), runner=runner)
+    assert result.gps is not None
+    lat, lon = result.gps
+    assert lat == pytest.approx(-(33.0 + 55 / 60 + 22.00 / 3600))
+    assert lon == pytest.approx(-(18.0 + 25 / 60 + 30.00 / 3600))
+
+
+def test_gps_unparseable_none() -> None:
+    runner = _runner('[{"Make": "Apple", "Model": "iPhone 15 Pro", '
+        '"GPSPosition": "invalid gps"}]')
+    result = probe(Path("/fake/test.mov"), runner=runner)
+    assert result.kind == KIND_IPHONE
+    assert result.gps is None
+
+
+def test_gps_no_data_none() -> None:
+    runner = _runner('[{"Make": "Apple", "Model": "iPhone 15 Pro"}]')
+    result = probe(Path("/fake/test.mov"), runner=runner)
+    assert result.gps is None

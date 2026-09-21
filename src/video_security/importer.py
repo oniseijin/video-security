@@ -190,6 +190,7 @@ def run_import(
     conn: sqlite3.Connection,
     adapter_name: str = "auto",
     since: datetime | None = None,
+    album: str | None = None,
 ) -> ImportReport:
     if not source.exists():
         raise EngineError(f"source not found: {source}")
@@ -207,10 +208,10 @@ def run_import(
     if name == "auto":
         name = detect_adapter(source)
     adapter = get_adapter(name, config)
-    if name == "photos" and since is not None:
+    if name == "photos":
         from video_security.adapters.photos import PhotosAdapter
 
-        adapter = PhotosAdapter(config, since=since)
+        adapter = PhotosAdapter(config, since=since, album=album)
     clips = adapter.discover_clips(source)
 
     import_date = datetime.now(UTC).strftime("%Y%m%d")
@@ -242,7 +243,9 @@ def run_import(
                     if info.kind in device_priorities:
                         clip.priority = device_priorities[info.kind]
             except Exception:
-                pass
+                info = None
+        else:
+            info = None
 
         h = video_hash(clip.path)
         if h in seen_hashes or db.get_job_by_hash(conn, h) is not None:
@@ -280,6 +283,16 @@ def run_import(
                 _merge_device_meta(conn, name, adapter, dest, job_id)
             except Exception:
                 pass
+            if info is not None and info.gps is not None:
+                try:
+                    db.insert_gps_row(
+                        conn, job_id, 0, 0.0,
+                        info.gps[0], info.gps[1],
+                        None, None, None, None, None,
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
 
         if clip.pair_path is not None:
             ph = video_hash(clip.pair_path)

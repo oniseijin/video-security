@@ -401,6 +401,7 @@ def import_clips_cmd(
     source: Path = typer.Argument(..., help="Source path (card mount or archive)"),  # noqa: B008
     adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|photos|generic)"),  # noqa: B008, E501
     since: str | None = typer.Option(None, "--since", help="Only import assets recorded on/after date (YYYY-MM-DD)"),  # noqa: B008, E501
+    album: str | None = typer.Option(None, "--album", help="Only import assets in a specific Photos album"),  # noqa: B008, E501
 ) -> None:
     from video_security.engine import EngineError
     from video_security.importer import run_import
@@ -417,7 +418,7 @@ def import_clips_cmd(
             conn.close()
             raise typer.Exit(code=1) from None
     try:
-        report = run_import(source, cfg, conn, adapter, since=since_dt)
+        report = run_import(source, cfg, conn, adapter, since=since_dt, album=album)
     except (EngineError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         conn.close()

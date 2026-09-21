@@ -265,3 +265,28 @@ def test_event_tone() -> None:
     assert event_tone("plate_capture") == "info"
     assert event_tone("person") == "asset"
     assert event_tone("motion") == "asset"
+
+
+def test_report_device_line(
+    db_and_job: tuple[sqlite3.Connection, JobRow, Path],
+) -> None:
+    conn, job, tmp_path = db_and_job
+    conn.execute(
+        "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+        ('{"device_kind": "meta_glasses", "device_model": "Meta"}', job.id),
+    )
+    conn.commit()
+    p = generate_report(conn, job.id, tmp_path / "art")
+    content = p.read_text()
+    assert "Device: meta glasses &middot; Meta" in content
+    conn.close()
+
+
+def test_report_no_device_line(
+    db_and_job: tuple[sqlite3.Connection, JobRow, Path],
+) -> None:
+    conn, job, tmp_path = db_and_job
+    p = generate_report(conn, job.id, tmp_path / "art")
+    content = p.read_text()
+    assert "Device:" not in content
+    conn.close()

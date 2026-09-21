@@ -392,6 +392,9 @@ def evidence_summary_text(evidence: dict[str, Any] | None) -> str:
             "detector events: "
             + ", ".join(f"{k} x{v}" for k, v in sorted(ec.items()))
         )
+    device_ctx = evidence.get("device_context")
+    if device_ctx:
+        parts.append(str(device_ctx))
     summary = "; ".join(parts)
     return summary[:1200]
 
@@ -734,6 +737,24 @@ def harvest_job(
         gps_samples=gps_samples,
         event_specs=event_specs,
     )
+    meta_row = conn.execute(
+        "SELECT metadata_json FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    if meta_row and meta_row["metadata_json"]:
+        try:
+            meta = json.loads(meta_row["metadata_json"])
+            device_kind = meta.get("device_kind")
+            if device_kind:
+                hints = {
+                    "dashcam": "vehicle-mounted dashcam footage (front/rear channel)",
+                    "meta_glasses": "first-person smart-glasses bodycam footage",
+                    "iphone": "handheld phone footage",
+                }
+                hint = hints.get(device_kind)
+                if hint:
+                    evidence["device_context"] = hint
+        except (json.JSONDecodeError, TypeError):
+            pass
     db.update_job_evidence(conn, job.id, json.dumps(evidence))
     from video_security.watchlist import evaluate_job
 

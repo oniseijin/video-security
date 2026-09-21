@@ -227,3 +227,72 @@ def test_run_import_device_priority(
         "SELECT priority FROM clips WHERE job_id = ?", (report.jobs[0],)
     ).fetchone()
     assert clips_row["priority"] == pytest.approx(0.8)
+
+
+def test_discover_album_filter(
+    cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    v1 = _video(tmp_path, "IMG_1.MOV")
+    v2 = _video(tmp_path, "IMG_2.MOV", b"other")
+    v3 = _video(tmp_path, "IMG_3.MOV", b"third")
+    _seam_env(
+        monkeypatch,
+        [
+            ["uuid-1", v1, "2026-09-01T10:00:00", False, ["Dashcam", "Trip"]],
+            ["uuid-2", v2, "2026-09-01T11:00:00", False, ["Family"]],
+            ["uuid-3", v3, "2026-09-01T12:00:00", False, ["Dashcam"]],
+        ],
+    )
+    adapter = PhotosAdapter(cfg, album="Dashcam")
+    clips = adapter.discover_clips(tmp_path)
+    assert [c.source_uuid for c in clips] == ["uuid-1", "uuid-3"]
+
+
+def test_run_import_album_filter(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v1 = _video(tmp_path, "A.MOV", b"a")
+    v2 = _video(tmp_path, "B.MOV", b"b")
+    _seam_env(
+        monkeypatch,
+        [
+            ["uuid-a", v1, "2026-09-01T10:00:00", False, ["Dashcam"]],
+            ["uuid-b", v2, "2026-09-01T11:00:00", False, ["Family"]],
+        ],
+    )
+    report = run_import(lib, cfg, db_conn, album="Dashcam")
+    assert report.imported == 1
+    pi = db.get_photos_import(db_conn, "uuid-a")
+    assert pi is not None
+    pi2 = db.get_photos_import(db_conn, "uuid-b")
+    assert pi2 is None
+
+
+def test_run_import_gps_stored(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from video_security.devices import DeviceInfo
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_GPS.MOV")
+    _seam_env(monkeypatch, [["uuid-gps", v, "2026-09-01T10:00:00", False]])
+
+    def fake_probe(path: Path, runner: object = None) -> DeviceInfo:
+        return DeviceInfo("iphone", "Apple", "iPhone 15 Pro", gps=(35.6895, 139.6917))
+
+    monkeypatch.setattr("video_security.devices.probe", fake_probe)
+
+    report = run_import(lib, cfg, db_conn)
+    assert report.imported == 1
+    job_id = report.jobs[0]
+
+    gps_rows = db_conn.execute(
+        "SELECT time_sec, lat, lon FROM clip_gps_data WHERE job_id = ?", (job_id,)
+    ).fetchall()
+    assert len(gps_rows) == 1
+    assert gps_rows[0]["lat"] == pytest.approx(35.6895)
+    assert gps_rows[0]["lon"] == pytest.approx(139.6917)
+    assert gps_rows[0]["time_sec"] == pytest.approx(0.0)
