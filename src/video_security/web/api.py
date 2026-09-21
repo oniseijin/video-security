@@ -1422,6 +1422,12 @@ def days(
         "FROM jobs WHERE recording_start_utc IS NOT NULL "
         "GROUP BY day ORDER BY day"
     ).fetchall()
+    analyzed_rows = conn.execute(
+        "SELECT date(recording_start_utc) AS day, COUNT(*) AS cnt "
+        "FROM jobs WHERE recording_start_utc IS NOT NULL "
+        "AND status != 'pending' "
+        "GROUP BY day ORDER BY day"
+    ).fetchall()
     event_rows = conn.execute(
         "SELECT date(j.recording_start_utc) AS day, COUNT(*) AS cnt "
         "FROM events e JOIN jobs j ON j.id = e.job_id "
@@ -1429,11 +1435,19 @@ def days(
         "GROUP BY day ORDER BY day"
     ).fetchall()
     jobs_map: dict[str, int] = {str(r["day"]): int(r["cnt"]) for r in job_rows}
+    analyzed_map: dict[str, int] = {
+        str(r["day"]): int(r["cnt"]) for r in analyzed_rows
+    }
     events_map: dict[str, int] = {str(r["day"]): int(r["cnt"]) for r in event_rows}
     all_days = sorted(set(jobs_map.keys()) | set(events_map.keys()))
     return {
         "days": [
-            {"date": d, "jobs": jobs_map.get(d, 0), "events": events_map.get(d, 0)}
+            {
+                "date": d,
+                "jobs": jobs_map.get(d, 0),
+                "analyzed": analyzed_map.get(d, 0),
+                "events": events_map.get(d, 0),
+            }
             for d in all_days
         ]
     }

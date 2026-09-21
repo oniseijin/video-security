@@ -559,6 +559,7 @@ export function fetchWatchlistHits(
 export interface DayBucket {
   date: string
   jobs: number
+  analyzed: number
   events: number
 }
 

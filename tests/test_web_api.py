@@ -503,6 +503,8 @@ def test_events_date_filter(base_url: str) -> None:
 
 def test_days_endpoint(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/days")
+    sample = data["days"][0]
+    assert "analyzed" in sample
     assert "days" in data
     assert len(data["days"]) == 2
     dates = [d["date"] for d in data["days"]]

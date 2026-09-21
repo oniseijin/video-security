@@ -846,3 +846,8 @@ a.count-chip:hover {
 .app-btn.active {
   outline: 1px solid var(--vs-accent, #ffc400);
 }
+
+.cal-heat-cell.unanalyzed {
+  border-style: dashed;
+  opacity: 0.65;
+}

@@ -125,11 +125,14 @@ function CalendarHeat({
           }
           const intensity = cell.events / maxEvents
           const isSelected = selected === cell.date
+          const unanalyzed = cell.jobs > 0 && cell.analyzed === 0
           return (
             <button
               className={
-                "cal-heat-cell" + (isSelected ? " selected" : "") +
-                (cell.events > 0 || cell.jobs > 0 ? "" : " muted")
+                "cal-heat-cell" +
+                (isSelected ? " selected" : "") +
+                (cell.events > 0 || cell.jobs > 0 ? "" : " muted") +
+                (unanalyzed ? " unanalyzed" : "")
               }
               key={cell.date}
               onClick={() => onSelect(cell.date)}
@@ -142,7 +145,11 @@ function CalendarHeat({
                     }
                   : undefined
               }
-              title={`${cell.date}: ${cell.jobs} jobs, ${cell.events} events`}
+              title={
+                unanalyzed
+                  ? `${cell.date}: ${cell.jobs} clips recorded, not yet analyzed`
+                  : `${cell.date}: ${cell.jobs} jobs, ${cell.events} events`
+              }
               type="button"
             >
               {Number(cell.date.slice(8, 10))}
