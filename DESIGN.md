@@ -867,6 +867,37 @@ refinements) are implemented and shipped in [Unreleased].
 - **Depends on**: R9
 - **Priority**: P2
 
+STATUS (2026-09-21): archive v1 (proxy transcode + local cold dir, tracked
+in `archived_originals`) is shipped in [Unreleased]. R11 below is the
+future cold-storage lifecycle — designed as a sketch, NOT implemented.
+
+### Phase R11 — Cold-storage lifecycle (cloud tiering + purge)
+
+- **Goal**: give archived originals a full lifecycle: local cold dir →
+  optional cloud tier → eventual purge, with tracking at every step.
+- **Approach** (sketch — decisions pending real usage):
+  - `archived_originals` is the tracking spine (already written at
+    archive time: original_path, bytes, archived_at). Extend with a
+    `location` field (`cold` | `cloud` | `purged`) and `checksum`
+    for post-move verification.
+  - `vs archive --tier`: move cold-dir originals to a cloud target
+    (candidates: rclone-style backend, B2/S3 via boto-free signed
+    multipart, or plain `rclone` subprocess to stay deps-minimal).
+    Uploads verify size + checksum; local cold copy deleted only
+    after verified upload. Local-only rule re-evaluated: original
+    video bytes (not frames/text) are the only candidate for cloud
+    egress — decide explicitly before building.
+  - `vs archive --purge N`: purge archived originals older than N
+    days (cold or cloud) — deletes bytes, keeps the `archived_originals`
+    row with location=`purged` so the web UI can show "original no
+    longer exists" and `--restore` degrades gracefully.
+  - Job web surface shows the tier (on disk / cold / cloud / purged)
+    and restore works cold→hot; cloud→hot requires the tier backend.
+- **Effort**: M–L
+- **Depends on**: archive v1 (shipped)
+- **Priority**: P3 (only when cold-disk pressure or retention policy
+  demands it)
+
 ### Rejected ideas
 
 | Idea | Why rejected |

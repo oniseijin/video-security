@@ -31,6 +31,7 @@ macOS Vision OCR and mlx-whisper are automatic dependencies.
 
 ```bash
 vs import <card-or-archive>    # Copy + dedup new clips (auto-detects Mazda CX-8)
+vs archive                    # Proxy + cold-store originals of done jobs (needs [archive] cold_dir)
 vs analyze <video.mp4>          # Full pipeline
 vs analyze <dir>              # Batch directory
 vs analyze <video> --no-llm  # Prefilter only
@@ -76,6 +77,8 @@ Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking �
 Core complete. Source adapters: `mazda_cx8` (filename timestamps, front/rear pairing, NMEA `$GPRMC`/`$GSENS` → GPS track + hard-brake/corner/impact events), `gopro`, `photos` (Apple Photos library videos via osxphotos — UUID dedup, iCloud-eviction-proof copy-at-import, device detection), `generic`. `vs import` implements scan → hash dedup → verified copy → job registration.
 
 Mazda CX-8 G-sensor events (`hard_brake`, `hard_corner`, `impact`) are detected from NMEA sidecars at zero vision cost and flow through LLM triage/detail like visual events.
+
+**Archive lifecycle**: `vs archive` (needs `[archive] cold_dir` set) replaces done-job videos with a 720p H.264 proxy in place (playback keeps working, ~6x smaller) and moves the original bytes to the cold dir, tracked in `archived_originals` for future cloud-tiering/purge. `--dry-run` previews, `--days N`/`--job ID` select, `--restore --job ID` brings an original back. Evidence (keyframes, plates, faces, search, reports) is unaffected either way.
 
 ## Development
 

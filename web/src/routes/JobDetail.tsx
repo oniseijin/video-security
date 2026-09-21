@@ -5,7 +5,7 @@ import { fetchJobDetail } from "../api"
 import type { JobDetail as JobDetailData } from "../api"
 import { useCrumbLabel } from "../components/Breadcrumbs"
 import { TerminalNote } from "../components/TerminalNote"
-import { fmtDate, fmtSec } from "../format"
+import { fmtBytes, fmtDate, fmtSec } from "../format"
 import { CapturesTab } from "./tabs/CapturesTab"
 import { EventsTab } from "./tabs/EventsTab"
 import { FacesTab } from "./tabs/FacesTab"
@@ -59,6 +59,13 @@ function Header({ job }: { job: JobDetailData }) {
         <Meta label="mode">{job.mode}</Meta>
         <Meta label="channel">{channelOf(job) ?? "—"}</Meta>
         <Meta label="device">{job.device ? `${job.device.kind}${job.device.model ? ` · ${job.device.model}` : ""}` : "—"}</Meta>
+        <Meta label="original">
+          {job.archived
+            ? `archived · saved ${fmtBytes(
+                job.archived.original_bytes - (job.archived.proxy_bytes ?? 0)
+              )}`
+            : "on disk"}
+        </Meta>
         <Meta label="imported">{fmtDate(job.imported_at)}</Meta>
         <Meta label="duration">{fmtSec(job.duration_sec)}</Meta>
         <Meta label="pair">

@@ -250,9 +250,37 @@ def test_job_detail(base_url: str) -> None:
     assert data["has_transcript"] is True
     assert data["duration_sec"] == 120.0
     assert data["device"] == {"kind": "iphone", "make": "Apple", "model": "iPhone 15 Pro"}
+    assert data["archived"] is None
 
-    data2 = _get_json(f"{base_url}/api/jobs/2")
-    assert data2["device"] is None
+
+def test_job_detail_archived_field(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/jobs/2")
+    assert data["archived"] is None
+    assert data["device"] is None
+
+
+def test_job_detail_archived_row(tmp_path: Path) -> None:
+    from video_security.config import Config
+    from video_security.db import connect, init_db
+    from video_security.web.api import job_detail
+
+    db_path = tmp_path / "ta.db"
+    conn = connect(str(db_path))
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO jobs (id, video_path, video_hash, status) "
+        "VALUES (1, '/v/a.mp4', 'h1', 'done')"
+    )
+    from video_security.db import insert_archived_original
+
+    insert_archived_original(conn, 1, "/cold/clips/a.mp4", 1000, 200)
+    conn.commit()
+    data = job_detail(conn, Config(), {"id": 1})
+    assert data["archived"] is not None
+    assert data["archived"]["original_bytes"] == 1000
+    assert data["archived"]["proxy_bytes"] == 200
+    assert data["archived"]["archived_at"] is not None
+    conn.close()
 
 
 def test_job_events_category_and_faces(base_url: str) -> None:

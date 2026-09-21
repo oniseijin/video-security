@@ -488,6 +488,20 @@ def job_detail(
                 }
         except (json.JSONDecodeError, TypeError):
             pass
+    archived: dict[str, Any] | None = None
+    arow = conn.execute(
+        "SELECT archived_at, original_bytes, proxy_bytes FROM archived_originals "
+        "WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()
+    if arow is not None:
+        archived = {
+            "archived_at": _iso(str(arow["archived_at"])),
+            "original_bytes": int(arow["original_bytes"]),
+            "proxy_bytes": (
+                int(arow["proxy_bytes"]) if arow["proxy_bytes"] is not None else None
+            ),
+        }
     return {
         "id": job_id,
         "status": str(job["status"]),
@@ -508,6 +522,7 @@ def job_detail(
         "status_counts": status_counts,
         "clips": clips,
         "device": device,
+        "archived": archived,
     }
 
 

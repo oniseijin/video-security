@@ -114,6 +114,11 @@ export interface JobDetail {
   status_counts: Record<string, number>
   clips: JobClip[]
   device: { kind: string; make: string | null; model: string | null } | null
+  archived: {
+    archived_at: string | null
+    original_bytes: number
+    proxy_bytes: number | null
+  } | null
 }
 
 export interface EventSummary {

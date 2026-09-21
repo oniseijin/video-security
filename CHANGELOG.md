@@ -4,6 +4,16 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Archive lifecycle**: `vs archive` — done-job videos are transcoded to a
+  720p H.264 proxy in place (playback keeps working, ~6x smaller) and the
+  original bytes move to `[archive] cold_dir`, tracked in `archived_originals`.
+  `--dry-run`, `--days`, `--job`, `--restore --job`. Job detail (API + web)
+  shows the archived state and bytes saved.
+
 ## [0.5.0] - 2026-09-21
 
 ### Added
