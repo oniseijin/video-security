@@ -857,6 +857,60 @@ def _watch_and_run(
         client.unload(cfg.llm_detail.model)
 
 
+@app.command(name="archive")
+def archive_cmd(
+    ctx: typer.Context,
+    days: int
+    | None = typer.Option(None, "--days", help="Age threshold in days for selecting jobs"),
+    job: list[int] = typer.Option(  # noqa: B008
+        [], "--job", help="Specific job IDs to archive/restore"
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be done without making changes",
+    ),
+    restore: bool = typer.Option(
+        False,
+        "--restore",
+        help="Restore archived originals back to their original paths",
+    ),
+) -> None:
+    from video_security.archive import run_archive
+    from video_security.engine import EngineError
+
+    conn, cfg = _get_db(ctx)
+    try:
+        report = run_archive(
+            conn, cfg,
+            days=days,
+            job_ids=job if job else None,
+            dry_run=dry_run,
+            restore=restore,
+        )
+        if restore:
+            print(f"restored {report.restored} jobs, failed {report.failed}")
+        elif dry_run:
+            print(
+                f"would archive {report.planned} jobs "
+                f"({report.bytes_moved} bytes moved to cold)"
+            )
+        else:
+            print(
+                f"archived {report.archived} jobs "
+                f"({report.bytes_moved} bytes moved, "
+                f"{report.bytes_saved} bytes saved on hot disk), "
+                f"skipped {report.skipped}, failed {report.failed}"
+            )
+        for failure in report.failures:
+            print(f"  {failure}")
+    except EngineError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
+
+
 @app.command(name="config")
 def config_cmd(ctx: typer.Context) -> None:
     cfg: Config = ctx.obj["config"]
