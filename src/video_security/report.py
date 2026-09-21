@@ -184,6 +184,7 @@ def render_report_html(
 
     vehicle_tracks = conn.execute(
         "SELECT * FROM vehicle_tracks WHERE job_id = ? "
+        "AND class_id IN (2,3,5,7) "
         "AND (direction IS NOT NULL OR weaving_score IS NOT NULL) "
         "ORDER BY track_id",
         (job_id,),

@@ -144,6 +144,24 @@ def _seed(base: Path) -> None:
         "(1, 10, 0, 0, ?, 0.9, x'0102', 1)",
         (str(faces / "face_10_0_0.jpg"),),
     )
+    conn.execute(
+        "INSERT INTO events (id, job_id, event_type, start_sec, end_sec, "
+        "clip_id, track_id, keyframes_json, faces_json, detector_score, "
+        "priority, status) VALUES (13, 1, 'suspicious_behavior', 20.0, 21.0, "
+        "0, 99, '[]', '[[[0.1, 0.2, 0.3, 0.4]]]', 0.6, 0.5, 'detailed')"
+    )
+    conn.execute(
+        "INSERT INTO faces (job_id, event_id, keyframe_index, face_index, "
+        "crop_path, quality, embedding, person_id) VALUES "
+        "(1, 13, 0, 0, ?, 0.8, x'0102', 1)",
+        (str(faces / "face_10_0_0.jpg"),),
+    )
+    conn.execute(
+        "INSERT INTO vehicle_tracks (job_id, track_id, clip_id, first_frame, "
+        "last_frame, direction, strip_json, class_id) VALUES "
+        "(1, 99, 0, 100, 400, 'W', ?, 0)",
+        (json.dumps([str(frames / "track_7_0.jpg")]),),
+    )
     conn.commit()
     conn.close()
 
@@ -192,7 +210,7 @@ def test_jobs_list_and_filters(base_url: str) -> None:
     assert by_id[1]["archive"] is False
     assert by_id[1]["has_gps"] is True
     assert by_id[3]["has_gps"] is False
-    assert by_id[1]["counts"] == {"events": 3, "plates": 2, "faces": 1}
+    assert by_id[1]["counts"] == {"events": 4, "plates": 2, "faces": 2}
 
     pending = _get_json(f"{base_url}/api/jobs?mode=PARKING")
     assert [item["id"] for item in pending["items"]] == [4, 3]
@@ -211,7 +229,7 @@ def test_jobs_list_and_filters(base_url: str) -> None:
 def test_job_detail(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs/1")
     assert data["pair"] == {"job_id": 2, "channel": "rear"}
-    assert data["event_types"] == {"plate_capture": 1, "intrusion": 1, "suspicious_behavior": 1}
+    assert data["event_types"] == {"plate_capture": 1, "intrusion": 1, "suspicious_behavior": 2}
     assert data["counts"]["plates"] == 2
     assert data["has_transcript"] is True
     assert data["duration_sec"] == 120.0
@@ -226,12 +244,12 @@ def test_job_events_category_and_faces(base_url: str) -> None:
     assert items[10]["plate_norm"] == "習志野5001"
     assert items[10]["recorded_at"] is not None
     driving = _get_json(f"{base_url}/api/jobs/1/events?category=driving")
-    assert len(driving["items"]) == 3
+    assert len(driving["items"]) == 4
 
 
 def test_events_cross_job(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/events?category=driving")
-    assert data["total"] == 3
+    assert data["total"] == 4
     one = _get_json(f"{base_url}/api/events?limit=1")
     assert one["limit"] == 1
     assert len(one["items"]) == 1
@@ -261,7 +279,7 @@ def test_missing_event_404(base_url: str) -> None:
 
 def test_categories(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/categories")
-    assert data["categories"]["driving"] == 3
+    assert data["categories"]["driving"] == 4
     assert data["types"]["plate_capture"] == 1
 
 
@@ -302,7 +320,7 @@ def test_job_gps(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs/1/gps")
     assert len(data["points"]) == 3
     assert data["points"][0]["lat"] == pytest.approx(35.645)
-    assert data["events"][0]["event_id"] in (10, 11)
+    assert data["events"][0]["event_id"] in (10, 11, 13)
 
 
 def test_search_japanese(base_url: str) -> None:
@@ -385,7 +403,7 @@ def test_faces_gallery(base_url: str) -> None:
 
 def test_stats_faces(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/stats")
-    assert data["faces"] == 1
+    assert data["faces"] == 2
 
 
 def test_faces_gallery_person_ids(base_url: str) -> None:
@@ -404,8 +422,8 @@ def test_persons_endpoints(base_url: str) -> None:
     assert p["first_seen"] is not None
     detail = _get_json(f"{base_url}/api/persons/1")
     assert detail["person_id"] == 1
-    assert detail["total"] == 1
-    s = detail["sightings"][0]
+    assert detail["total"] == 2
+    s = next(x for x in detail["sightings"] if x["event_id"] == 10)
     assert s["event_id"] == 10
     assert s["crop_url"] == "/media/faces/1/face_10_0_0.jpg"
     status, _b = _status_of(f"{base_url}/api/persons/999")
@@ -468,19 +486,19 @@ def test_search_semantic_with_stub(tmp_path: Path) -> None:
 
 def test_events_date_filter(base_url: str) -> None:
     all_data = _get_json(f"{base_url}/api/events")
-    assert all_data["total"] == 3
+    assert all_data["total"] == 4
     before = _get_json(f"{base_url}/api/events?to=2025-08-01")
     assert before["total"] == 0
     after = _get_json(f"{base_url}/api/events?from=2025-09-21")
-    assert after["total"] == 3
+    assert after["total"] == 4
     range_q = _get_json(
         f"{base_url}/api/events?from=2025-09-21&to=2025-09-23"
     )
-    assert range_q["total"] == 3
+    assert range_q["total"] == 4
     same_day = _get_json(
         f"{base_url}/api/events?from=2025-09-22&to=2025-09-22"
     )
-    assert same_day["total"] == 3
+    assert same_day["total"] == 4
 
 
 def test_days_endpoint(base_url: str) -> None:
@@ -537,3 +555,36 @@ def test_search_semantic_transcripts_group(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/search?q=anything")
     assert "semantic_transcripts" in data
     assert data["semantic_transcripts"] == []
+
+
+
+def test_people_tracks_endpoint(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/people/tracks")
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["job_id"] == 1
+    assert item["track_id"] == 99
+    assert item["class"] if False else item["n_events"] >= 1
+    assert item["person_id"] == 1
+    assert item["strips"] == ["/media/frames/1/track_7_0.jpg"]
+    assert item["direction"] == "W"
+
+
+def test_person_detail_track_context(base_url: str) -> None:
+    detail = _get_json(f"{base_url}/api/persons/1")
+    by_event = {s["event_id"]: s for s in detail["sightings"]}
+    sighting = by_event[13]
+    assert sighting["track"] == {
+        "track_id": 99,
+        "first_frame": 100,
+        "last_frame": 400,
+        "direction": "W",
+    }
+    assert by_event[10]["track"]["track_id"] == 7
+
+
+def test_job_detail_excludes_person_tracks(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/jobs/1/tracks")
+    track_ids = [t["track_id"] for t in data["items"]]
+    assert 99 not in track_ids
+    assert 7 in track_ids

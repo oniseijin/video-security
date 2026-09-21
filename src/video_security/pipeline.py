@@ -444,7 +444,15 @@ def harvest_job(
     report.vehicle_tracks = len(tracks)
     for t in tracks:
         db.insert_vehicle_track(
-            conn, job.id, t.track_id, 0, t.first_frame, t.last_frame, t.weaving_score, t.direction
+            conn,
+            job.id,
+            t.track_id,
+            0,
+            t.first_frame,
+            t.last_frame,
+            t.weaving_score,
+            t.direction,
+            t.class_id,
         )
 
     def images_lookup(fn: int) -> np.ndarray | None:

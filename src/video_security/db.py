@@ -295,6 +295,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "strip_json" not in vt_cols:
         conn.execute("ALTER TABLE vehicle_tracks ADD COLUMN strip_json TEXT")
         conn.commit()
+    if "class_id" not in vt_cols:
+        conn.execute(
+            "ALTER TABLE vehicle_tracks ADD COLUMN class_id INTEGER NOT NULL DEFAULT 2"
+        )
+        conn.commit()
     job_cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
     if "evidence_json" not in job_cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN evidence_json TEXT")
@@ -578,12 +583,22 @@ def insert_vehicle_track(
     last_frame: int,
     weaving_score: float | None,
     direction: str | None,
+    class_id: int = 2,
 ) -> None:
     conn.execute(
         "INSERT INTO vehicle_tracks "
-        "(job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (job_id, track_id, clip_id, first_frame, last_frame, weaving_score, direction),
+        "(job_id, track_id, clip_id, first_frame, last_frame, weaving_score, "
+        "direction, class_id) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            job_id,
+            track_id,
+            clip_id,
+            first_frame,
+            last_frame,
+            weaving_score,
+            direction,
+            class_id,
+        ),
     )
     conn.commit()
 

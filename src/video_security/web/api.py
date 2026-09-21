@@ -870,7 +870,9 @@ def job_tracks(
     fps = vsdb.clip_fps(conn, job_id)
     items: list[dict[str, Any]] = []
     for tr in conn.execute(
-        "SELECT * FROM vehicle_tracks WHERE job_id = ? ORDER BY track_id", (job_id,)
+        "SELECT * FROM vehicle_tracks WHERE job_id = ? "
+        "AND class_id IN (2,3,5,7) ORDER BY track_id",
+        (job_id,),
     ):
         evs = [
             int(e["id"])
@@ -1116,6 +1118,64 @@ def map_recent(
     return {"items": items}
 
 
+def people_tracks(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    limit, offset = _limit_offset(params)
+    where = ["vt.class_id = 0"]
+    args: list[Any] = []
+    if params.get("job_id"):
+        where.append("vt.job_id = ?")
+        args.append(int(params["job_id"]))
+    rows = conn.execute(
+        "SELECT vt.job_id, vt.track_id, vt.first_frame, vt.last_frame, "
+        "vt.direction, vt.strip_json, j.recording_start_utc, "
+        "(SELECT COUNT(*) FROM events e WHERE e.job_id = vt.job_id "
+        " AND e.track_id = vt.track_id) AS n_events, "
+        "(SELECT f.person_id FROM faces f JOIN events e2 ON e2.id = f.event_id "
+        " WHERE e2.job_id = vt.job_id AND e2.track_id = vt.track_id "
+        " AND f.person_id IS NOT NULL LIMIT 1) AS person_id "
+        "FROM vehicle_tracks vt JOIN jobs j ON j.id = vt.job_id "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY j.recording_start_utc DESC, vt.track_id "
+        "LIMIT ? OFFSET ?",
+        [*args, 500, offset],
+    ).fetchall()
+    items = []
+    for r in rows:
+        strips = []
+        try:
+            strips = [
+                p for p in json.loads(r["strip_json"] or "[]") if Path(p).is_file()
+            ]
+        except (json.JSONDecodeError, TypeError):
+            strips = []
+        strip_urls = []
+        for sp in strips[:5]:
+            m = re.match(r"^.*?/frames/(\d+)/(.+)$", str(sp))
+            if m:
+                strip_urls.append(f"/media/frames/{m.group(1)}/{m.group(2)}")
+        items.append(
+            {
+                "job_id": int(r["job_id"]),
+                "track_id": int(r["track_id"]),
+                "recorded_at": _iso(r["recording_start_utc"]),
+                "first_frame": int(r["first_frame"]),
+                "last_frame": int(r["last_frame"]),
+                "direction": r["direction"],
+                "n_events": int(r["n_events"]),
+                "person_id": (
+                    int(r["person_id"]) if r["person_id"] is not None else None
+                ),
+                "strips": strip_urls,
+            }
+        )
+    total = conn.execute(
+        "SELECT COUNT(*) FROM vehicle_tracks WHERE class_id = 0"
+    ).fetchone()[0]
+    return {"items": items[:limit], "total": int(total), "limit": limit, "offset": offset}
+
+
 def watchlists(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1210,7 +1270,7 @@ def person_detail(
         raise ApiError(404, "person not found")
     rows = conn.execute(
         "SELECT f.id, f.crop_path, f.quality, f.event_id, e.job_id, "
-        "e.event_type, e.start_sec, j.recording_start_utc "
+        "e.event_type, e.start_sec, e.track_id, j.recording_start_utc "
         "FROM faces f JOIN events e ON e.id = f.event_id "
         "JOIN jobs j ON j.id = f.job_id "
         "WHERE f.person_id = ? "
@@ -1227,6 +1287,11 @@ def person_detail(
                 url = f"/media/faces/{m.group(1)}/{m.group(2)}"
         if url is None:
             continue
+        track = conn.execute(
+            "SELECT track_id, first_frame, last_frame, direction "
+            "FROM vehicle_tracks WHERE job_id = ? AND track_id = ?",
+            (int(r["job_id"]), r["track_id"]),
+        ).fetchone() if r["track_id"] is not None else None
         sightings.append(
             {
                 "job_id": int(r["job_id"]),
@@ -1237,6 +1302,16 @@ def person_detail(
                 "start_sec": float(r["start_sec"]),
                 "quality": r["quality"],
                 "crop_url": url,
+                "track": (
+                    {
+                        "track_id": int(track["track_id"]),
+                        "first_frame": int(track["first_frame"]),
+                        "last_frame": int(track["last_frame"]),
+                        "direction": track["direction"],
+                    }
+                    if track is not None
+                    else None
+                ),
             }
         )
     return {
@@ -1506,6 +1581,7 @@ def api_routes() -> list[Route]:
         ("GET", "/api/watchlist-hits", watchlist_hits),
         ("GET", "/api/persons", persons),
         ("GET", "/api/persons/{id}", person_detail),
+        ("GET", "/api/people/tracks", people_tracks),
         ("GET", "/api/faces", faces),
         ("GET", "/api/search", search),
         ("GET", "/api/map/recent", map_recent),

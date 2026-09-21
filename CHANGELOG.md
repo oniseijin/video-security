@@ -8,6 +8,16 @@ follow semantic versioning.
 
 ### Added
 
+- **People tracking (cross-job person sightings)**: person-class YOLO
+  tracks are now first-class — `vehicle_tracks` gains a `class_id`
+  column, person tracks are persisted with movement strips, and the
+  report driving log / job tracks views filter to vehicles only.
+  New `/api/people/tracks` endpoint lists person-track sightings
+  across all jobs (time range, direction, event count, strip, and the
+  linked person cluster when a face matched) with a "Track Sightings"
+  section on the Persons page. Person detail sightings now carry
+  track context (movement window + direction) via the
+  faces→events→track chain.
 - **R4 completion — transcript semantic search**: `vs index` now also
   embeds transcript segments into a `transcript_embeddings` table;
   `/api/search` gains a semantic transcript results group (top matches

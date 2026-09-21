@@ -1,11 +1,79 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, useSearchParams } from "react-router-dom"
-import { fetchPersons } from "../api"
-import type { PersonsPage } from "../api"
+import { fetchPeopleTracks, fetchPersons } from "../api"
+import type { PeopleTracksPage, PersonsPage } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate } from "../format"
 
 const LIMIT = 36
+
+function TrackSightings() {
+  const { data, isPending, isError, error } = useQuery<PeopleTracksPage, Error>(
+    {
+      queryKey: ["people-tracks"],
+      queryFn: () =>
+        fetchPeopleTracks(new URLSearchParams({ limit: "12" })),
+    }
+  )
+  return (
+    <section className="panel">
+      <h2>Track Sightings</h2>
+      <TerminalNote>
+        person-class tracks across all jobs — movement even without a face
+      </TerminalNote>
+      {isPending ? (
+        <TerminalNote>querying /api/people/tracks ...</TerminalNote>
+      ) : isError ? (
+        <TerminalNote tone="threat">
+          tracks error: {error.message}
+        </TerminalNote>
+      ) : !data || data.items.length === 0 ? (
+        <TerminalNote>no person tracks recorded yet</TerminalNote>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th className="num">Track</th>
+              <th>Recorded</th>
+              <th className="num">Frames</th>
+              <th className="num">Dir</th>
+              <th className="num">Events</th>
+              <th>Person</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.items.map((t) => (
+              <tr key={`${t.job_id}-${t.track_id}`}>
+                <td>
+                  <Link className="job-link" to={`/jobs/${t.job_id}`}>
+                    {t.job_id}
+                  </Link>
+                </td>
+                <td className="num">#{t.track_id}</td>
+                <td>{fmtDate(t.recorded_at)}</td>
+                <td className="num">
+                  {t.first_frame}–{t.last_frame}
+                </td>
+                <td className="num">{t.direction ?? "—"}</td>
+                <td className="num">{t.n_events}</td>
+                <td>
+                  {t.person_id != null ? (
+                    <Link to={`/persons/${t.person_id}`}>
+                      PERSON {String(t.person_id).padStart(3, "0")}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
 
 export function Persons() {
   const [params, setParams] = useSearchParams()
@@ -26,8 +94,10 @@ export function Persons() {
   }
 
   return (
-    <section className="panel">
-      <h2>Persons</h2>
+    <>
+      <TrackSightings />
+      <section className="panel">
+        <h2>Persons</h2>
       <TerminalNote>
         face clusters across all jobs — local detection only
       </TerminalNote>
@@ -95,6 +165,7 @@ export function Persons() {
           </div>
         </>
       )}
-    </section>
+      </section>
+    </>
   )
 }

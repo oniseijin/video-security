@@ -460,6 +460,13 @@ export interface PersonsPage {
   offset: number
 }
 
+export interface PersonTrackContext {
+  track_id: number
+  first_frame: number
+  last_frame: number
+  direction: string | null
+}
+
 export interface PersonSighting {
   job_id: number
   event_id: number
@@ -469,6 +476,7 @@ export interface PersonSighting {
   start_sec: number
   quality: number | null
   crop_url: string
+  track: PersonTrackContext | null
 }
 
 export interface PersonDetail {
@@ -483,6 +491,31 @@ export function fetchPersons(params: URLSearchParams): Promise<PersonsPage> {
 
 export function fetchPersonDetail(id: number): Promise<PersonDetail> {
   return fetchJson<PersonDetail>(`/api/persons/${id}`)
+}
+
+export interface PersonTrackSighting {
+  job_id: number
+  track_id: number
+  recorded_at: string | null
+  first_frame: number
+  last_frame: number
+  direction: string | null
+  n_events: number
+  person_id: number | null
+  strips: string[]
+}
+
+export interface PeopleTracksPage {
+  items: PersonTrackSighting[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function fetchPeopleTracks(
+  params: URLSearchParams
+): Promise<PeopleTracksPage> {
+  return fetchJson<PeopleTracksPage>(`/api/people/tracks?${params.toString()}`)
 }
 
 export interface WatchlistRow {
