@@ -113,6 +113,7 @@ export interface JobDetail {
   event_types: Record<string, number>
   status_counts: Record<string, number>
   clips: JobClip[]
+  device: { kind: string; make: string | null; model: string | null } | null
 }
 
 export interface EventSummary {

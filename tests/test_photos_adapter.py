@@ -203,3 +203,27 @@ def test_run_import_hash_hit_records_uuid(
     assert len(rows) == 2
     assert {r["uuid"] for r in rows} == {"uuid-a", "uuid-b"}
     assert all(int(r["job_id"]) == report.jobs[0] for r in rows)
+
+
+def test_run_import_device_priority(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from video_security.devices import DeviceInfo
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_GLASS.MOV")
+    _seam_env(monkeypatch, [["uuid-g", v, "2026-09-01T10:00:00", False]])
+
+    def fake_probe(path: Path, runner: object = None) -> DeviceInfo:
+        return DeviceInfo("meta_glasses", "Ray-Ban", "Meta")
+
+    monkeypatch.setattr("video_security.devices.probe", fake_probe)
+
+    report = run_import(lib, cfg, db_conn)
+    assert report.imported == 1
+
+    clips_row = db_conn.execute(
+        "SELECT priority FROM clips WHERE job_id = ?", (report.jobs[0],)
+    ).fetchone()
+    assert clips_row["priority"] == pytest.approx(0.8)

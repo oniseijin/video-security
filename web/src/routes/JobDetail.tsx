@@ -58,6 +58,7 @@ function Header({ job }: { job: JobDetailData }) {
         <Meta label="status">{job.status}</Meta>
         <Meta label="mode">{job.mode}</Meta>
         <Meta label="channel">{channelOf(job) ?? "—"}</Meta>
+        <Meta label="device">{job.device ? `${job.device.kind}${job.device.model ? ` · ${job.device.model}` : ""}` : "—"}</Meta>
         <Meta label="imported">{fmtDate(job.imported_at)}</Meta>
         <Meta label="duration">{fmtSec(job.duration_sec)}</Meta>
         <Meta label="pair">

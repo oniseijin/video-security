@@ -322,6 +322,9 @@ def jobs_list(
     if params.get("q"):
         where.append("j.video_path LIKE ?")
         args.append(f"%{params['q']}%")
+    if params.get("device"):
+        where.append("json_extract(j.metadata_json, '$.device_kind') = ?")
+        args.append(params["device"])
     sort = params.get("sort", "id")
     order_col = {
         "recorded": "j.recording_start_utc",
@@ -471,6 +474,20 @@ def job_detail(
             "SELECT MAX(timestamp_sec) AS m FROM frames WHERE job_id = ?", (job_id,)
         ).fetchone()
         duration = d["m"] if d and d["m"] is not None else None
+    device: dict[str, Any] | None = None
+    raw_meta = job["metadata_json"]
+    if raw_meta:
+        try:
+            meta = json.loads(raw_meta)
+            dk = meta.get("device_kind")
+            if dk is not None:
+                device = {
+                    "kind": dk,
+                    "make": meta.get("device_make"),
+                    "model": meta.get("device_model"),
+                }
+        except (json.JSONDecodeError, TypeError):
+            pass
     return {
         "id": job_id,
         "status": str(job["status"]),
@@ -490,6 +507,7 @@ def job_detail(
         "event_types": event_types,
         "status_counts": status_counts,
         "clips": clips,
+        "device": device,
     }
 
 

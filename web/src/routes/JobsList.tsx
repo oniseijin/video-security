@@ -29,6 +29,7 @@ export function JobsList() {
   const status = searchParams.get("status") ?? ""
   const mode = searchParams.get("mode") ?? ""
   const channel = searchParams.get("channel") ?? ""
+  const device = searchParams.get("device") ?? ""
   const q = searchParams.get("q") ?? ""
   const sort = searchParams.get("sort") ?? "id"
   const order = searchParams.get("order") ?? "desc"
@@ -38,9 +39,13 @@ export function JobsList() {
   )
 
   const [qInput, setQInput] = useState(q)
+  const [deviceInput, setDeviceInput] = useState(device)
   useEffect(() => {
     setQInput(q)
   }, [q])
+  useEffect(() => {
+    setDeviceInput(device)
+  }, [device])
 
   const params = new URLSearchParams()
   if (status) {
@@ -54,6 +59,9 @@ export function JobsList() {
   }
   if (q) {
     params.set("q", q)
+  }
+  if (device) {
+    params.set("device", device)
   }
   params.set("sort", sort)
   params.set("order", order)
@@ -135,6 +143,19 @@ export function JobsList() {
           <input
             value={qInput}
             onChange={(event) => setQInput(event.target.value)}
+          />
+        </label>
+        <label>
+          device
+          <input
+            value={deviceInput}
+            onChange={(event) => setDeviceInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                setFilter("device", deviceInput.trim())
+              }
+            }}
           />
         </label>
         <label>

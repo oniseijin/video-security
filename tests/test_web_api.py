@@ -116,6 +116,14 @@ def _seed(base: Path) -> None:
         "VALUES (?, x'00000000000000000000000000000001', 'nomic-embed-text')",
         (12,),
     )
+    conn.execute(
+        "UPDATE jobs SET metadata_json = ? WHERE id = 1",
+        (json.dumps({
+            "device_kind": "iphone",
+            "device_make": "Apple",
+            "device_model": "iPhone 15 Pro",
+        }),),
+    )
     conn.commit()
     conn.close()
     art = base / "artifacts"
@@ -225,6 +233,14 @@ def test_jobs_list_and_filters(base_url: str) -> None:
     assert page["total"] == 4
     assert [item["id"] for item in page["items"]] == [3, 4]
 
+    dev = _get_json(f"{base_url}/api/jobs?device=iphone")
+    assert dev["total"] == 1
+    assert dev["items"][0]["id"] == 1
+
+    dash = _get_json(f"{base_url}/api/jobs?device=dashcam")
+    assert dash["total"] == 0
+    assert dash["items"] == []
+
 
 def test_job_detail(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs/1")
@@ -233,6 +249,10 @@ def test_job_detail(base_url: str) -> None:
     assert data["counts"]["plates"] == 2
     assert data["has_transcript"] is True
     assert data["duration_sec"] == 120.0
+    assert data["device"] == {"kind": "iphone", "make": "Apple", "model": "iPhone 15 Pro"}
+
+    data2 = _get_json(f"{base_url}/api/jobs/2")
+    assert data2["device"] is None
 
 
 def test_job_events_category_and_faces(base_url: str) -> None:
