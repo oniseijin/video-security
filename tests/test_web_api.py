@@ -516,3 +516,24 @@ def test_analytics_locations_endpoint(base_url: str) -> None:
         assert isinstance(loc["name"], str)
         assert isinstance(loc["count"], int)
         assert loc["count"] >= 1
+
+
+def test_analytics_repeat_plates(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/analytics/plates")
+    assert data["total"] == 2
+    items = {i["norm_text"]: i for i in data["items"]}
+    y = items["習志野5001"]
+    assert y["count"] == 1
+    assert y["best_confidence"] == 1.0
+    assert y["crop_url"] == "/media/plates/1/track_7.jpg"
+    assert y["first_job"] == 1
+    assert y["last_job"] == 1
+    assert items["Y2"]["count"] == 1
+
+
+def test_search_semantic_transcripts_group(base_url: str) -> None:
+    status, _b = _status_of(f"{base_url}/api/search?q=anything")
+    assert status == 200
+    data = _get_json(f"{base_url}/api/search?q=anything")
+    assert "semantic_transcripts" in data
+    assert data["semantic_transcripts"] == []

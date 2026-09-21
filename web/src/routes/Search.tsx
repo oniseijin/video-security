@@ -261,6 +261,42 @@ export function Search() {
               </table>
             )}
           </section>
+
+          <section className="panel">
+            <h2>Semantic Transcripts</h2>
+            {!data.semantic_available ? (
+              <TerminalNote>
+                semantic search requires Ollama with nomic-embed-text
+              </TerminalNote>
+            ) : (data.semantic_transcripts ?? []).length === 0 ? (
+              <TerminalNote>no transcript matches</TerminalNote>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th className="num">At</th>
+                    <th className="num">Score</th>
+                    <th>Text</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.semantic_transcripts ?? []).map((hit) => (
+                    <tr key={`${hit.job_id}-${hit.segment_id}`}>
+                      <td>
+                        <Link className="job-link" to={`/jobs/${hit.job_id}`}>
+                          {hit.job_id}
+                        </Link>
+                      </td>
+                      <td className="num">{hit.start_time.toFixed(0)}s</td>
+                      <td className="num">{hit.score.toFixed(3)}</td>
+                      <td className="wrap-cell">{hit.text}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
         </>
       ) : null}
     </>

@@ -6,6 +6,27 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **R4 completion — transcript semantic search**: `vs index` now also
+  embeds transcript segments into a `transcript_embeddings` table;
+  `/api/search` gains a semantic transcript results group (top matches
+  with job, timestamp, and text) rendered in the web search page.
+- **R6 completion — repeat-plate widget**: new `/api/analytics/plates`
+  endpoint (plates grouped by normalized text with first/last seen,
+  sighting count, best confidence, crop link) and a "Repeat Plates"
+  panel in the dashboard analytics section.
+- **exiftool metadata enrichment (optional)**: when `exiftool` is on
+  PATH, imports capture device metadata (make/model, firmware, original
+  datetime, embedded GPS, duration) into a `jobs.metadata_json` column;
+  absent tool = no change in behavior.
+
+### Fixed
+
+- **Events date filter**: `from`/`to` now compare with `date()` so
+  same-day ranges match real ISO timestamps (string comparison silently
+  excluded all events on the boundary day).
+
 ## [0.4.0] - 2026-09-21
 
 ### Added

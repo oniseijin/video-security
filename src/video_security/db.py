@@ -244,6 +244,21 @@ MIGRATIONS: list[list[str]] = [
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""",
     ],
+    [
+        """CREATE TABLE IF NOT EXISTS transcript_embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            clip_id INTEGER NOT NULL DEFAULT 0,
+            segment_id INTEGER NOT NULL,
+            start_time REAL,
+            end_time REAL,
+            text TEXT NOT NULL,
+            embedding BLOB NOT NULL,
+            model TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (job_id, clip_id, segment_id, model)
+        )""",
+    ],
 ]
 
 
@@ -283,6 +298,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     job_cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
     if "evidence_json" not in job_cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN evidence_json TEXT")
+        conn.commit()
+    if "metadata_json" not in job_cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN metadata_json TEXT")
         conn.commit()
 
 

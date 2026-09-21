@@ -1048,14 +1048,21 @@ def search(
     ]
     semantic_available = False
     semantic: list[dict[str, Any]] = []
+    semantic_transcripts: list[dict[str, Any]] = []
     try:
         from video_security.llm.embeddings import EMBED_MODEL, embed_query
-        from video_security.llm.embeddings import semantic_search as sem_search
+        from video_security.llm.embeddings import (
+            semantic_search as sem_search,
+        )
+        from video_security.llm.embeddings import (
+            semantic_search_transcripts as sem_search_t,
+        )
         from video_security.llm.ollama import OllamaClient
 
         client = OllamaClient(timeout_s=10)
         q_embed = embed_query(client, EMBED_MODEL, q)
         semantic = sem_search(conn, q_embed, top_k=10)
+        semantic_transcripts = sem_search_t(conn, q_embed, top_k=10)
         semantic_available = True
     except Exception:
         pass
@@ -1067,6 +1074,7 @@ def search(
         "events": events,
         "semantic_available": semantic_available,
         "semantic": semantic,
+        "semantic_transcripts": semantic_transcripts,
     }
 
 
@@ -1396,6 +1404,55 @@ def analytics_hours(
     }
 
 
+def analytics_plates(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    rows = conn.execute(
+        "SELECT p.norm_text, p.raw_text, p.confidence, p.job_id, "
+        "p.crop_path, j.recording_start_utc "
+        "FROM plates p JOIN jobs j ON j.id = p.job_id "
+        "ORDER BY p.norm_text, j.recording_start_utc"
+    ).fetchall()
+    groups: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        norm = str(r["norm_text"])
+        g = groups.setdefault(
+            norm,
+            {
+                "norm_text": norm,
+                "raw_text": str(r["raw_text"]),
+                "count": 0,
+                "best_confidence": 0.0,
+                "first_seen": None,
+                "last_seen": None,
+                "first_job": None,
+                "last_job": None,
+                "crop_url": None,
+            },
+        )
+        g["count"] += 1
+        if float(r["confidence"]) > float(g["best_confidence"]):
+            g["best_confidence"] = float(r["confidence"])
+            g["raw_text"] = str(r["raw_text"])
+            if r["crop_path"]:
+                cp = str(r["crop_path"])
+                if Path(cp).is_file():
+                    m = re.match(r"^.*?/plates/(\d+)/(.+)$", cp)
+                    if m:
+                        g["crop_url"] = f"/media/plates/{m.group(1)}/{m.group(2)}"
+        rec = _iso(r["recording_start_utc"])
+        if g["first_seen"] is None or (rec is not None and rec < g["first_seen"]):
+            g["first_seen"] = rec
+            g["first_job"] = int(r["job_id"])
+        if g["last_seen"] is None or (rec is not None and rec >= g["last_seen"]):
+            g["last_seen"] = rec
+            g["last_job"] = int(r["job_id"])
+    items = sorted(
+        groups.values(), key=lambda g: g["count"], reverse=True
+    )[:12]
+    return {"items": items, "total": len(groups)}
+
+
 def analytics_locations(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1456,4 +1513,5 @@ def api_routes() -> list[Route]:
         ("GET", "/api/analytics/heatmap", analytics_heatmap),
         ("GET", "/api/analytics/hours", analytics_hours),
         ("GET", "/api/analytics/locations", analytics_locations),
+        ("GET", "/api/analytics/plates", analytics_plates),
     ]

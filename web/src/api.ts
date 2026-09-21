@@ -370,6 +370,15 @@ export interface SearchSemanticHit {
   snippet: string
 }
 
+export interface SearchSemanticTranscriptHit {
+  job_id: number
+  segment_id: number
+  start_time: number
+  end_time: number
+  text: string
+  score: number
+}
+
 export interface SearchResults {
   q: string
   plates: SearchPlateHit[]
@@ -378,6 +387,7 @@ export interface SearchResults {
   events: SearchEventHit[]
   semantic_available: boolean
   semantic: SearchSemanticHit[]
+  semantic_transcripts: SearchSemanticTranscriptHit[]
 }
 
 export interface MapRecentItem {
@@ -566,4 +576,25 @@ export interface LocationsResponse {
 
 export function fetchAnalyticsLocations(): Promise<LocationsResponse> {
   return fetchJson<LocationsResponse>("/api/analytics/locations")
+}
+
+export interface RepeatPlate {
+  norm_text: string
+  raw_text: string
+  count: number
+  best_confidence: number
+  first_seen: string | null
+  last_seen: string | null
+  first_job: number | null
+  last_job: number | null
+  crop_url: string | null
+}
+
+export interface RepeatPlatesResponse {
+  items: RepeatPlate[]
+  total: number
+}
+
+export function fetchAnalyticsPlates(): Promise<RepeatPlatesResponse> {
+  return fetchJson<RepeatPlatesResponse>("/api/analytics/plates")
 }

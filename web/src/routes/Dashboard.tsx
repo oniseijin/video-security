@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import {
   fetchAnalyticsHours,
   fetchAnalyticsLocations,
+  fetchAnalyticsPlates,
   fetchMapRecent,
   fetchStats,
   fetchWatchlistHits,
@@ -13,6 +14,7 @@ import type {
   HoursResponse,
   LocationsResponse,
   MapRecent,
+  RepeatPlatesResponse,
   Stats,
   WatchlistHitsPage,
 } from "../api"
@@ -192,6 +194,10 @@ function Analytics() {
     queryKey: ["analytics-locations"],
     queryFn: fetchAnalyticsLocations,
   })
+  const plates = useQuery<RepeatPlatesResponse, Error>({
+    queryKey: ["analytics-plates"],
+    queryFn: fetchAnalyticsPlates,
+  })
 
   return (
     <>
@@ -210,6 +216,49 @@ function Analytics() {
           <TerminalNote>no event hour data</TerminalNote>
         ) : (
           <HoursChart data={hours.data} />
+        )}
+      </section>
+      <section className="panel">
+        <h2>Repeat Plates</h2>
+        {plates.isPending ? (
+          <TerminalNote>loading...</TerminalNote>
+        ) : plates.isError ? (
+          <TerminalNote tone="threat">plates error: {plates.error.message}</TerminalNote>
+        ) : !plates.data || plates.data.items.length === 0 ? (
+          <TerminalNote>no repeat plates yet</TerminalNote>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Plate</th>
+                <th className="num">Seen</th>
+                <th>First</th>
+                <th>Last</th>
+                <th className="num">Conf</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plates.data.items.map((pl) => (
+                <tr key={pl.norm_text}>
+                  <td>
+                    <Link to={`/plates/${encodeURIComponent(pl.norm_text)}`}>
+                      {pl.norm_text}
+                    </Link>
+                  </td>
+                  <td className="num">{pl.count}</td>
+                  <td>
+                    {fmtDate(pl.first_seen)}
+                    {pl.first_job != null ? ` · ${pl.first_job}` : ""}
+                  </td>
+                  <td>
+                    {fmtDate(pl.last_seen)}
+                    {pl.last_job != null ? ` · ${pl.last_job}` : ""}
+                  </td>
+                  <td className="num">{pl.best_confidence.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
       <section className="panel">

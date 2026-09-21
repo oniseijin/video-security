@@ -96,6 +96,15 @@ def _import_one(
         if job_id is None:
             report.skipped += 1
             return
+        from video_security.metadata import extract_metadata
+
+        meta = extract_metadata(dest)
+        if meta is not None:
+            conn.execute(
+                "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+                (json.dumps(meta), job_id),
+            )
+            conn.commit()
         seen_hashes.add(h)
         report.imported += 1
         report.jobs.append(job_id)
