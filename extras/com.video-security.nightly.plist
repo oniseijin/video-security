@@ -7,7 +7,7 @@
     cp extras/com.video-security.nightly.plist ~/Library/LaunchAgents/
     launchctl load ~/Library/LaunchAgents/com.video-security.nightly.plist
 
-  Runs the full cycle nightly at 02:00 with an 8-hour budget:
+  Runs the full cycle nightly at 23:00 with a 6-hour budget (until 05:00):
   import from the mounted CX-8 card (if present), then analyze all phases.
   Logs to ~/.local/opt/video-security/var/nightly.log
 
@@ -27,13 +27,13 @@
         <string>--phases</string>
         <string>1,2,3</string>
         <string>--stop-after</string>
-        <string>8h</string>
+        <string>6h</string>
         <string>--resume</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>2</integer>
+        <integer>23</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
