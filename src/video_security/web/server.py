@@ -5,6 +5,7 @@ import json
 import mimetypes
 import re
 import sqlite3
+import sys
 import threading
 import webbrowser
 from collections.abc import Callable
@@ -212,6 +213,12 @@ def _handler_class(
 
 class WebServer(ThreadingHTTPServer):
     daemon_threads = True
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
     def __init__(
         self,
