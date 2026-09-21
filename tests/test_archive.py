@@ -381,3 +381,66 @@ def test_restore_after_cold_dir_moved(
     assert report.failed == 0
     assert clip.exists()
     assert db.get_archived_original(db_conn, job_id) is None
+
+
+def test_deep_archive_moves_proxy(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "20250911" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "deep.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    run_archive(db_conn, cfg, job_ids=[job_id])
+    assert clip.is_file()
+
+    report = run_archive(db_conn, cfg, job_ids=[job_id], deep=True)
+    assert report.archived == 1
+    assert report.failed == 0
+    assert not clip.exists()
+
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    assert row["proxy_cold_path"] is not None
+    assert Path(str(row["proxy_cold_path"])).is_file()
+    assert Path(str(row["original_path"])).is_file()
+
+    second = run_archive(db_conn, cfg, job_ids=[job_id], deep=True)
+    assert second.skipped == 1
+
+
+def test_deep_requires_archive_first(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "20250912" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "plain.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    report = run_archive(db_conn, cfg, job_ids=[job_id], deep=True)
+    assert report.failed == 1
+    assert "run archive first" in report.failures[0]
+
+
+def test_restore_from_deep(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "20250913" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "deep2.mp4"
+    golden_clip(clip)
+    original_bytes = clip.stat().st_size
+    job_id = _make_done_job(db_conn, clip)
+
+    run_archive(db_conn, cfg, job_ids=[job_id])
+    run_archive(db_conn, cfg, job_ids=[job_id], deep=True)
+    assert not clip.exists()
+
+    report = run_archive(db_conn, cfg, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert report.failed == 0
+    assert clip.exists()
+    assert clip.stat().st_size == original_bytes
+    assert db.get_archived_original(db_conn, job_id) is None

@@ -119,6 +119,7 @@ export interface JobDetail {
     original_bytes: number
     proxy_bytes: number | null
     location: string
+    deep: boolean
   } | null
 }
 

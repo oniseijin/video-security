@@ -878,6 +878,10 @@ def archive_cmd(
         False, "--delete",
         help="Delete done-job videos outright (no proxy, no cold copy)",
     ),
+    deep: bool = typer.Option(
+        False, "--deep",
+        help="Move proxies of already-archived jobs to cold too (evidence only on hot)",
+    ),
 ) -> None:
     from video_security.archive import run_archive
     from video_security.engine import EngineError
@@ -891,6 +895,7 @@ def archive_cmd(
             dry_run=dry_run,
             restore=restore,
             delete=delete,
+            deep=deep,
         )
         if restore:
             print(f"restored {report.restored} jobs, failed {report.failed}")
@@ -898,6 +903,12 @@ def archive_cmd(
             print(
                 f"deleted {report.deleted} videos "
                 f"({report.bytes_saved} bytes freed), "
+                f"skipped {report.skipped}, failed {report.failed}"
+            )
+        elif deep:
+            print(
+                f"deep-archived {report.archived} proxies "
+                f"({report.bytes_moved} bytes moved to cold), "
                 f"skipped {report.skipped}, failed {report.failed}"
             )
         elif dry_run:

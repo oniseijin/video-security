@@ -868,8 +868,9 @@ refinements) are implemented and shipped in [Unreleased].
 - **Priority**: P2
 
 STATUS (2026-09-21): archive v1 (proxy transcode + local cold dir, tracked
-in `archived_originals`) is shipped in [Unreleased]. R11 below is the
-future cold-storage lifecycle — designed as a sketch, NOT implemented.
+in `archived_originals`, plus `--delete` and `--deep` proxy-to-cold tiers) is
+shipped in [Unreleased]. R11 below is the future cold-storage lifecycle —
+designed as a sketch, NOT implemented.
 
 ### Phase R11 — Cold-storage lifecycle (cloud tiering + purge)
 

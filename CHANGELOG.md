@@ -11,9 +11,10 @@ follow semantic versioning.
 - **Archive lifecycle**: `vs archive` — done-job videos are transcoded to a
   720p H.264 proxy in place (playback keeps working, ~6x smaller) and the
   original bytes move to `[archive] cold_dir`, tracked in `archived_originals`.
-  `--dry-run`, `--days`, `--job`, `--restore --job`. `--delete` sheds the video
-  entirely (no proxy, no cold copy — playback goes away, evidence stays).
-  Job detail (API + web) shows the archived state and bytes saved.
+  `--dry-run`, `--days`, `--job`, `--restore --job`, `--deep` (proxies to cold too,
+  leaving only evidence on hot disk), `--delete` (no proxy, no cold copy — playback
+  goes away, evidence stays). Job detail (API + web) shows the archived state and
+  bytes saved.
 
 ## [0.5.0] - 2026-09-21
 

@@ -193,6 +193,58 @@ def _resolve_cold_path(recorded: str, cold_root: Path | None) -> Path:
     return cold_root / p.name
 
 
+def deep_archive_job(
+    conn: sqlite3.Connection,
+    config: Config,
+    job_id: int,
+    report: ArchiveReport,
+) -> None:
+    row = db.get_archived_original(conn, job_id)
+    if row is None:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: not archived yet (run archive first)")
+        return
+    if row["location"] == "deleted":
+        report.failed += 1
+        report.failures.append(f"job {job_id}: original was deleted")
+        return
+    if row["proxy_cold_path"] is not None:
+        report.skipped += 1
+        return
+    job = db.get_job_by_id(conn, job_id)
+    if job is None:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: job not found")
+        return
+    src = Path(job.video_path)
+    if not src.exists():
+        report.failed += 1
+        report.failures.append(f"job {job_id}: proxy not found at {src}")
+        return
+    assert config.archive.cold_dir is not None
+    cold_root = Path(config.archive.cold_dir).expanduser()
+    try:
+        clips_root = _find_clips_root(src)
+        if clips_root is not None:
+            cold_dest = cold_root / src.relative_to(clips_root)
+        else:
+            cold_dest = cold_root / src.name
+        proxy_dest = cold_dest.with_name(f"{cold_dest.stem}.proxy{cold_dest.suffix}")
+        proxy_dest.parent.mkdir(parents=True, exist_ok=True)
+        proxy_bytes = src.stat().st_size
+        shutil.move(str(src), str(proxy_dest))
+        conn.execute(
+            "UPDATE archived_originals SET proxy_cold_path = ? WHERE job_id = ?",
+            (str(proxy_dest), job_id),
+        )
+        conn.commit()
+        report.archived += 1
+        report.bytes_moved += proxy_bytes
+    except (OSError, sqlite3.Error) as e:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: {e}")
+
+
 def restore_job(
     conn: sqlite3.Connection,
     config: Config,
@@ -229,6 +281,11 @@ def restore_job(
 
     if src.exists():
         src.unlink()
+    proxy_cold = row["proxy_cold_path"]
+    if proxy_cold is not None:
+        proxy_path = Path(str(proxy_cold))
+        if proxy_path.is_file():
+            proxy_path.unlink()
     shutil.move(str(cold), str(src))
     db.delete_archived_original(conn, job_id)
     report.restored += 1
@@ -242,6 +299,7 @@ def run_archive(
     dry_run: bool = False,
     restore: bool = False,
     delete: bool = False,
+    deep: bool = False,
 ) -> ArchiveReport:
     report = ArchiveReport()
 
@@ -250,6 +308,43 @@ def run_archive(
             raise EngineError("--restore requires explicit --job")
         for jid in job_ids:
             restore_job(conn, config, jid, report)
+        return report
+
+    if deep:
+        if job_ids:
+            deep_ids = job_ids
+        else:
+            d = days if days is not None else config.archive.days
+            deep_ids = [
+                int(r["job_id"])
+                for r in conn.execute(
+                    "SELECT job_id FROM archived_originals "
+                    "WHERE location = 'cold' AND proxy_cold_path IS NULL "
+                    "AND archived_at < datetime('now', ?) ORDER BY job_id",
+                    (f"-{d} days",),
+                )
+            ]
+        if not dry_run and deep_ids:
+            if config.archive.cold_dir is None:
+                raise EngineError(
+                    "set [archive] cold_dir in config "
+                    "(cold storage target for archived originals)"
+                )
+        for jid in deep_ids:
+            if dry_run:
+                jrow = db.get_job_by_id(conn, jid)
+                if jrow is None:
+                    continue
+                jpath = Path(jrow.video_path)
+                if not jpath.exists():
+                    continue
+                arow = db.get_archived_original(conn, jid)
+                if arow is None or arow["proxy_cold_path"] is not None:
+                    continue
+                report.planned += 1
+                report.bytes_moved += jpath.stat().st_size
+            else:
+                deep_archive_job(conn, config, jid, report)
         return report
 
     if job_ids:

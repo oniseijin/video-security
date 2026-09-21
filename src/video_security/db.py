@@ -282,6 +282,9 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE archived_originals ADD COLUMN location TEXT NOT NULL DEFAULT 'cold'",
     ],
+    [
+        "ALTER TABLE archived_originals ADD COLUMN proxy_cold_path TEXT",
+    ],
 ]
 
 

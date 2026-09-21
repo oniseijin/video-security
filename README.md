@@ -32,6 +32,7 @@ macOS Vision OCR and mlx-whisper are automatic dependencies.
 ```bash
 vs import <card-or-archive>    # Copy + dedup new clips (auto-detects Mazda CX-8)
 vs archive                    # Proxy + cold-store originals of done jobs (needs [archive] cold_dir)
+vs archive --deep             # Later: move the proxies to cold too (evidence only on hot disk)
 vs archive --delete          # Delete done-job videos outright (no proxy, no cold copy)
 vs analyze <video.mp4>          # Full pipeline
 vs analyze <dir>              # Batch directory
