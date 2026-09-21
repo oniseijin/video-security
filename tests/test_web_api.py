@@ -477,6 +477,10 @@ def test_events_date_filter(base_url: str) -> None:
         f"{base_url}/api/events?from=2025-09-21&to=2025-09-23"
     )
     assert range_q["total"] == 3
+    same_day = _get_json(
+        f"{base_url}/api/events?from=2025-09-22&to=2025-09-22"
+    )
+    assert same_day["total"] == 3
 
 
 def test_days_endpoint(base_url: str) -> None:

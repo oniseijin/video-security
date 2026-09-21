@@ -539,12 +539,12 @@ def events_list(
         args.append(int(params["job_id"]))
     if params.get("from"):
         join_jobs = True
-        where.append("j.recording_start_utc >= ?")
+        where.append("date(j.recording_start_utc) >= ?")
         args.append(params["from"])
     if params.get("to"):
         if not join_jobs:
             join_jobs = True
-        where.append("j.recording_start_utc <= ?")
+        where.append("date(j.recording_start_utc) <= ?")
         args.append(params["to"])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     table = "events e JOIN jobs j ON j.id = e.job_id" if join_jobs else "events e"
