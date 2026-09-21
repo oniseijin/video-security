@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import shutil
 import sqlite3
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ class ImportReport:
     imported: int = 0
     skipped: int = 0
     failed: int = 0
+    skipped_cloud: int = 0
     jobs: list[int] = dataclasses.field(default_factory=list)
 
 
@@ -80,7 +82,7 @@ def _import_one(
     report: ImportReport,
     seen_hashes: set[str],
     sidecar: Path | None = None,
-) -> None:
+) -> int | None:
     try:
         if sidecar is not None and sidecar.exists():
             side_dst = dest.with_suffix(".NMEA")
@@ -89,13 +91,13 @@ def _import_one(
         if not _verify_copy(clip.path, dest, h):
             dest.unlink(missing_ok=True)
             report.failed += 1
-            return
+            return None
         job_id = _register(
             conn, clip, dest, h, import_id, session_id, session_clips
         )
         if job_id is None:
             report.skipped += 1
-            return
+            return None
         from video_security.metadata import extract_metadata
 
         meta = extract_metadata(dest)
@@ -108,9 +110,78 @@ def _import_one(
         seen_hashes.add(h)
         report.imported += 1
         report.jobs.append(job_id)
+        return job_id
     except (OSError, sqlite3.Error) as e:
         report.failed += 1
         print(f"import failed for {clip.path}: {e}")
+        return None
+
+
+def _record_uuid(
+    conn: sqlite3.Connection,
+    clip: ClipInfo,
+    job_id: int,
+    h: str,
+) -> None:
+    if clip.source_uuid is None:
+        return
+    db.insert_photos_import(conn, clip.source_uuid, job_id, h, clip.path.name)
+
+
+def _record_hash_hit_uuid(
+    conn: sqlite3.Connection,
+    clip: ClipInfo,
+    h: str,
+) -> None:
+    if clip.source_uuid is None:
+        return
+    if db.get_photos_import(conn, clip.source_uuid) is not None:
+        return
+    existing_job = db.get_job_by_hash(conn, h)
+    if existing_job is not None:
+        db.insert_photos_import(
+            conn, clip.source_uuid, existing_job.id, h, clip.path.name
+        )
+
+
+def _merge_device_meta(
+    conn: sqlite3.Connection,
+    adapter_name: str,
+    adapter: object,
+    dest: Path,
+    job_id: int,
+) -> None:
+    from video_security.devices import from_adapter as device_from_adapter
+    from video_security.devices import probe as device_probe
+
+    info = device_probe(dest)
+    if info.kind == "unknown":
+        adapter_kind = getattr(adapter, "device_kind", None)
+        if adapter_kind is not None:
+            info = device_from_adapter(
+                adapter_kind,
+                getattr(adapter, "device_make", None),
+                getattr(adapter, "device_model", None),
+            )
+    row = conn.execute(
+        "SELECT metadata_json FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    existing: dict[str, str] = {}
+    if row and row["metadata_json"]:
+        try:
+            existing = json.loads(row["metadata_json"])
+        except json.JSONDecodeError:
+            pass
+    existing["device_kind"] = info.kind
+    if info.make:
+        existing["device_make"] = info.make
+    if info.model:
+        existing["device_model"] = info.model
+    conn.execute(
+        "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+        (json.dumps(existing), job_id),
+    )
+    conn.commit()
 
 
 def run_import(
@@ -118,6 +189,7 @@ def run_import(
     config: Config,
     conn: sqlite3.Connection,
     adapter_name: str = "auto",
+    since: datetime | None = None,
 ) -> ImportReport:
     if not source.exists():
         raise EngineError(f"source not found: {source}")
@@ -135,24 +207,54 @@ def run_import(
     if name == "auto":
         name = detect_adapter(source)
     adapter = get_adapter(name, config)
+    if name == "photos" and since is not None:
+        from video_security.adapters.photos import PhotosAdapter
+
+        adapter = PhotosAdapter(config, since=since)
     clips = adapter.discover_clips(source)
 
     import_date = datetime.now(UTC).strftime("%Y%m%d")
-    import_id = f"{import_date}-{source.name}"
+    if source.suffix.lower() == ".photoslibrary":
+        label = re.sub(r"[^A-Za-z0-9._-]", "-", source.stem)
+    else:
+        label = source.name
+    import_id = f"{import_date}-{label}"
     report = ImportReport()
+    report.skipped_cloud = getattr(adapter, "skipped_cloud_only", 0)
     seen_hashes: set[str] = set()
     clips_root = artifact_dir / "clips" / import_date
     spotlight_ignore(clips_root)
     spotlight_ignore(artifact_dir)
 
     for clip in clips:
+        if clip.source_uuid is not None:
+            if db.get_photos_import(conn, clip.source_uuid) is not None:
+                report.skipped += 1
+                continue
+
+        if name == "photos":
+            try:
+                from video_security.devices import probe as device_probe
+
+                info = device_probe(clip.path)
+                if info.kind != "unknown":
+                    device_priorities = config.adapter_photos.device_priorities
+                    if info.kind in device_priorities:
+                        clip.priority = device_priorities[info.kind]
+            except Exception:
+                pass
+
         h = video_hash(clip.path)
         if h in seen_hashes or db.get_job_by_hash(conn, h) is not None:
+            _record_hash_hit_uuid(conn, clip, h)
             report.skipped += 1
             continue
 
         channel_dir = "rear" if clip.channel == "rear" else "front"
         dest = clips_root / clip.mode / channel_dir / clip.path.name
+        if dest.exists():
+            dest = dest.with_name(f"{dest.stem}-{h[:8]}{dest.suffix}")
+
         session_id = clip.path.stem if clip.pair_path is not None else None
 
         session_clips = [{"channel": clip.channel, "path": str(dest)}]
@@ -160,7 +262,7 @@ def run_import(
             pair_dest = clips_root / clip.mode / "rear" / clip.pair_path.name
             session_clips.append({"channel": "rear", "path": str(pair_dest)})
 
-        _import_one(
+        job_id = _import_one(
             conn,
             clip,
             dest,
@@ -172,6 +274,12 @@ def run_import(
             seen_hashes,
             sidecar=clip.nmea_path,
         )
+        if job_id is not None:
+            _record_uuid(conn, clip, job_id, h)
+            try:
+                _merge_device_meta(conn, name, adapter, dest, job_id)
+            except Exception:
+                pass
 
         if clip.pair_path is not None:
             ph = video_hash(clip.pair_path)
@@ -184,6 +292,7 @@ def run_import(
                 channel="rear",
                 pair_path=None,
                 nmea_path=None,
+                source_uuid=None,
             )
             pair_dest = clips_root / clip.mode / "rear" / clip.pair_path.name
             _import_one(

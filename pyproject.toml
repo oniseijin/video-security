@@ -16,6 +16,7 @@ dependencies = [
     "silero-vad>=5.1",
     "onnxruntime>=1.18",
     "mlx-whisper>=0.4",
+    "osxphotos>=0.76",
     "pyobjc-framework-Vision>=10.0",
     "pyobjc-framework-SoundAnalysis>=10.0",
 ]

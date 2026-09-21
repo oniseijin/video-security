@@ -26,6 +26,8 @@ class SourceAdapter(Protocol):
 
 
 def detect_adapter(source: Path) -> str:
+    if source.suffix.lower() == ".photoslibrary":
+        return "photos"
     mode_names = {"NORMAL", "EVENT", "MANUAL", "PARKING", "PICTURE"}
     for d in _dirs_within(source, depth=2):
         if d.name.upper() in mode_names:
@@ -55,6 +57,10 @@ def get_adapter(name: str, config: Config) -> SourceAdapter:
         from video_security.adapters.gopro import GoProAdapter
 
         return GoProAdapter()
+    if name == "photos":
+        from video_security.adapters.photos import PhotosAdapter
+
+        return PhotosAdapter(config)
     if name == "generic":
         from video_security.adapters.generic import GenericAdapter
 

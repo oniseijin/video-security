@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -398,7 +399,8 @@ def run_cmd(
 def import_clips_cmd(
     ctx: typer.Context,
     source: Path = typer.Argument(..., help="Source path (card mount or archive)"),  # noqa: B008
-    adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|generic)"),  # noqa: B008, E501
+    adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|photos|generic)"),  # noqa: B008, E501
+    since: str | None = typer.Option(None, "--since", help="Only import assets recorded on/after date (YYYY-MM-DD)"),  # noqa: B008, E501
 ) -> None:
     from video_security.engine import EngineError
     from video_security.importer import run_import
@@ -406,8 +408,16 @@ def import_clips_cmd(
     cfg: Config = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
     init_db(conn)
+    since_dt: datetime | None = None
+    if since is not None:
+        try:
+            since_dt = datetime.strptime(since, "%Y-%m-%d")
+        except ValueError:
+            print(f"Error: invalid --since date {since!r} (expected YYYY-MM-DD)", file=sys.stderr)
+            conn.close()
+            raise typer.Exit(code=1) from None
     try:
-        report = run_import(source, cfg, conn, adapter)
+        report = run_import(source, cfg, conn, adapter, since=since_dt)
     except (EngineError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         conn.close()
@@ -417,6 +427,8 @@ def import_clips_cmd(
         f"skipped {report.skipped} (already imported), "
         f"failed {report.failed}"
     )
+    if report.skipped_cloud:
+        print(f"skipped {report.skipped_cloud} cloud-only (iCloud-evicted) assets")
     conn.close()
 
 
