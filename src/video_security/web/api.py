@@ -73,8 +73,7 @@ def stats(
     faces_events = int(
         conn.execute(
             "SELECT COUNT(*) AS c FROM events "
-            "WHERE faces_json IS NOT NULL AND faces_json != '[]' "
-            "AND faces_json != 'null'"
+            "WHERE faces_json IS NOT NULL AND faces_json GLOB '*[0-9]*'"
         ).fetchone()["c"]
     )
     active: dict[str, Any] | None = None
@@ -340,7 +339,7 @@ def jobs_list(
         "(SELECT COUNT(*) FROM events e WHERE e.job_id = j.id) AS n_events, "
         "(SELECT COUNT(*) FROM plates p WHERE p.job_id = j.id) AS n_plates, "
         "(SELECT COUNT(*) FROM events e2 WHERE e2.job_id = j.id "
-        " AND e2.faces_json IS NOT NULL AND e2.faces_json != '[]') AS n_faces, "
+        " AND e2.faces_json GLOB '*[0-9]*') AS n_faces, "
         "EXISTS(SELECT 1 FROM clip_gps_data g WHERE g.job_id = j.id "
         " AND g.lat IS NOT NULL) AS has_gps, "
         "EXISTS(SELECT 1 FROM transcript_segments t WHERE t.job_id = j.id) "
@@ -433,7 +432,7 @@ def job_detail(
         "faces": int(
             conn.execute(
                 "SELECT COUNT(*) AS c FROM events WHERE job_id = ? "
-                "AND faces_json IS NOT NULL AND faces_json != '[]'",
+                "AND faces_json GLOB '*[0-9]*'",
                 (job_id,),
             ).fetchone()["c"]
         ),
@@ -1087,8 +1086,7 @@ def faces(
 ) -> dict[str, Any]:
     where = [
         "e.faces_json IS NOT NULL",
-        "e.faces_json != '[]'",
-        "e.faces_json != 'null'",
+        "e.faces_json GLOB '*[0-9]*'",
     ]
     args: list[Any] = []
     if params.get("job_id"):

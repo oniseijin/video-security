@@ -190,8 +190,8 @@ def backfill_face_crops(
 ) -> BackfillReport:
     rows = conn.execute(
         "SELECT e.id, e.job_id, e.keyframes_json, e.faces_json FROM events e "
-        "WHERE e.faces_json IS NOT NULL AND e.faces_json != '[]' "
-        "AND e.faces_json != 'null' AND e.keyframes_json != '[]' "
+        "WHERE e.faces_json GLOB '*[0-9]*' "
+        "AND e.keyframes_json != '[]' "
         "ORDER BY e.job_id, e.id"
     ).fetchall()
     if limit is not None:

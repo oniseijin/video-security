@@ -56,9 +56,11 @@ def _seed(base: Path) -> None:
                             track_id, keyframes_json, faces_json, detector_score,
                             priority, status)
         VALUES
-        (10, 1, 'plate_capture', 32.0, 33.0, 0, 7, '[]',
-         '[[[0.1, 0.2, 0.3, 0.4]]]', 1.0, 0.6, 'detailed'),
-        (11, 1, 'intrusion', 48.0, 50.0, 0, 8, '[]', NULL, 0.9, 0.9, 'pending');
+         (10, 1, 'plate_capture', 32.0, 33.0, 0, 7, '[]',
+          '[[[0.1, 0.2, 0.3, 0.4]]]', 1.0, 0.6, 'detailed'),
+         (12, 1, 'suspicious_behavior', 60.0, 61.0, 0, NULL, '[]',
+          '[[], []]', 0.5, 0.5, 'detailed'),
+         (11, 1, 'intrusion', 48.0, 50.0, 0, 8, '[]', NULL, 0.9, 0.9, 'pending');
         INSERT INTO vehicle_tracks (job_id, track_id, clip_id, first_frame,
                                     last_frame, weaving_score, direction, strip_json)
         VALUES (1, 7, 0, 840, 1800, NULL, 'W',
@@ -152,7 +154,7 @@ def test_jobs_list_and_filters(base_url: str) -> None:
     assert by_id[1]["archive"] is False
     assert by_id[1]["has_gps"] is True
     assert by_id[3]["has_gps"] is False
-    assert by_id[1]["counts"] == {"events": 2, "plates": 2, "faces": 1}
+    assert by_id[1]["counts"] == {"events": 3, "plates": 2, "faces": 1}
 
     pending = _get_json(f"{base_url}/api/jobs?mode=PARKING")
     assert [item["id"] for item in pending["items"]] == [4, 3]
@@ -171,7 +173,7 @@ def test_jobs_list_and_filters(base_url: str) -> None:
 def test_job_detail(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs/1")
     assert data["pair"] == {"job_id": 2, "channel": "rear"}
-    assert data["event_types"] == {"plate_capture": 1, "intrusion": 1}
+    assert data["event_types"] == {"plate_capture": 1, "intrusion": 1, "suspicious_behavior": 1}
     assert data["counts"]["plates"] == 2
     assert data["has_transcript"] is True
     assert data["duration_sec"] == 120.0
@@ -186,12 +188,12 @@ def test_job_events_category_and_faces(base_url: str) -> None:
     assert items[10]["plate_norm"] == "習志野5001"
     assert items[10]["recorded_at"] is not None
     driving = _get_json(f"{base_url}/api/jobs/1/events?category=driving")
-    assert len(driving["items"]) == 2
+    assert len(driving["items"]) == 3
 
 
 def test_events_cross_job(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/events?category=driving")
-    assert data["total"] == 2
+    assert data["total"] == 3
     one = _get_json(f"{base_url}/api/events?limit=1")
     assert one["limit"] == 1
     assert len(one["items"]) == 1
@@ -221,7 +223,7 @@ def test_missing_event_404(base_url: str) -> None:
 
 def test_categories(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/categories")
-    assert data["categories"]["driving"] == 2
+    assert data["categories"]["driving"] == 3
     assert data["types"]["plate_capture"] == 1
 
 
