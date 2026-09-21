@@ -70,6 +70,13 @@ def stats(
     transcripts = int(
         conn.execute("SELECT COUNT(*) AS c FROM transcript_segments").fetchone()["c"]
     )
+    faces_events = int(
+        conn.execute(
+            "SELECT COUNT(*) AS c FROM events "
+            "WHERE faces_json IS NOT NULL AND faces_json != '[]' "
+            "AND faces_json != 'null'"
+        ).fetchone()["c"]
+    )
     active: dict[str, Any] | None = None
     placeholders = ",".join("?" * len(ACTIVE_STATUSES))
     row = conn.execute(
@@ -122,6 +129,7 @@ def stats(
         "plates_with_crops": plates_with_crops,
         "frames_kept": frames_kept,
         "transcript_segments": transcripts,
+        "faces": faces_events,
         "active_job": active,
         "storage": storage,
         "imports": imports,
@@ -1074,6 +1082,72 @@ def map_recent(
     return {"items": items}
 
 
+def faces(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    where = [
+        "e.faces_json IS NOT NULL",
+        "e.faces_json != '[]'",
+        "e.faces_json != 'null'",
+    ]
+    args: list[Any] = []
+    if params.get("job_id"):
+        where.append("e.job_id = ?")
+        args.append(int(params["job_id"]))
+    rows = conn.execute(
+        "SELECT e.id, e.job_id, e.event_type, e.start_sec, e.faces_json, "
+        "e.keyframes_json, j.recording_start_utc "
+        "FROM events e JOIN jobs j ON j.id = e.job_id "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY j.recording_start_utc DESC, e.id DESC LIMIT 5000",
+        args,
+    ).fetchall()
+    artifact = _artifact_dir(cfg)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            faces_data = json.loads(row["faces_json"])
+            kf_paths = (
+                json.loads(row["keyframes_json"]) if row["keyframes_json"] else []
+            )
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(faces_data, list) or not isinstance(kf_paths, list):
+            continue
+        crops: list[str] = []
+        for i in range(min(len(faces_data), len(kf_paths))):
+            boxes = faces_data[i] if isinstance(faces_data[i], list) else []
+            for j in range(len(boxes)):
+                crop = (
+                    artifact
+                    / "faces"
+                    / str(int(row["job_id"]))
+                    / f"face_{row['id']}_{i}_{j}.jpg"
+                )
+                if crop.is_file():
+                    crops.append(f"/media/faces/{int(row['job_id'])}/{crop.name}")
+        if not crops:
+            continue
+        items.append(
+            {
+                "job_id": int(row["job_id"]),
+                "event_id": int(row["id"]),
+                "event_type": str(row["event_type"]),
+                "tone": event_tone(str(row["event_type"])),
+                "recorded_at": _iso(row["recording_start_utc"]),
+                "start_sec": float(row["start_sec"]),
+                "crops": crops,
+            }
+        )
+    limit, offset = _limit_offset(params)
+    return {
+        "items": items[offset : offset + limit],
+        "total": len(items),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 def report_html(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> tuple[int, str, bytes]:
@@ -1087,6 +1161,7 @@ def report_html(
         geocode_network=False,
         media_base="/media",
         embed=embed,
+        carto_api_key=cfg.map.carto_api_key,
     )
     return 200, "text/html; charset=utf-8", html_str.encode("utf-8")
 
@@ -1109,6 +1184,7 @@ def api_routes() -> list[Route]:
         ("GET", "/api/categories", categories),
         ("GET", "/api/plates", plates_gallery),
         ("GET", "/api/plates/{norm_text}", plate_detail),
+        ("GET", "/api/faces", faces),
         ("GET", "/api/search", search),
         ("GET", "/api/map/recent", map_recent),
     ]

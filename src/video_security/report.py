@@ -151,6 +151,7 @@ def render_report_html(
     geocode_network: bool = True,
     media_base: str | None = None,
     embed: bool = False,
+    carto_api_key: str | None = None,
 ) -> str:
     job_row = conn.execute(
         "SELECT id, video_path, status, created_at, recording_start_utc "
@@ -406,7 +407,12 @@ def render_report_html(
                 "events": map_events,
             }
         )
-        parts.append('<div id="gps-map" class="gps-map"></div>')
+        key_attr = (
+            f' data-carto-key="{html.escape(carto_api_key, quote=True)}"'
+            if carto_api_key
+            else ""
+        )
+        parts.append(f'<div id="gps-map" class="gps-map"{key_attr}></div>')
         parts.append(
             f'<script type="application/json" id="gps-data">{payload}</script>'
         )
@@ -685,10 +691,17 @@ def generate_report(
     job_id: int,
     artifact_dir: Path,
     geocode: bool = False,
+    carto_api_key: str | None = None,
 ) -> Path:
     out_dir = artifact_dir / "reports"
     spotlight_ignore(out_dir)
-    html_content = render_report_html(conn, job_id, artifact_dir, geocode=geocode)
+    html_content = render_report_html(
+        conn,
+        job_id,
+        artifact_dir,
+        geocode=geocode,
+        carto_api_key=carto_api_key,
+    )
     report_path = out_dir / f"job_{job_id}.html"
     report_path.write_text(html_content, encoding="utf-8")
     return report_path

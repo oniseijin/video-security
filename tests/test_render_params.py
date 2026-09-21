@@ -154,3 +154,16 @@ def test_geocode_network_false_uses_cached(
     html = render_report_html(conn, job.id, tmp_path, geocode=True, geocode_network=False)
     assert "network call" not in html
     conn.close()
+
+def test_carto_key_injected_into_map(
+    db_and_job: tuple[sqlite3.Connection, JobRow, Path],
+) -> None:
+    conn, job, tmp_path = db_and_job
+    insert_gps_row(conn, job.id, 0, 0.0, 35.0, 140.0, 10.0, None, None, None, None)
+    insert_gps_row(
+        conn, job.id, 0, 2.0, 35.001, 140.001, 10.0, None, None, None, None
+    )
+    html = render_report_html(conn, job.id, tmp_path, carto_api_key="cb1_test_key")
+    assert 'data-carto-key="cb1_test_key"' in html
+    plain = render_report_html(conn, job.id, tmp_path)
+    assert 'data-carto-key="' not in plain

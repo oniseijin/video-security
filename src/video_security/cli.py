@@ -312,6 +312,7 @@ def report_cmd(
         path = generate_report(
             conn, job_id, Path(cfg.storage.artifact_dir).expanduser(),
             geocode=cfg.report.reverse_geocode,
+            carto_api_key=cfg.map.carto_api_key,
         )
         print(path)
     except ReportError as e:

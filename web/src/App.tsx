@@ -5,6 +5,7 @@ import { Nav } from "./components/Nav"
 import { Dashboard } from "./routes/Dashboard"
 import { EventDetailRoute } from "./routes/EventDetail"
 import { Events } from "./routes/Events"
+import { Faces } from "./routes/Faces"
 import { JobDetail } from "./routes/JobDetail"
 import { JobsList } from "./routes/JobsList"
 import { NotFound } from "./routes/NotFound"
@@ -30,6 +31,7 @@ export function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/plates" element={<Plates />} />
             <Route path="/plates/:norm" element={<PlateDetailRoute />} />
+            <Route path="/faces" element={<Faces />} />
             <Route path="/search" element={<Search />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

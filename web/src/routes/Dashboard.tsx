@@ -116,6 +116,7 @@ export function Dashboard() {
           <Stat value={done} label="Done" />
           <Stat value={data.events} label="Events" />
           <Stat value={data.plates} label="Plates" />
+          <Stat value={data.faces} label="Faces" />
           <Stat value={data.frames_kept} label="Frames Kept" />
           <Stat value={data.transcript_segments} label="Transcript" />
         </div>

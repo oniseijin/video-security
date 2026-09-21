@@ -323,3 +323,19 @@ def test_report_404_is_json(base_url: str) -> None:
 def test_app_config_default_null_key(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/config")
     assert data == {"carto_api_key": None}
+
+
+def test_faces_gallery(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/faces")
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["job_id"] == 1
+    assert item["event_id"] == 10
+    assert item["crops"] == ["/media/faces/1/face_10_0_0.jpg"]
+    filtered = _get_json(f"{base_url}/api/faces?job_id=3")
+    assert filtered["total"] == 0
+
+
+def test_stats_faces(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/stats")
+    assert data["faces"] == 1

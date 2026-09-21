@@ -41,6 +41,7 @@ export interface Stats {
   plates_with_crops: number
   frames_kept: number
   transcript_segments: number
+  faces: number
   active_job: ActiveJob | null
   storage: StorageInfo
   imports: ImportRow[]
@@ -402,4 +403,25 @@ export function fetchSearch(q: string): Promise<SearchResults> {
 
 export function fetchMapRecent(limit: number): Promise<MapRecent> {
   return fetchJson<MapRecent>(`/api/map/recent?limit=${limit}`)
+}
+
+export interface FaceItem {
+  job_id: number
+  event_id: number
+  event_type: string
+  tone: Tone
+  recorded_at: string | null
+  start_sec: number
+  crops: string[]
+}
+
+export interface FacesPage {
+  items: FaceItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function fetchFaces(params: URLSearchParams): Promise<FacesPage> {
+  return fetchJson<FacesPage>(`/api/faces?${params.toString()}`)
 }

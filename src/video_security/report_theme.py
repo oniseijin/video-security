@@ -524,6 +524,11 @@ THEME_MAP_JS = """
   if (!data.points || data.points.length < 2) { return; }
   var DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   var LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  var KEY = mapEl.getAttribute('data-carto-key');
+  if (KEY) {
+    DARK += '?api_key=' + encodeURIComponent(KEY);
+    LIGHT += '?api_key=' + encodeURIComponent(KEY);
+  }
   var ATTR =
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap' +
     '</a> &copy; <a href="https://carto.com/">CARTO</a>';

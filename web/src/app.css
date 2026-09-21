@@ -659,3 +659,20 @@ a.count-chip:hover {
   margin-top: 0.35rem;
   font-size: 0.6875rem;
 }
+
+.face-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.face-gallery .face-card {
+  padding: 0.75rem 0.5rem 0.5rem;
+}
+
+.face-gallery .face-card img {
+  height: 9rem;
+  width: 100%;
+  object-fit: cover;
+}
