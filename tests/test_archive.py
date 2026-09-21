@@ -284,3 +284,73 @@ def test_find_clips_root(tmp_path: Path) -> None:
     path2.parent.mkdir(parents=True)
     path2.touch()
     assert _find_clips_root(path2) is None
+
+def test_delete_job_removes_video(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "20250901" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "del.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    report = run_archive(db_conn, cfg, job_ids=[job_id], delete=True)
+    assert report.deleted == 1
+    assert report.failed == 0
+    assert report.bytes_saved > 0
+    assert not clip.exists()
+
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    assert row["location"] == "deleted"
+    assert int(row["original_bytes"]) > 0
+
+
+def test_delete_job_no_cold_dir_needed(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    config.archive.cold_dir = None
+    clips_root = tmp_path / "artifacts" / "clips" / "x" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "del.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    report = run_archive(db_conn, config, job_ids=[job_id], delete=True)
+    assert report.deleted == 1
+
+
+def test_delete_idempotent(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "y" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "del.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    first = run_archive(db_conn, cfg, job_ids=[job_id], delete=True)
+    assert first.deleted == 1
+    second = run_archive(db_conn, cfg, job_ids=[job_id], delete=True)
+    assert second.deleted == 0
+    assert second.skipped == 1
+
+
+def test_restore_deleted_fails_clearly(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path,
+) -> None:
+    clips_root = tmp_path / "artifacts" / "clips" / "z" / "NORMAL" / "front"
+    clips_root.mkdir(parents=True)
+    clip = clips_root / "del.mp4"
+    golden_clip(clip)
+    job_id = _make_done_job(db_conn, clip)
+
+    run_archive(db_conn, cfg, job_ids=[job_id], delete=True)
+    report = run_archive(db_conn, cfg, job_ids=[job_id], restore=True)
+    assert report.restored == 0
+    assert report.failed == 1
+    assert "deleted" in report.failures[0]

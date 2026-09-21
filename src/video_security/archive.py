@@ -19,6 +19,7 @@ class ArchiveReport:
     bytes_moved: int = 0
     bytes_saved: int = 0
     restored: int = 0
+    deleted: int = 0
     planned: int = 0
     failures: list[str] = dataclasses.field(default_factory=list)
 
@@ -146,6 +147,41 @@ def archive_job(
         report.failures.append(f"job {job_id}: {e}")
 
 
+def delete_job(
+    conn: sqlite3.Connection,
+    job_id: int,
+    report: ArchiveReport,
+) -> None:
+    row = db.get_job_by_id(conn, job_id)
+    if row is None:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: not found")
+        return
+    if row.status != "done":
+        report.failed += 1
+        report.failures.append(f"job {job_id}: not done (status={row.status})")
+        return
+    if db.get_archived_original(conn, job_id) is not None:
+        report.skipped += 1
+        return
+    src = Path(row.video_path)
+    if not src.exists():
+        report.failed += 1
+        report.failures.append(f"job {job_id}: video not found at {src}")
+        return
+    try:
+        original_bytes = src.stat().st_size
+        src.unlink()
+        db.insert_archived_original(
+            conn, job_id, str(src), original_bytes, 0, location="deleted"
+        )
+        report.deleted += 1
+        report.bytes_saved += original_bytes
+    except (OSError, sqlite3.Error) as e:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: {e}")
+
+
 def restore_job(
     conn: sqlite3.Connection,
     job_id: int,
@@ -155,6 +191,10 @@ def restore_job(
     if row is None:
         report.failed += 1
         report.failures.append(f"job {job_id}: not archived")
+        return
+    if row["location"] == "deleted":
+        report.failed += 1
+        report.failures.append(f"job {job_id}: original was deleted, not cold-stored")
         return
 
     job = db.get_job_by_id(conn, job_id)
@@ -184,6 +224,7 @@ def run_archive(
     job_ids: list[int] | None = None,
     dry_run: bool = False,
     restore: bool = False,
+    delete: bool = False,
 ) -> ArchiveReport:
     report = ArchiveReport()
 
@@ -200,7 +241,7 @@ def run_archive(
         d = days if days is not None else config.archive.days
         jobs_to_process = [int(r["id"]) for r in select_jobs(conn, d)]
 
-    if not dry_run and jobs_to_process:
+    if not dry_run and jobs_to_process and not delete:
         if config.archive.cold_dir is None:
             raise EngineError(
                 "set [archive] cold_dir in config "
@@ -220,6 +261,9 @@ def run_archive(
             report.planned += 1
             report.bytes_moved += jpath.stat().st_size
         else:
-            archive_job(conn, config, jid, report)
+            if delete:
+                delete_job(conn, jid, report)
+            else:
+                archive_job(conn, config, jid, report)
 
     return report

@@ -490,8 +490,8 @@ def job_detail(
             pass
     archived: dict[str, Any] | None = None
     arow = conn.execute(
-        "SELECT archived_at, original_bytes, proxy_bytes FROM archived_originals "
-        "WHERE job_id = ?",
+        "SELECT archived_at, original_bytes, proxy_bytes, location "
+        "FROM archived_originals WHERE job_id = ?",
         (job_id,),
     ).fetchone()
     if arow is not None:
@@ -501,6 +501,7 @@ def job_detail(
             "proxy_bytes": (
                 int(arow["proxy_bytes"]) if arow["proxy_bytes"] is not None else None
             ),
+            "location": str(arow["location"]),
         }
     return {
         "id": job_id,

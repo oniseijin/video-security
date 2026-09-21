@@ -871,9 +871,12 @@ def archive_cmd(
         help="Show what would be done without making changes",
     ),
     restore: bool = typer.Option(
-        False,
-        "--restore",
+        False, "--restore",
         help="Restore archived originals back to their original paths",
+    ),
+    delete: bool = typer.Option(
+        False, "--delete",
+        help="Delete done-job videos outright (no proxy, no cold copy)",
     ),
 ) -> None:
     from video_security.archive import run_archive
@@ -887,9 +890,16 @@ def archive_cmd(
             job_ids=job if job else None,
             dry_run=dry_run,
             restore=restore,
+            delete=delete,
         )
         if restore:
             print(f"restored {report.restored} jobs, failed {report.failed}")
+        elif delete:
+            print(
+                f"deleted {report.deleted} videos "
+                f"({report.bytes_saved} bytes freed), "
+                f"skipped {report.skipped}, failed {report.failed}"
+            )
         elif dry_run:
             print(
                 f"would archive {report.planned} jobs "

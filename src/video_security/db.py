@@ -279,6 +279,9 @@ MIGRATIONS: list[list[str]] = [
             archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""",
     ],
+    [
+        "ALTER TABLE archived_originals ADD COLUMN location TEXT NOT NULL DEFAULT 'cold'",
+    ],
 ]
 
 
@@ -810,12 +813,13 @@ def insert_archived_original(
     original_path: str,
     original_bytes: int,
     proxy_bytes: int | None,
+    location: str = "cold",
 ) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO archived_originals "
-        "(job_id, original_path, original_bytes, proxy_bytes) "
-        "VALUES (?,?,?,?)",
-        (job_id, original_path, original_bytes, proxy_bytes),
+        "(job_id, original_path, original_bytes, proxy_bytes, location) "
+        "VALUES (?,?,?,?,?)",
+        (job_id, original_path, original_bytes, proxy_bytes, location),
     )
     conn.commit()
 

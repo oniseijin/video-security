@@ -118,6 +118,7 @@ export interface JobDetail {
     archived_at: string | null
     original_bytes: number
     proxy_bytes: number | null
+    location: string
   } | null
 }
 
