@@ -205,6 +205,7 @@ export interface JobPlatesPage {
 export interface TrackRow {
   track_id: number
   clip_id: number
+  class_id: number
   first_sec: number | null
   last_sec: number | null
   weaving_score: number | null

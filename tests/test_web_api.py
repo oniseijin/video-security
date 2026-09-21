@@ -602,8 +602,10 @@ def test_person_detail_track_context(base_url: str) -> None:
     assert by_event[10]["track"]["track_id"] == 7
 
 
-def test_job_detail_excludes_person_tracks(base_url: str) -> None:
+def test_job_tracks_includes_person_tracks(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/jobs/1/tracks")
-    track_ids = [t["track_id"] for t in data["items"]]
-    assert 99 not in track_ids
-    assert 7 in track_ids
+    by_id = {t["track_id"]: t for t in data["items"]}
+    assert 7 in by_id
+    assert by_id[7]["class_id"] != 0
+    assert 99 in by_id
+    assert by_id[99]["class_id"] == 0

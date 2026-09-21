@@ -50,7 +50,11 @@ function TrackSightings() {
                     {t.job_id}
                   </Link>
                 </td>
-                <td className="num">#{t.track_id}</td>
+                <td className="num">
+                  <Link to={`/jobs/${t.job_id}/tracks/${t.track_id}`}>
+                    #{t.track_id}
+                  </Link>
+                </td>
                 <td>{fmtDate(t.recorded_at)}</td>
                 <td className="num">
                   {t.first_frame}–{t.last_frame}

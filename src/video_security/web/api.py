@@ -871,7 +871,7 @@ def job_tracks(
     items: list[dict[str, Any]] = []
     for tr in conn.execute(
         "SELECT * FROM vehicle_tracks WHERE job_id = ? "
-        "AND class_id IN (2,3,5,7) ORDER BY track_id",
+        "AND class_id IN (0,2,3,5,7) ORDER BY track_id",
         (job_id,),
     ):
         evs = [
@@ -895,6 +895,7 @@ def job_tracks(
             {
                 "track_id": int(tr["track_id"]),
                 "clip_id": int(tr["clip_id"]),
+                "class_id": int(tr["class_id"]),
                 "first_sec": float(tr["first_frame"]) / fps if fps else None,
                 "last_sec": float(tr["last_frame"]) / fps if fps else None,
                 "weaving_score": tr["weaving_score"],

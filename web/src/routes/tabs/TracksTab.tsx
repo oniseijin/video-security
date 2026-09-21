@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
 import { fetchJobTracks } from "../../api"
 import type { JobTracksPage } from "../../api"
 import { TerminalNote } from "../../components/TerminalNote"
@@ -19,7 +20,7 @@ export function TracksTab({ jobId }: { jobId: number }) {
     )
   }
   if (!data || data.items.length === 0) {
-    return <TerminalNote>no vehicle tracks for job {jobId}</TerminalNote>
+    return <TerminalNote>no tracks for job {jobId}</TerminalNote>
   }
 
   return (
@@ -40,7 +41,14 @@ export function TracksTab({ jobId }: { jobId: number }) {
         <tbody>
           {data.items.map((track) => (
             <tr key={track.track_id}>
-              <td>#{track.track_id}</td>
+              <td>
+                <Link to={`/jobs/${jobId}/tracks/${track.track_id}`}>
+                  #{track.track_id}
+                </Link>
+                {track.class_id === 0 ? (
+                  <span className="chip">PERSON</span>
+                ) : null}
+              </td>
               <td>
                 {fmtSec(track.first_sec)}–{fmtSec(track.last_sec)}
               </td>
@@ -68,7 +76,6 @@ export function TracksTab({ jobId }: { jobId: number }) {
           ))}
         </tbody>
       </table>
-      <TerminalNote>track detail panel arrives in phase 7</TerminalNote>
     </section>
   )
 }
