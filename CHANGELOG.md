@@ -6,8 +6,15 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-21
+
 ### Added
 
+- **Faces tab (web console)**: new top-level FACES section with a
+  cross-job face-capture gallery (newest first, per-event grouping,
+  links to each capture's event, pagination, dashboard FACES stat)
+  backed by a new `/api/faces` endpoint. Local detection only — no
+  recognition or embeddings.
 - **Face crops on disk**: analysis now persists per-face crop JPEGs
   (`faces/<job_id>/face_<event_id>_<i>_<j>.jpg`, quality 85, 15% padding,
   upscaled) from the keyframes where faces were detected; URLs are derived
@@ -18,6 +25,14 @@ follow semantic versioning.
   crops for pre-crop events — deterministic, from the stored
   `faces_json` boxes and keyframe JPEGs. Retention removes
   `faces/<job_id>/` with job data.
+
+### Fixed
+
+- **CARTO API key in report maps**: the on-demand report renderer (and
+  `vs report`) now injects the configured `[map] carto_api_key` into the
+  location-track Leaflet map tile URLs (`data-carto-key` container
+  attribute), matching the web console maps — CARTO basemaps now require
+  a key, so unkeyed report maps rendered "API KEY REQUIRED" error tiles.
 
 ## [0.3.0] - 2026-09-21
 
