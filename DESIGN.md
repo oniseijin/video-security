@@ -671,11 +671,14 @@ the oldest clips are always at risk of overwrite.
 ## Future Phases & Refinements
 
 Post-v1 candidates, ranked by value/effort under the standing constraints
-(16 GB RAM, single-model residency, local-only, single user). None of this
-is committed work — each phase is a deliberate opt-in, same rule as the
-Web Console v2 notes. Pipeline/intelligence-level items live here; web UI
+(16 GB RAM, single-model residency, local-only, single user). Pipeline/intelligence-level items live here; web UI
 evolution (writes, auth, native report) stays tracked under Web Console →
 v2 thoughts and is not duplicated below.
+
+STATUS (2026-09-21): R1-R8 are implemented and shipped in [Unreleased];
+treat the sections below as the design record for what shipped. R8
+sound classification currently no-ops on macOS 26 (pyobjc/SoundAnalysis
+bridge segfault) and activates where the framework is reachable.
 
 ### Phase R1 — Face identity & people search
 

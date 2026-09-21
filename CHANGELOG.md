@@ -30,6 +30,42 @@ follow semantic versioning.
 - `--no-llm` runs now leave jobs at `harvested` (instead of `done`) so
   LLM phases can pick them up later; `--only-llm` covers both `done` and
   `harvested` jobs.
+- **R1 — Face identity & people search**: face crops are embedded at
+  harvest time (macOS Vision feature prints, gated by face capture
+  quality) into a new `faces` table and greedily clustered into
+  `persons` by cosine distance. `vs index-faces` backfills embeddings
+  for existing crops on disk. Web console gains a Persons tab with
+  cross-job sighting pages; face chips in the Faces gallery link to
+  their person cluster.
+- **R2 — Watchlists & local notifications**: `vs watch add/list/remove`
+  (kinds: plate / text / person). Watchlists are evaluated
+  deterministically at harvest end; hits flag events, surface as a
+  dashboard banner and a report section, and can fire a user-supplied
+  `[watchlist] notify_command` shell template (e.g. osascript).
+- **R3 — Capture-quality pass**: keyframe selection scores cached
+  frames (Laplacian sharpness, luma penalty, detector confidence)
+  instead of even spacing; plate consensus votes are weighted by frame
+  sharpness; at night (mean luma below `prefilter.night_luma_threshold`)
+  plate crops are temporal median-stacked across track frames before
+  OCR. Forward-only — applies to newly harvested jobs.
+- **R4 — Semantic search**: `vs index` embeds detailed event
+  descriptions with nomic-embed-text (Ollama) into `event_embeddings`;
+  `/api/search` gains a semantic results group (numpy cosine) and the
+  web search page shows it, degrading gracefully when Ollama is down.
+- **R5 — Date-range search**: `/api/events` accepts `from`/`to`; new
+  `/api/days` per-day buckets; the Events page gains a clickable day
+  strip; `vs search --from/--to` on the CLI.
+- **R6 — Dashboard analytics**: route heatmap (aggregated GPS cells on
+  a Leaflet canvas layer — no new JS deps), time-of-day event histogram
+  (hand-rolled SVG), and a top-locations table.
+- **R7 — Run automation**: `vs run` chains optional import → phase
+  sweeps and prints a run digest; `vs diff <job> <vA> <vB>` compares
+  event descriptions across prompt versions; launchd nightly template
+  in `extras/`.
+- **R8 — Audio event classification**: SoundAnalysis-based sound
+  classification at ingest (`pyobjc-framework-SoundAnalysis` dep),
+  thresholded into `audio_*` event candidates alongside the RMS path.
+  Degrades to a no-op where the framework is unavailable on the host.
 
 ### Fixed
 
@@ -37,6 +73,16 @@ follow semantic versioning.
   `?key=` (CARTO's basemap key format) instead of `?api_key=`, which
   the CDN silently ignored — all maps rendered "API KEY REQUIRED"
   error tiles even with a valid key configured.
+- **Face counts**: stats/gallery/backfill count only events with real
+  face-box coordinates (empty `[[..]]` arrays no longer count).
+- **Test isolation**: `Config()` default `artifact_dir` no longer points
+  at the real artifact disk — pytest runs were silently deleting
+  production `frames/<id>` dirs for low job ids. Defaults are now inert
+  (`~/.video-security/artifacts`) and an autouse conftest fixture pins
+  `StorageConfig.artifact_dir` to a tmp path per test.
+- **Rear-clip GPS**: rear clips fall back to the front twin's NMEA
+  sidecar, so rear jobs get GPS tracks (all 230 rear jobs previously
+  had none).
 
 ## [0.3.1] - 2026-09-21
 

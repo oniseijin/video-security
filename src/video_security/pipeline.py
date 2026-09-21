@@ -586,6 +586,18 @@ def harvest_job(
             event_specs.append(
                 EventSpec("audio_distress", start, end, None, 0.7, 0.8, [])
             )
+        for se in audio_result.sound_events:
+            event_specs.append(
+                EventSpec(
+                    f"audio_{se.label}",
+                    se.start_time,
+                    se.end_time,
+                    None,
+                    se.confidence,
+                    0.6 if se.confidence >= 0.7 else 0.4,
+                    [],
+                )
+            )
     for track_id, read in plate_reads.items():
         best_ts = read.best_frame / max(1.0, info.fps)
         event_specs.append(
