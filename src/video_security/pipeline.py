@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -15,20 +16,21 @@ from video_security import db
 from video_security.config import CameraOverrides, Config
 from video_security.db import JobRow
 from video_security.fs import spotlight_ignore
-from video_security.ingest.audio import AudioResult, TranscriptSegment, analyze_audio
+from video_security.ingest.audio import AudioResult, analyze_audio
 from video_security.ingest.frames import FrameData, iter_frames, probe_video
 from video_security.llm.detail import detail_events
 from video_security.llm.ollama import OllamaClient
-from video_security.llm.triage import LLMEvent, triage_events
+from video_security.llm.triage import LLMEvent, TriageResult, triage_events
 from video_security.prefilter.faces import detect_faces
 from video_security.prefilter.ocr import upscale_crop
 from video_security.prefilter.plates import PlateRead, extract_plate_reads
-from video_security.prefilter.scenetext import sample_scene_text
+from video_security.prefilter.scenetext import SceneText, sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
 from video_security.prefilter.vehicles import (
     VEHICLE_CLASSES,
     Detection,
     FrameDetections,
+    VehicleTrack,
     accumulate_tracks,
     crop_vehicle,
     load_detector,
@@ -244,19 +246,6 @@ def _select_keyframes(
     return rel_paths
 
 
-def _transcript_window(
-    segments: list[TranscriptSegment], start_sec: float, end_sec: float
-) -> str:
-    lines: list[str] = []
-    for seg in segments:
-        if seg.end_time < start_sec - TRANSCRIPT_WINDOW_SEC:
-            continue
-        if seg.start_time > end_sec + TRANSCRIPT_WINDOW_SEC:
-            continue
-        lines.append(f"[{seg.start_time:.0f}s] {seg.text}")
-    return "\n".join(lines)
-
-
 def analyze_video(
     job: JobRow,
     config: Config,
@@ -265,6 +254,113 @@ def analyze_video(
     client: OllamaClient | None = None,
     no_llm: bool = False,
     max_llm_events: int | None = None,
+) -> AnalyzeReport:
+    report = harvest_job(job, config, conn, camera)
+    if no_llm or report.events == 0:
+        return report
+    if client is None:
+        client = OllamaClient()
+    if max_llm_events is not None:
+        config.engine.max_llm_events = max_llm_events
+    report.triaged = triage_job(job, config, conn, client)
+    report.detailed = detail_job(job, config, conn, client)
+    return report
+
+
+def _build_evidence(
+    *,
+    frames_kept: int,
+    tracks: list[VehicleTrack],
+    plate_reads: dict[int, PlateRead],
+    faces_total: int,
+    scene_texts: list[SceneText],
+    audio_result: AudioResult | None,
+    gps_samples: int,
+    event_specs: list[EventSpec],
+) -> dict[str, object]:
+    return {
+        "frames_kept": frames_kept,
+        "vehicle_tracks": [
+            {
+                "track_id": t.track_id,
+                "direction": t.direction,
+                "weaving_score": t.weaving_score,
+            }
+            for t in tracks
+        ][:50],
+        "plates": [
+            {
+                "track_id": track_id,
+                "norm": read.norm_text,
+                "confidence": read.confidence,
+            }
+            for track_id, read in plate_reads.items()
+        ],
+        "faces": faces_total,
+        "scene_texts": [
+            {"text": s.text, "kind": s.text_kind} for s in scene_texts
+        ][:20],
+        "audio": {
+            "segments": len(audio_result.segments) if audio_result else 0,
+            "loud_regions": len(audio_result.loud_regions) if audio_result else 0,
+            "keyword_hits": len(audio_result.keyword_hits) if audio_result else 0,
+        },
+        "gps_samples": gps_samples,
+        "event_counts": {
+            k: v for k, v in Counter(s.event_type for s in event_specs).items()
+        },
+    }
+
+
+def evidence_summary_text(evidence: dict[str, Any] | None) -> str:
+    if not evidence:
+        return ""
+    parts: list[str] = []
+    plates = evidence.get("plates") or []
+    if plates:
+        parts.append(
+            "plates: "
+            + ", ".join(
+                f"{p['norm']} (conf {p['confidence']:.2f})" for p in plates
+            )
+        )
+    tracks = evidence.get("vehicle_tracks") or []
+    if tracks:
+        dirs = Counter(str(t.get("direction") or "?") for t in tracks)
+        parts.append(
+            f"vehicle tracks: {len(tracks)} ("
+            + ", ".join(f"{n} {d}" for d, n in dirs.items())
+            + ")"
+        )
+    faces = evidence.get("faces") or 0
+    if faces:
+        parts.append(f"faces detected: {faces}")
+    texts = evidence.get("scene_texts") or []
+    if texts:
+        parts.append(
+            "scene text: " + ", ".join(str(t["text"]) for t in texts[:5])
+        )
+    audio = evidence.get("audio") or {}
+    if audio.get("segments"):
+        parts.append(
+            f"audio: {audio['segments']} transcript segments, "
+            f"{audio.get('loud_regions', 0)} loud regions"
+        )
+    ec = evidence.get("event_counts") or {}
+    if ec:
+        parts.append(
+            "detector events: "
+            + ", ".join(f"{k} x{v}" for k, v in sorted(ec.items()))
+        )
+    summary = "; ".join(parts)
+    return summary[:1200]
+
+
+def harvest_job(
+    job: JobRow,
+    config: Config,
+    conn: sqlite3.Connection,
+    camera: CameraOverrides | None = None,
 ) -> AnalyzeReport:
     path = Path(job.video_path)
     if not path.exists():
@@ -275,7 +371,8 @@ def analyze_video(
 
     db.delete_job_rows(conn, job.id, config.storage.artifact_dir)
     conn.execute(
-        "UPDATE jobs SET current_frame = 0, current_stage = 'pending' WHERE id = ?",
+        "UPDATE jobs SET current_frame = 0, current_stage = 'pending', "
+        "evidence_json = NULL WHERE id = ?",
         (job.id,),
     )
     conn.commit()
@@ -452,6 +549,7 @@ def analyze_video(
             )
         )
 
+    gps_samples = 0
     nmea_sidecar = _find_nmea_sidecar(path)
     if nmea_sidecar is not None:
         from video_security.adapters.mazda_cx8 import (
@@ -467,6 +565,7 @@ def analyze_video(
             except ValueError:
                 clip_start = None
         samples = parse_nmea(nmea_sidecar, clip_start)
+        gps_samples = len(samples)
         for gs in samples:
             db.insert_gps_row(
                 conn, job.id, 0, gs.time_sec, gs.lat, gs.lon,
@@ -503,7 +602,7 @@ def analyze_video(
         event_ids.append(event_id)
     report.events = len(event_ids)
 
-    event_kf_paths: dict[int, list[str]] = {}
+    faces_total = 0
     faces_dir = artifact_dir / "faces" / str(job.id)
     for spec, event_id in zip(event_specs, event_ids, strict=True):
         kf_paths = _select_keyframes(
@@ -514,7 +613,6 @@ def analyze_video(
             event_id,
             raw_jpeg_cache=raw_jpeg_cache,
         )
-        event_kf_paths[event_id] = kf_paths
         if kf_paths:
             db.update_event_keyframes(conn, event_id, json.dumps(kf_paths))
         chosen = _choose_keyframe_numbers(spec.frame_numbers, jpeg_cache)
@@ -529,44 +627,81 @@ def analyze_video(
                     spotlight_ignore(faces_dir)
                     for j, box in enumerate(boxes):
                         _write_face_crop(img, box, faces_dir, event_id, i, j)
+                    faces_total += len(boxes)
             else:
                 boxes = []
             faces_per_kf.append(boxes)
         db.update_event_faces(conn, event_id, json.dumps(faces_per_kf))
 
-    if no_llm or not event_specs:
+    if not event_specs:
         db.update_job_status(conn, job.id, "done")
         return report
 
-    if client is None:
-        client = OllamaClient()
-    if max_llm_events is not None:
-        config.engine.max_llm_events = max_llm_events
+    evidence = _build_evidence(
+        frames_kept=report.kept_frames,
+        tracks=tracks,
+        plate_reads=plate_reads,
+        faces_total=faces_total,
+        scene_texts=scene_texts,
+        audio_result=audio_result,
+        gps_samples=gps_samples,
+        event_specs=event_specs,
+    )
+    db.update_job_evidence(conn, job.id, json.dumps(evidence))
+    db.update_job_status(conn, job.id, "harvested")
+    return report
 
-    db.update_job_status(conn, job.id, "triage")
-    llm_events: list[LLMEvent] = []
-    for spec, event_id in zip(event_specs, event_ids, strict=True):
-        kf_paths = event_kf_paths.get(event_id, [])
+
+def load_llm_events(
+    conn: sqlite3.Connection, job_id: int, status: str | None = None
+) -> list[LLMEvent]:
+    summary = evidence_summary_text(db.get_job_evidence(conn, job_id))
+    events = db.get_events_for_job(conn, job_id, status)
+    out: list[LLMEvent] = []
+    for evt in events:
+        kf_paths = json.loads(evt["keyframes_json"] or "[]")
         keyframes = []
         for p in kf_paths:
             img = cv2.imread(p)
             if img is not None:
                 keyframes.append(img)
-        window = _transcript_window(segments, spec.start_sec, spec.end_sec)
-        llm_events.append(
+        segs = conn.execute(
+            "SELECT start_time, end_time, text FROM transcript_segments "
+            "WHERE job_id = ? AND end_time >= ? AND start_time <= ?",
+            (
+                job_id,
+                evt["start_sec"] - TRANSCRIPT_WINDOW_SEC,
+                evt["end_sec"] + TRANSCRIPT_WINDOW_SEC,
+            ),
+        ).fetchall()
+        window = "\n".join(f"[{s['start_time']:.0f}s] {s['text']}" for s in segs)
+        out.append(
             LLMEvent(
-                id=event_id,
-                event_type=spec.event_type,
-                start_sec=spec.start_sec,
-                end_sec=spec.end_sec,
-                detector_score=spec.detector_score,
-                priority=spec.priority,
+                id=evt["id"],
+                event_type=evt["event_type"],
+                start_sec=evt["start_sec"],
+                end_sec=evt["end_sec"],
+                detector_score=evt["detector_score"],
+                priority=evt["priority"],
                 keyframes=keyframes,
                 transcript_window=window,
+                evidence_summary=summary,
             )
         )
-        report.keyframes.extend(Path(p) for p in kf_paths)
+    return out
 
+
+def triage_job(
+    job: JobRow,
+    config: Config,
+    conn: sqlite3.Connection,
+    client: OllamaClient,
+) -> int:
+    llm_events = load_llm_events(conn, job.id, status="pending")
+    if not llm_events:
+        db.update_job_status(conn, job.id, "triaged")
+        return 0
+    db.update_job_status(conn, job.id, "triage")
     triaged = triage_events(llm_events, config, client)
     for tr in triaged:
         result_id = db.insert_analysis_result(
@@ -581,13 +716,36 @@ def analyze_video(
             0,
             None,
         )
-        if tr.relevant:
-            db.update_event_status(conn, tr.event_id, "triaged", result_id)
-        else:
-            db.update_event_status(conn, tr.event_id, "suppressed", result_id)
-    report.triaged = sum(1 for t in triaged if t.relevant)
+        status = "triaged" if tr.relevant else "suppressed"
+        db.update_event_status(conn, tr.event_id, status, result_id)
+    db.update_job_status(conn, job.id, "triaged")
+    return sum(1 for t in triaged if t.relevant)
 
+
+def detail_job(
+    job: JobRow,
+    config: Config,
+    conn: sqlite3.Connection,
+    client: OllamaClient,
+) -> int:
+    llm_events = load_llm_events(conn, job.id, status="triaged")
+    if not llm_events:
+        db.update_job_status(conn, job.id, "done")
+        return 0
     db.update_job_status(conn, job.id, "detail")
+    triaged = [
+        TriageResult(
+            event_id=e.id,
+            relevant=True,
+            event_type=e.event_type,
+            description="",
+            confidence="",
+            raw_response="",
+            model_digest="",
+            prompt_version="",
+        )
+        for e in llm_events
+    ]
     detailed = detail_events(triaged, llm_events, config, client)
     for dr in detailed:
         result_id = db.insert_analysis_result(
@@ -603,10 +761,8 @@ def analyze_video(
             json.dumps({"tiled": dr.tiled}) if dr.tiled else None,
         )
         db.update_event_status(conn, dr.event_id, "detailed", result_id)
-    report.detailed = len(detailed)
-
     db.update_job_status(conn, job.id, "done")
-    return report
+    return len(detailed)
 
 
 def enqueue_video(conn: sqlite3.Connection, video_path: Path) -> tuple[JobRow, bool]:

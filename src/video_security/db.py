@@ -1,6 +1,8 @@
 import dataclasses
+import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from video_security.fs import spotlight_ignore
 
@@ -228,6 +230,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "strip_json" not in vt_cols:
         conn.execute("ALTER TABLE vehicle_tracks ADD COLUMN strip_json TEXT")
         conn.commit()
+    job_cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
+    if "evidence_json" not in job_cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN evidence_json TEXT")
+        conn.commit()
 
 
 def create_job(conn: sqlite3.Connection, video_path: str, video_hash: str) -> JobRow:
@@ -250,6 +256,13 @@ def get_job_by_hash(conn: sqlite3.Connection, video_hash: str) -> JobRow | None:
     return _row_to_job(row)
 
 
+def get_job_by_id(conn: sqlite3.Connection, job_id: int) -> JobRow | None:
+    row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if row is None:
+        return None
+    return _row_to_job(row)
+
+
 def get_job_by_video_path(conn: sqlite3.Connection, video_path: str) -> JobRow | None:
     row = conn.execute(
         "SELECT * FROM jobs WHERE video_path = ?", (video_path,)
@@ -265,6 +278,32 @@ def update_job_status(conn: sqlite3.Connection, job_id: int, status: str) -> Non
         (status, job_id),
     )
     conn.commit()
+
+
+def update_job_evidence(
+    conn: sqlite3.Connection, job_id: int, evidence_json: str
+) -> None:
+    conn.execute(
+        "UPDATE jobs SET evidence_json = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE id = ?",
+        (evidence_json, job_id),
+    )
+    conn.commit()
+
+
+def get_job_evidence(
+    conn: sqlite3.Connection, job_id: int
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT evidence_json FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    if row is None or row["evidence_json"] is None:
+        return None
+    try:
+        data = json.loads(row["evidence_json"])
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def set_job_import_meta(

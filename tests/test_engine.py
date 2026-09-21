@@ -225,3 +225,82 @@ def test_migration_upgrade(tmp_path: Path) -> None:
     assert "attempts" in col_names
     conn.close()
     conn2.close()
+
+def test_claim_and_reclaim_phases(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/p.mp4", "hp")
+    conn.execute("UPDATE jobs SET status = 'harvested' WHERE id = ?", (job.id,))
+    conn.commit()
+    conn.close()
+
+    assert engine.claim_next_job(phase=1) is None
+    claimed = engine.claim_next_job(phase=2)
+    assert claimed is not None
+    assert claimed.status == "triage"
+    assert claimed.id == job.id
+
+    conn = engine._connect()
+    conn.execute(
+        "UPDATE jobs SET status = 'detail' WHERE id = ?", (job.id,)
+    )
+    conn.execute(
+        "UPDATE jobs SET updated_at = datetime('now', '-2 hours') WHERE id = ?",
+        (job.id,),
+    )
+    conn.commit()
+    conn.close()
+    assert engine.reclaim_stale_jobs(max_age_sec=3600) == 1
+    conn = engine._connect()
+    row = conn.execute(
+        "SELECT status FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row is not None and row["status"] == "triaged"
+    conn.close()
+
+    claimed3 = engine.claim_next_job(phase=3)
+    assert claimed3 is not None
+    assert claimed3.status == "detail"
+
+
+def test_reclaim_stale_triage_keeps_harvest(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/t.mp4", "ht")
+    conn.execute("UPDATE jobs SET status = 'triage' WHERE id = ?", (job.id,))
+    conn.execute(
+        "UPDATE jobs SET updated_at = datetime('now', '-2 hours') WHERE id = ?",
+        (job.id,),
+    )
+    conn.commit()
+    conn.close()
+    engine.reclaim_stale_jobs(max_age_sec=3600)
+    conn = engine._connect()
+    row = conn.execute(
+        "SELECT status FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row is not None and row["status"] == "harvested"
+    conn.close()
+
+
+def test_mark_failed_returns_to_phase_rest(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/f.mp4", "hf")
+    conn.execute("UPDATE jobs SET status = 'detail' WHERE id = ?", (job.id,))
+    conn.commit()
+    conn.close()
+    engine.mark_failed(job.id)
+    conn = engine._connect()
+    row = conn.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row is not None and row["status"] == "triaged"
+    assert row["attempts"] == 1
+    conn.close()

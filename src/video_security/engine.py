@@ -125,6 +125,16 @@ class SignalGuard:
         raise KeyboardInterrupt
 
 
+_PHASE_ENTRY = {1: "pending", 2: "harvested", 3: "triaged"}
+_PHASE_TRANSIENT = {1: "extracting", 2: "triage", 3: "detail"}
+_TRANSIENT_TO_REST = {
+    "extracting": "pending",
+    "filtering": "pending",
+    "triage": "harvested",
+    "detail": "triaged",
+}
+
+
 class BatchEngine:
     def __init__(self, config: Config, db_path: str | None = None) -> None:
         self.config = config
@@ -135,27 +145,29 @@ class BatchEngine:
         init_db(conn)
         return conn
 
-    def claim_next_job(self) -> JobRow | None:
+    def claim_next_job(self, phase: int = 1) -> JobRow | None:
+        entry = _PHASE_ENTRY[phase]
         conn = self._connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                "SELECT * FROM jobs WHERE status = 'pending' ORDER BY id LIMIT 1"
+                "SELECT * FROM jobs WHERE status = ? ORDER BY id LIMIT 1",
+                (entry,),
             ).fetchone()
             if row is None:
                 conn.execute("ROLLBACK")
                 return None
             conn.execute(
-                "UPDATE jobs SET status = 'extracting', updated_at = CURRENT_TIMESTAMP "
+                "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP "
                 "WHERE id = ?",
-                (row["id"],),
+                (_PHASE_TRANSIENT[phase], row["id"]),
             )
             conn.commit()
             return JobRow(
                 id=row["id"],
                 video_path=row["video_path"],
                 video_hash=row["video_hash"],
-                status="extracting",
+                status=_PHASE_TRANSIENT[phase],
                 total_frames=row["total_frames"],
                 current_frame=row["current_frame"],
                 current_stage=row["current_stage"],
@@ -173,14 +185,17 @@ class BatchEngine:
     def reclaim_stale_jobs(self, max_age_sec: int = 3600) -> int:
         conn = self._connect()
         try:
-            cur = conn.execute(
-                "UPDATE jobs SET status = 'pending', updated_at = CURRENT_TIMESTAMP "
-                "WHERE status IN ('extracting','filtering','triage','detail') "
-                "AND updated_at < datetime('now', ?)",
-                (f"-{max_age_sec} seconds",),
-            )
+            count = 0
+            for transient, rest in _TRANSIENT_TO_REST.items():
+                cur = conn.execute(
+                    "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE status = ? "
+                    "AND updated_at < datetime('now', ?)",
+                    (rest, transient, f"-{max_age_sec} seconds"),
+                )
+                count += cur.rowcount
             conn.commit()
-            return cur.rowcount
+            return count
         finally:
             conn.close()
 
@@ -219,6 +234,7 @@ class BatchEngine:
             if row is None:
                 return
             new_attempts: int = int(row["attempts"]) + 1
+            rest = _TRANSIENT_TO_REST.get(str(row["status"]), "pending")
             if new_attempts >= attempts_cap:
                 conn.execute(
                     "UPDATE jobs SET status = 'failed', attempts = ?, "
@@ -227,9 +243,9 @@ class BatchEngine:
                 )
             else:
                 conn.execute(
-                    "UPDATE jobs SET status = 'pending', attempts = ?, "
+                    "UPDATE jobs SET status = ?, attempts = ?, "
                     "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (new_attempts, job_id),
+                    (rest, new_attempts, job_id),
                 )
             conn.commit()
         finally:

@@ -263,3 +263,52 @@ def test_detail_error_skips() -> None:
         client = OllamaClient(m.base_url, timeout_s=10)
         results = detail_events(triaged, [event], Config(), client)
         assert results == []
+
+def test_evidence_summary_in_prompts() -> None:
+    from video_security.llm.prompts import (
+        build_detail_prompt,
+        build_triage_prompt,
+    )
+
+    triage_prompt = build_triage_prompt(
+        "intrusion", 0.8, 12.0, "", evidence_summary="plates: YOLO42 (conf 1.00)"
+    )
+    assert "<evidence>" in triage_prompt
+    assert "YOLO42" in triage_prompt
+
+    detail_prompt = build_detail_prompt(
+        "intrusion",
+        0.8,
+        12.0,
+        14.0,
+        "",
+        evidence_summary="plates: YOLO42 (conf 1.00)",
+    )
+    assert "<evidence>" in detail_prompt
+    assert "YOLO42" in detail_prompt
+
+    plain = build_triage_prompt("intrusion", 0.8, 12.0, "")
+    assert "<evidence>" not in plain
+
+
+def test_evidence_flows_to_llm_prompt() -> None:
+    mock = MockOllama(
+        response_text=(
+            '{"relevant": true, "event_type": "intrusion", '
+            '"description": "person", "confidence": "high"}'
+        )
+    )
+    with mock.start() as m:
+        events = [
+            _make_event(1, 0.9, 0.8, evidence_summary="faces detected: 2")
+        ]
+        client = OllamaClient(m.base_url, timeout_s=10)
+        config = Config()
+        config.engine.max_llm_events = 10
+        triage_events(events, config, client)
+        prompts = [
+            str(r.get("body", {}).get("prompt", ""))
+            for r in mock.requests
+            if isinstance(r.get("body"), dict)
+        ]
+        assert any("faces detected: 2" in p for p in prompts)

@@ -81,6 +81,7 @@ def analyze_cmd(
     video: Path | None = typer.Argument(None, help="Video file or directory"),  # noqa: B008
     no_llm: bool = typer.Option(False, "--no-llm", help="Skip LLM analysis"),  # noqa: B008
     only_llm: bool = typer.Option(False, "--only-llm", help="Re-run LLM on existing prefilter output"),  # noqa: B008, E501
+    phases: str = typer.Option("1,2,3", "--phases", help="Pipeline phases to run: 1, 1,2 or 1,2,3"),  # noqa: B008
     resume: bool = typer.Option(False, "--resume", help="Resume incomplete jobs"),  # noqa: B008
     stop_after: str | None = typer.Option(None, "--stop-after", help="Stop after duration"),  # noqa: B008
     watch: Path | None = typer.Option(None, "--watch", help="Monitor directory"),  # noqa: B008
@@ -94,7 +95,7 @@ def analyze_cmd(
         SignalGuard,
         on_ac_power,
     )
-    from video_security.pipeline import PipelineError, analyze_video, enqueue_video
+    from video_security.pipeline import PipelineError, enqueue_video
 
     cfg: Cfg = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
@@ -131,6 +132,19 @@ def analyze_cmd(
         _rerun_llm_only(conn, cfg, max_llm_events)
         conn.close()
         return
+
+    try:
+        phase_list = sorted({int(p.strip()) for p in phases.split(",") if p.strip()})
+    except ValueError as e:
+        print(f"Error: invalid --phases value: {phases!r} (e.g. 1, 1,2, 1,2,3)", file=sys.stderr)
+        raise typer.Exit(code=1) from e
+    if not phase_list or any(p not in (1, 2, 3) for p in phase_list):
+        print(f"Error: --phases must be 1, 2, and/or 3 (got: {phases!r})", file=sys.stderr)
+        raise typer.Exit(code=1)
+    if no_llm:
+        phase_list = [1]
+    needs_llm = any(p in (2, 3) for p in phase_list)
+
     if watch is not None and watch.is_dir():
         _watch_and_run(watch, conn, cfg, no_llm=no_llm, max_llm_events=max_llm_events)
         conn.close()
@@ -142,14 +156,22 @@ def analyze_cmd(
     from video_security.llm.ollama import OllamaClient, OllamaError
 
     client: OllamaClient | None = None
-    if not no_llm:
+    if needs_llm:
         client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
         try:
-            client.health_check([cfg.llm_triage.model, cfg.llm_detail.model])
+            health_models = []
+            if 2 in phase_list:
+                health_models.append(cfg.llm_triage.model)
+            if 3 in phase_list:
+                health_models.append(cfg.llm_detail.model)
+            client.health_check(health_models)
         except OllamaError as e:
             print(f"Warning: {e} — falling back to --no-llm for this run")
             client = None
-            no_llm = True
+            phase_list = [p for p in phase_list if p == 1]
+            if not phase_list:
+                conn.close()
+                return
 
     engine = BatchEngine(cfg)
     try:
@@ -161,39 +183,63 @@ def analyze_cmd(
         print("Warning: not on AC power — running anyway (overnight runs should be AC)")
 
     from video_security.engine import CaffeinateGuard, set_watermark_config
+    from video_security.pipeline import (
+        detail_job,
+        harvest_job,
+        triage_job,
+    )
 
     set_watermark_config(cfg.engine.disk_watermark_gb)
 
+    def budget_hit() -> bool:
+        return budget_s is not None and time.monotonic() - started >= budget_s
+
     guard = SignalGuard()
     with guard, CaffeinateGuard():
-        while True:
-            if guard.stop_requested:
-                print("stop requested — finishing")
+        for phase in phase_list:
+            if guard.stop_requested or budget_hit():
+                if guard.stop_requested:
+                    print("stop requested — finishing")
+                else:
+                    print("time budget reached — stopping")
                 break
-            if budget_s is not None and time.monotonic() - started >= budget_s:
-                print("time budget reached — stopping")
-                break
-            claimed = engine.claim_next_job()
-            if claimed is None:
-                break
-            job = claimed
-            print(f"job {job.id}: {job.video_path}")
-            try:
-                report = analyze_video(
-                    job, cfg, conn, client=client, no_llm=no_llm,
-                    max_llm_events=max_llm_events,
-                )
-                print(
-                    f"job {job.id} done: {report.events} events, "
-                    f"{report.plates} plates, {report.kept_frames} frames kept, "
-                    f"{report.triaged} triaged, {report.detailed} detailed"
-                )
-            except (PipelineError, OllamaError, EngineError) as e:
-                print(f"job {job.id} failed: {e}", file=sys.stderr)
-                engine.mark_failed(job.id)
+            print(f"— phase {phase} sweep —")
+            processed = 0
+            while True:
+                if guard.stop_requested:
+                    print("stop requested — finishing")
+                    break
+                if budget_hit():
+                    print("time budget reached — stopping")
+                    break
+                claimed = engine.claim_next_job(phase)
+                if claimed is None:
+                    break
+                job = claimed
+                print(f"job {job.id}: {job.video_path}")
+                try:
+                    if phase == 1:
+                        report = harvest_job(job, cfg, conn)
+                        print(
+                            f"job {job.id} harvested: {report.events} events, "
+                            f"{report.plates} plates, {report.kept_frames} frames kept"
+                        )
+                    elif phase == 2:
+                        n = triage_job(job, cfg, conn, client) if client else 0
+                        print(f"job {job.id} triaged: {n} relevant events")
+                    else:
+                        n = detail_job(job, cfg, conn, client) if client else 0
+                        print(f"job {job.id} detailed: {n} events")
+                    processed += 1
+                except (PipelineError, OllamaError, EngineError) as e:
+                    print(f"job {job.id} failed: {e}", file=sys.stderr)
+                    engine.mark_failed(job.id)
+            print(f"phase {phase} sweep complete: {processed} jobs processed")
     if client is not None:
-        client.unload(cfg.llm_triage.model)
-        client.unload(cfg.llm_detail.model)
+        if 2 in phase_list:
+            client.unload(cfg.llm_triage.model)
+        if 3 in phase_list:
+            client.unload(cfg.llm_detail.model)
     conn.close()
 
 
@@ -379,76 +425,41 @@ def backfill_media_cmd(
 def _rerun_llm_only(
     conn: sqlite3.Connection, cfg: Config, max_llm_events: int | None
 ) -> None:
-    import cv2
-
-    from video_security import db as vsdb
-    from video_security.llm.detail import detail_events
     from video_security.llm.ollama import OllamaClient
-    from video_security.llm.triage import LLMEvent, triage_events
+    from video_security.llm.triage import triage_events
+    from video_security.pipeline import detail_job, load_llm_events
 
     client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
     if max_llm_events is not None:
         cfg.engine.max_llm_events = max_llm_events
     rows = conn.execute(
-        "SELECT j.id AS job_id FROM jobs j WHERE j.status = 'done' ORDER BY j.id"
+        "SELECT j.id AS job_id FROM jobs j "
+        "WHERE j.status IN ('done','harvested') ORDER BY j.id"
     ).fetchall()
     for row in rows:
         job_id = row["job_id"]
-        events = vsdb.get_events_for_job(conn, job_id)
-        llm_events: list[LLMEvent] = []
-        for evt in events:
-            kf_paths = json.loads(evt["keyframes_json"])
-            keyframes = []
-            for p in kf_paths:
-                img = cv2.imread(p)
-                if img is not None:
-                    keyframes.append(img)
-            window = ""
-            segs = conn.execute(
-                "SELECT start_time, end_time, text FROM transcript_segments"
-                " WHERE job_id = ? AND end_time >= ? AND start_time <= ?",
-                (job_id, evt["start_sec"] - 30, evt["end_sec"] + 30),
-            ).fetchall()
-            window = "\n".join(
-                f"[{s['start_time']:.0f}s] {s['text']}" for s in segs
-            )
-            llm_events.append(
-                LLMEvent(
-                    id=evt["id"],
-                    event_type=evt["event_type"],
-                    start_sec=evt["start_sec"],
-                    end_sec=evt["end_sec"],
-                    detector_score=evt["detector_score"],
-                    priority=evt["priority"],
-                    keyframes=keyframes,
-                    transcript_window=window,
-                )
-            )
-        if not llm_events:
-            continue
-        print(f"job {job_id}: re-running LLM on {len(llm_events)} events")
         conn.execute(
             "UPDATE events SET status = 'pending' WHERE job_id = ?", (job_id,)
         )
         conn.commit()
+        llm_events = load_llm_events(conn, job_id)
+        if not llm_events:
+            continue
+        job = db.get_job_by_id(conn, job_id)
+        if job is None:
+            continue
+        print(f"job {job_id}: re-running LLM on {len(llm_events)} events")
         triaged = triage_events(llm_events, cfg, client)
         for tr in triaged:
-            result_id = vsdb.insert_analysis_result(
+            result_id = db.insert_analysis_result(
                 conn, job_id, tr.event_id, tr.model_digest, tr.prompt_version,
                 "triage", tr.raw_response, None, 0, None,
             )
             status = "triaged" if tr.relevant else "suppressed"
-            vsdb.update_event_status(conn, tr.event_id, status, result_id)
-        detailed = detail_events(triaged, llm_events, cfg, client)
-        for dr in detailed:
-            result_id = vsdb.insert_analysis_result(
-                conn, job_id, dr.event_id, dr.model_digest, dr.prompt_version,
-                "detail", dr.raw_response, None, 0,
-                json.dumps({"tiled": dr.tiled}) if dr.tiled else None,
-            )
-            vsdb.update_event_status(conn, dr.event_id, "detailed", result_id)
+            db.update_event_status(conn, tr.event_id, status, result_id)
+        detailed = detail_job(job, cfg, conn, client)
         relevant_n = sum(1 for t in triaged if t.relevant)
-        print(f"job {job_id}: {relevant_n} triaged, {len(detailed)} detailed")
+        print(f"job {job_id}: {relevant_n} triaged, {detailed} detailed")
     client.unload(cfg.llm_triage.model)
     client.unload(cfg.llm_detail.model)
 

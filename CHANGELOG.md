@@ -6,6 +6,31 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Three-phase analysis pipeline with resumable phase state**: analysis is
+  split into pass 1 (deterministic harvest — YOLO, plates, faces, scene
+  text, audio, GPS, event/keyframe extraction), pass 2 (LLM triage), and
+  pass 3 (LLM detail). Job status now tracks phase completion:
+  `pending → harvested → triaged → done`, so any run stops and resumes at
+  the exact phase boundary. `vs analyze --phases` selects which phases to
+  run (`1`, `1,2`, `2`, `1,2,3` default) — each phase sweeps only the
+  jobs at its entry state, so a `--phases 2` run never touches pending
+  (phase-1) jobs. Sweeps run phase-ordered: each Ollama model loads once
+  per run instead of swapping per job. Stale in-flight jobs are reclaimed
+  to their last completed phase (`--resume`); failed jobs reset to their
+  phase rest state instead of back to `pending`.
+- **Evidence bundle**: pass 1 persists a structured `evidence_json` per
+  job (plates with confidence, vehicle tracks and directions, face
+  counts, scene text samples, audio summary, GPS sample count, event
+  counts). Passes 2 and 3 inject a compact evidence summary into the LLM
+  prompts (`<evidence>` block, prompt v2) so the small triage model
+  verifies against deterministic detector output instead of discovering
+  from pixels alone.
+- `--no-llm` runs now leave jobs at `harvested` (instead of `done`) so
+  LLM phases can pick them up later; `--only-llm` covers both `done` and
+  `harvested` jobs.
+
 ### Fixed
 
 - **CARTO tile key parameter**: basemap tile URLs now send the key as

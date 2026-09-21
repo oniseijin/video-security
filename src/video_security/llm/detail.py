@@ -74,6 +74,7 @@ def detail_events(
             event.end_sec,
             event.transcript_window,
             tiled=False,
+            evidence_summary=event.evidence_summary,
         )
         try:
             data = client.generate_json(
@@ -100,6 +101,7 @@ def detail_events(
                     event.end_sec,
                     event.transcript_window,
                     tiled=True,
+                    evidence_summary=event.evidence_summary,
                 )
                 try:
                     tdata = client.generate_json(

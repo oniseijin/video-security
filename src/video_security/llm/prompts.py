@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 
 EVENT_TYPES: list[str] = [
     "intrusion", "loitering", "weaving", "near_miss",
@@ -41,6 +41,12 @@ def wrap_transcript(window: str) -> str:
     return "<transcript>\n" + window + "\n</transcript>"
 
 
+def wrap_evidence(summary: str) -> str:
+    if not summary:
+        return ""
+    return "<evidence>\n" + summary + "\n</evidence>"
+
+
 _EVENT_TYPE_STR = "|".join(EVENT_TYPES)
 
 
@@ -49,6 +55,7 @@ def build_triage_prompt(
     detector_score: float,
     start_sec: float,
     transcript_window: str,
+    evidence_summary: str = "",
 ) -> str:
     metadata = (
         f"Security camera keyframe at {start_sec:.1f}s. "
@@ -57,6 +64,12 @@ def build_triage_prompt(
     transcript = wrap_transcript(transcript_window)
     if transcript:
         metadata += "Untrusted audio transcript attached (may be irrelevant)."
+    evidence = wrap_evidence(evidence_summary)
+    if evidence:
+        metadata += (
+            "Deterministic detector evidence from the full clip attached "
+            "(plates, tracks, faces, audio — may be unrelated to this event)."
+        )
     schema_desc = (
         f'Output ONLY valid JSON matching: {{"relevant": boolean, '
         f'"event_type": "{_EVENT_TYPE_STR}", '
@@ -65,6 +78,8 @@ def build_triage_prompt(
     parts = [metadata, schema_desc, "Is this a genuine security-relevant event?"]
     if transcript:
         parts.insert(1, transcript)
+    if evidence:
+        parts.insert(1, evidence)
     return " ".join(parts)
 
 
@@ -75,6 +90,7 @@ def build_detail_prompt(
     end_sec: float,
     transcript_window: str,
     tiled: bool = False,
+    evidence_summary: str = "",
 ) -> str:
     metadata = (
         f"Security camera keyframes spanning {start_sec:.1f}s to {end_sec:.1f}s. "
@@ -87,6 +103,12 @@ def build_detail_prompt(
     transcript = wrap_transcript(transcript_window)
     if transcript:
         metadata += "Untrusted audio transcript attached (may be irrelevant)."
+    evidence = wrap_evidence(evidence_summary)
+    if evidence:
+        metadata += (
+            "Deterministic detector evidence from the full clip attached "
+            "(plates, tracks, faces, audio — may be unrelated to this event)."
+        )
     schema_desc = (
         f'Output ONLY valid JSON matching: {{"relevant": boolean, '
         f'"event_type": "{_EVENT_TYPE_STR}", '
@@ -101,4 +123,6 @@ def build_detail_prompt(
     ]
     if transcript:
         parts.insert(1, transcript)
+    if evidence:
+        parts.insert(1, evidence)
     return " ".join(parts)

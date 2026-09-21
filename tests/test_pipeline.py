@@ -73,7 +73,11 @@ def test_analyze_golden_no_llm(db_conn: sqlite3.Connection, tmp_path: Path) -> N
     job_row = db_conn.execute(
         "SELECT status FROM jobs WHERE id = ?", (job.id,)
     ).fetchone()
-    assert job_row[0] == "done"
+    assert job_row[0] == "harvested"
+    evidence = db_conn.execute(
+        "SELECT evidence_json FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert evidence[0] is not None
 
 
 def test_analyze_golden_with_mock_llm(
@@ -127,3 +131,95 @@ def test_analyze_missing_video(db_conn: sqlite3.Connection, tmp_path: Path) -> N
 
     with pytest.raises(PipelineError):
         analyze_video(job, Config(), db_conn, no_llm=True)
+
+
+def test_phase_split_flow(db_conn: sqlite3.Connection, tmp_path: Path) -> None:
+    from video_security.pipeline import detail_job, harvest_job, triage_job
+
+    clip = golden_clip(tmp_path / "g.mp4")
+    job, _ = enqueue_video(db_conn, clip)
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+
+    report = harvest_job(job, config, db_conn)
+    assert report.events >= 1
+    row = db_conn.execute(
+        "SELECT status, evidence_json FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row[0] == "harvested"
+    evidence = json.loads(row[1])
+    assert "event_counts" in evidence
+    assert evidence["event_counts"]
+
+    client = FakeOllama()
+    n = triage_job(job, config, db_conn, client)
+    assert n >= 1
+    assert (
+        db_conn.execute(
+            "SELECT status FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()[0]
+        == "triaged"
+    )
+    triaged_events = db_conn.execute(
+        "SELECT COUNT(*) FROM events WHERE job_id = ? AND status = 'triaged'",
+        (job.id,),
+    ).fetchone()[0]
+    assert triaged_events >= 1
+
+    m = detail_job(job, config, db_conn, client)
+    assert m >= 1
+    assert (
+        db_conn.execute(
+            "SELECT status FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()[0]
+        == "done"
+    )
+    detailed_events = db_conn.execute(
+        "SELECT COUNT(*) FROM events WHERE job_id = ? AND status = 'detailed'",
+        (job.id,),
+    ).fetchone()[0]
+    assert detailed_events >= 1
+
+
+def test_phase_two_skips_harvested_pending(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from video_security.pipeline import triage_job
+
+    clip = golden_clip(tmp_path / "g.mp4")
+    job, _ = enqueue_video(db_conn, clip)
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+
+    n = triage_job(job, config, db_conn, FakeOllama())
+    assert n == 0
+    assert (
+        db_conn.execute(
+            "SELECT status FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()[0]
+        == "triaged"
+    )
+
+
+def test_evidence_summary_text() -> None:
+    from video_security.pipeline import evidence_summary_text
+
+    text = evidence_summary_text(
+        {
+            "plates": [{"norm": "YOLO42", "confidence": 1.0}],
+            "vehicle_tracks": [
+                {"direction": "E", "weaving_score": 0.1},
+                {"direction": "W", "weaving_score": 0.2},
+            ],
+            "faces": 3,
+            "scene_texts": [{"text": "STOP", "kind": "sign"}],
+            "audio": {"segments": 4, "loud_regions": 1, "keyword_hits": 0},
+            "event_counts": {"plate_capture": 1},
+        }
+    )
+    assert "YOLO42" in text
+    assert "vehicle tracks: 2" in text
+    assert "faces detected: 3" in text
+    assert "plate_capture x1" in text
+    assert evidence_summary_text(None) == ""
+    assert evidence_summary_text({}) == ""

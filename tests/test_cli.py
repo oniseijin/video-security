@@ -130,3 +130,26 @@ def test_help_shows_commands() -> None:
     assert result.exit_code == 0
     for cmd in ["analyze", "import", "search", "report", "list", "config"]:
         assert cmd in result.stdout
+
+def test_analyze_phases_validation(tmp_path: Path) -> None:
+    db_file = tmp_path / "t.db"
+    result = runner.invoke(
+        app, ["--db", str(db_file), "analyze", "--phases", "banana"]
+    )
+    assert result.exit_code == 1
+    assert "invalid --phases" in result.output
+
+    result = runner.invoke(
+        app, ["--db", str(db_file), "analyze", "--phases", "1,4"]
+    )
+    assert result.exit_code == 1
+    assert "--phases must be" in result.output
+
+
+def test_analyze_phase1_only_no_jobs(tmp_path: Path) -> None:
+    db_file = tmp_path / "t.db"
+    result = runner.invoke(
+        app, ["--db", str(db_file), "analyze", "--phases", "1"]
+    )
+    assert result.exit_code == 0
+    assert "phase 1 sweep complete: 0 jobs" in result.stdout

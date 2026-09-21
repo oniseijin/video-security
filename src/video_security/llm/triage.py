@@ -20,6 +20,7 @@ class LLMEvent:
     priority: float
     keyframes: list[np.ndarray]
     transcript_window: str = ""
+    evidence_summary: str = ""
 
 
 @dataclass
@@ -55,6 +56,7 @@ def triage_events(
             event.detector_score,
             event.start_sec,
             event.transcript_window,
+            evidence_summary=event.evidence_summary,
         )
         try:
             data = client.generate_json(
