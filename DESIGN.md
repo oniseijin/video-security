@@ -668,6 +668,184 @@ the oldest clips are always at risk of overwrite.
 
 ---
 
+## Future Phases & Refinements
+
+Post-v1 candidates, ranked by value/effort under the standing constraints
+(16 GB RAM, single-model residency, local-only, single user). None of this
+is committed work — each phase is a deliberate opt-in, same rule as the
+Web Console v2 notes. Pipeline/intelligence-level items live here; web UI
+evolution (writes, auth, native report) stays tracked under Web Console →
+v2 thoughts and is not duplicated below.
+
+### Phase R1 — Face identity & people search
+
+- **Goal**: "find every clip where this face appears" across the archive.
+- **Approach**: compute a feature print per face crop at harvest time
+  (`VNGenerateImageFeaturePrintRequest` — pyobjc Vision is already a dep,
+  no new packages), gated by face capture quality
+  (`VNDetectFaceCaptureQualityRequest`) so only usable crops get embedded.
+  New `faces` table (event_id, crop_path, quality, embedding BLOB);
+  greedy clustering by distance threshold into a `persons` table — new
+  faces join the nearest cluster below threshold else mint a new one.
+  Web: person pages with cross-job sightings; face chips on events link
+  to their cluster. If Vision feature prints cluster poorly on small
+  crops, swap in a small face-embedding .mlmodel (few MB) via
+  `VNCoreMLRequest` — a model file, still no new Python deps.
+- **Effort**: M
+- **Depends on**: —
+- **Priority**: P0
+
+### Phase R2 — Watchlists & local notifications
+
+- **Goal**: alert when a specific plate/text/person is seen again.
+- **Approach**: `watchlists` table (kind: plate|text|person, pattern,
+  note), evaluated deterministically at harvest end — plate norm_text
+  LIKE, frame_text FTS5, person cluster id. Hits flag the event, surface
+  as a dashboard banner + report section, and fire `[notify] command`, a
+  user-supplied shell template (e.g. `osascript -e 'display
+  notification'` — local hooks only, no push services). CLI: `vs watch
+  add/list/remove`.
+- **Effort**: S
+- **Depends on**: person watchlists need R1; plate/text stand alone
+- **Priority**: P0
+
+### Phase R3 — Capture-quality pass
+
+- **Goal**: better keyframes/crops in → better triage, OCR, and clusters out.
+- **Approach**: replace even-spacing keyframe choice
+  (`_choose_keyframe_numbers`) with a quality score over frames already
+  cached during decode — Laplacian variance (sharpness), luma, detector
+  confidence, face capture quality, OCR presence. Face crops: keep the
+  best-quality frame per face, not the first. Plates: weight consensus
+  votes by frame sharpness; at night, temporal median-stack the aligned
+  plate crop across track frames to denoise before Vision OCR.
+  Forward-only (like night raw keyframes); old jobs keep their frames.
+- **Effort**: M
+- **Depends on**: —
+- **Priority**: P1
+
+### Phase R4 — Semantic search
+
+- **Goal**: "car parked blocking the driveway" finds events, not just FTS
+  tokens.
+- **Approach**: embed detail-pass descriptions + transcript segments with
+  nomic-embed-text (already pulled) into `event_embeddings` /
+  `transcript_embeddings` tables (float32 BLOBs, ~3 KB/row). Query =
+  embed once, numpy cosine over the table — thousands of rows
+  brute-force in ms, no vector DB. Runs as a dedicated indexing pass
+  (`vs index` / post-harvest hook) that respects single-model residency:
+  the embed model loads, generates, and unloads like any Ollama swap.
+  Web search gains a semantic results group.
+- **Effort**: M
+- **Depends on**: value scales with R3's better descriptions
+- **Priority**: P1
+
+### Phase R5 — Timeline, calendar & date-range search
+
+- **Goal**: answer "what happened last Tuesday" across the archive.
+- **Approach**: SQL date buckets on `recording_start_utc` — calendar heat
+  view (jobs + events per day), cross-job timeline page, `--from/--to`
+  flags on `vs search` and the events API. Pure read-side; no schema
+  change.
+- **Effort**: S
+- **Depends on**: —
+- **Priority**: P1
+
+### Phase R6 — Dashboard analytics
+
+- **Goal**: patterns over the archive, not just per-job views.
+- **Approach**: route heatmap (decimated `clip_gps_data` points on a
+  canvas grid layer — no new JS lib), time-of-day histograms via
+  strftime, per-location event aggregation grouped by the cached geocode
+  name, repeat-plate widget (first/last seen, count — extends the
+  existing plate sightings data).
+- **Effort**: M
+- **Depends on**: —
+- **Priority**: P2
+
+### Phase R7 — Run automation
+
+- **Goal**: one scheduled command does the whole overnight cycle.
+- **Approach**: `vs run` = import → analyze pending → report digest
+  (import already enqueues pending jobs and analyze already claims them,
+  so this is a thin wrapper). Ship a launchd plist template for
+  scheduled overnight runs. Report diffing: `vs diff <job> <prompt-v1>
+  <prompt-v2>` compares `analysis_results` across prompt versions — the
+  tool for judging prompt iteration without re-watching footage.
+- **Effort**: S
+- **Depends on**: —
+- **Priority**: P2
+
+### Phase R8 — Audio event classification
+
+- **Goal**: glass-break / alarm / siren events without relying on keywords.
+- **Approach**: small bundled CoreML sound classifier (few-MB model file)
+  over the PCM stream during ingest, thresholded into `audio_*` event
+  candidates alongside the existing RMS path. Deferred until RMS+keyword
+  misses prove out on real footage.
+- **Effort**: M
+- **Depends on**: —
+- **Priority**: P2
+
+### Rejected ideas
+
+| Idea | Why rejected |
+|---|---|
+| Cloud vision/OCR/LLM APIs | Local-only rule — no frames or text leave the machine. |
+| Speaker diarization (pyannote) | ~GB of PyTorch deps + HF auth for near-zero value on single-voice cabin audio; VAD + Whisper already cover it. |
+| Vector DB (chroma / sqlite-vec / faiss) | Corpus is thousands of rows; numpy cosine over BLOBs is instant. Minimal-deps rule. |
+| Heavy face models (insightface & co.) | Torch-sized dep; R1's Vision path (or a few-MB .mlmodel) is the ceiling unless clustering measurably fails. |
+| Person re-id by clothing/gait | Poor accuracy at dashcam resolution + heavy models; face clusters + tracks cover the real cases. |
+| Push alerts (ntfy/email/SMS) | Overnight batch tool, not a live monitor; R2's local hooks are the whole requirement. |
+| Per-frame LLM / models >12B | 16 GB ceiling + single-model residency; breaks the throughput budget. |
+| Deblur / GPU super-resolution for plates (Real-ESRGAN) | Heavy dep for marginal OCR gain over upscale + consensus + R3 stacking. |
+| Perf push (deeper frame skipping, ANE tuning, artifact recompression) | 4-6× overnight headroom by design — "don't spend it; spend nothing." |
+| Parallel/distributed workers | Single machine; hard stage serialization is a Mandatory Rule. |
+
+### Library research (2026-09 scan)
+
+Verified candidates per phase, minimal-deps-first:
+
+- **R1 embeddings**: macOS Vision feature prints via existing pyobjc dep
+  (primary plan). Torch-free alternatives if clustering fails:
+  `lvface` (github.com/mowshon/lvface, MIT code, ONNX-runtime only,
+  76 MB LVFace-T model, built-in cosine DBSCAN clustering — very new,
+  watch weight license) or `insightface` (github.com/deepinsight/insightface,
+  MIT code, onnxruntime/CoreML — but model weights are non-commercial
+  research only, so unfit for any future commercial use). Clustering itself:
+  sklearn DBSCAN metric="cosine" or plain numpy — no new deps.
+- **R2 notifications**: `osascript -e 'display notification …'` via
+  subprocess — zero deps, native macOS. `pync` rejected (dead since 2016).
+- **R3 quality metrics**: `cv2.Laplacian(...).var()` for sharpness,
+  Brenner focus metric and temporal median stacking via plain numpy —
+  no new deps. scikit-image optional (entropy/SSIM) — nice-to-have only.
+- **R4 vector search**: numpy brute-force cosine (1-2 ms at ~5k vectors of
+  512-d) until >10k embeddings; then `hnswlib`
+  (github.com/nmslib/hnswlib, Apache-2.0) or `spotify/voyager`
+  (github.com/spotify/voyager, Apache-2.0, macOS arm64 + py3.13
+  verified). No vector DB (see rejected).
+- **R5 date UI**: `react-day-picker` (github.com/gpbl/react-day-picker,
+  MIT, ~12 KB, moment-free) for date filtering;
+  `react-calendar-timeline` only if a full Gantt-style trip view is
+  wanted. Plain SQL date bucketing may be enough.
+- **R6 analytics**: `Leaflet.heat` (github.com/Leaflet/Leaflet.heat,
+  BSD-2, ~3 KB) for route heatmaps on the existing map; Chart.js only if
+  histograms outgrow hand-rolled SVG (the `--vs-*` design system prefers
+  SVG).
+- **R7 automation**: launchd plist in ~/Library/LaunchAgents — native,
+  no tooling. No app bundling.
+- **R8 sound classifier**: `pyobjc-framework-SoundAnalysis` (Apple
+  `SNClassifySoundRequest`, 300+ classes, runs on ANE, zero model
+  management) — strongly preferred over openl3/PANNs (both torch/TF
+  heavy → rejected).
+- **Bonus**: `akamhy/videohash` (MIT, needs only ffmpeg) for whole-video
+  perceptual dedup — 64-bit hash, Hamming compare, would catch
+  accidentally re-imported drives; `imagehash` (Pillow-only) for
+  keyframe-level dedup; `pynmea2` only if the hand-rolled NMEA parser
+  ever needs hardening.
+
+---
+
 ## Web Console (Phase 3)
 
 Local web UI over the same SQLite catalog — the only interface necessary
