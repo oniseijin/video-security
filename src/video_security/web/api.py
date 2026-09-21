@@ -1012,11 +1012,12 @@ def search(
                 "frame_number": int(r["frame_number"]),
                 "text": r["text"],
             }
-            for r in conn.execute(
+            for r in vsdb.fts_match(
+                conn,
                 "SELECT f.job_id, f.clip_id, f.frame_number, ft.text "
                 "FROM frame_text_fts ft JOIN frame_text f ON f.id = ft.rowid "
                 "WHERE frame_text_fts MATCH ? ORDER BY rank LIMIT 50",
-                (q,),
+                q,
             )
         ]
     except sqlite3.OperationalError:

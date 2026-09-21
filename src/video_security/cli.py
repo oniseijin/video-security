@@ -434,14 +434,15 @@ def search_cmd(
 
     if query is not None:
         try:
-            rows = conn.execute(
+            rows = db.fts_match(
+                conn,
                 "SELECT ft.text, j.video_path, f.frame_number "
                 "FROM frame_text_fts ft "
                 "JOIN frame_text f ON f.id = ft.rowid "
                 "JOIN jobs j ON j.id = f.job_id "
                 "WHERE frame_text_fts MATCH ? ORDER BY rank LIMIT 50",
-                (query,),
-            ).fetchall()
+                query,
+            )
         except sqlite3.OperationalError:
             print("Error: invalid search query", file=sys.stderr)
             conn.close()

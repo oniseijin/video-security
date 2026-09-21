@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -273,6 +274,23 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+_FTS_BAREWORD_RE = re.compile(r"^[\w\-]+$", re.UNICODE)
+
+
+def fts_match(
+    conn: sqlite3.Connection,
+    sql: str,
+    query: str,
+    params: tuple[Any, ...] = (),
+) -> list[sqlite3.Row]:
+    try:
+        return conn.execute(sql, (query, *params)).fetchall()
+    except sqlite3.OperationalError:
+        if not _FTS_BAREWORD_RE.match(query):
+            raise
+        return conn.execute(sql, (f'"{query}"', *params)).fetchall()
 
 
 def init_db(conn: sqlite3.Connection) -> None:

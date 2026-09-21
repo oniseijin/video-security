@@ -79,13 +79,17 @@ def _plate_hits(
 def _text_hits(
     conn: sqlite3.Connection, job_id: int, wl_id: int, pattern: str
 ) -> list[WatchlistHit]:
+    from video_security.db import fts_match
+
     try:
-        rows = conn.execute(
+        rows = fts_match(
+            conn,
             "SELECT ft.text FROM frame_text_fts ft "
             "JOIN frame_text f ON f.id = ft.rowid "
             "WHERE frame_text_fts MATCH ? AND f.job_id = ? LIMIT 20",
-            (pattern, job_id),
-        ).fetchall()
+            pattern,
+            (job_id,),
+        )
     except sqlite3.OperationalError:
         return []
     return [
