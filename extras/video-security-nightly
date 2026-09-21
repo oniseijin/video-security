@@ -20,7 +20,6 @@ if pgrep -f '[v]s run --source' >/dev/null 2>&1; then
 fi
 find "$LOG_DIR" -name 'run-*.log' -mtime +14 -delete
 exec /Users/ryan/.local/bin/vs run \
-    --source /Volumes/CX-8 \
     --phases 1,2,3 \
     --stop-after "${1:-3h}" \
     --resume
