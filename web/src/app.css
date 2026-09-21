@@ -829,3 +829,16 @@ a.count-chip:hover {
   display: block;
   padding: 0.75rem 0.5rem;
 }
+
+.filter-bar input[type="date"] {
+  background: transparent;
+  border: 1px solid var(--vs-border, rgba(128, 128, 128, 0.4));
+  color: var(--vs-ink);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+}

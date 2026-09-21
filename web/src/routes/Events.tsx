@@ -24,6 +24,7 @@ function DateStrip({
   if (isPending || !data || data.days.length === 0) {
     return null
   }
+  const recent = data.days.slice(0, 14)
   return (
     <div className="date-strip">
       <button
@@ -33,7 +34,7 @@ function DateStrip({
       >
         ALL
       </button>
-      {data.days.map((d) => (
+      {recent.map((d) => (
         <button
           key={d.date}
           type="button"
@@ -126,6 +127,22 @@ export function Events() {
         ) : null}
         <DateStrip selected={fromDate || null} onSelect={setDate} />
         <div className="filter-bar">
+          <label>
+            FROM
+            <input
+              onChange={(e) => setFilter("from", e.target.value)}
+              type="date"
+              value={fromDate}
+            />
+          </label>
+          <label>
+            TO
+            <input
+              onChange={(e) => setFilter("to", e.target.value)}
+              type="date"
+              value={toDate}
+            />
+          </label>
           <label>
             CATEGORY
             <select
