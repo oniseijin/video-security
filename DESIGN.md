@@ -872,30 +872,58 @@ in `archived_originals`, plus `--delete` and `--deep` proxy-to-cold tiers) is
 shipped in [Unreleased]. R11 below is the future cold-storage lifecycle —
 designed as a sketch, NOT implemented.
 
-### Phase R11 — Cold-storage lifecycle (cloud tiering + purge)
+### Phase R11 — Cold-storage lifecycle (cloud tiering + gateway + purge)
 
 - **Goal**: give archived originals a full lifecycle: local cold dir →
-  optional cloud tier → eventual purge, with tracking at every step.
-- **Approach** (sketch — decisions pending real usage):
-  - `archived_originals` is the tracking spine (already written at
-    archive time: original_path, bytes, archived_at). Extend with a
-    `location` field (`cold` | `cloud` | `purged`) and `checksum`
-    for post-move verification.
-  - `vs archive --tier`: move cold-dir originals to a cloud target
-    (candidates: rclone-style backend, B2/S3 via boto-free signed
-    multipart, or plain `rclone` subprocess to stay deps-minimal).
-    Uploads verify size + checksum; local cold copy deleted only
-    after verified upload. Local-only rule re-evaluated: original
-    video bytes (not frames/text) are the only candidate for cloud
-    egress — decide explicitly before building.
-  - `vs archive --purge N`: purge archived originals older than N
-    days (cold or cloud) — deletes bytes, keeps the `archived_originals`
-    row with location=`purged` so the web UI can show "original no
-    longer exists" and `--restore` degrades gracefully.
-  - Job web surface shows the tier (on disk / cold / cloud / purged)
-    and restore works cold→hot; cloud→hot requires the tier backend.
+  optional cloud tier → eventual purge, with tracking at every step — and
+  a gateway in the middle so recovery from cloud is first-class, not a
+  manual rclone session.
+- **Stages**:
+  1. **Local cold** (shipped): `vs archive` writes the original to
+     `[archive] cold_dir` (tracked in `archived_originals`, location
+     `cold`).
+  2. **Cloud tier** (this phase): `vs archive --tier` moves cold-dir
+     originals to a cloud target (leading candidate: `rclone` subprocess
+     against Dropbox — deps-minimal, no SDK). Uploads verify size +
+     checksum; the local cold copy is deleted only after verified upload;
+     location becomes `cloud` and the row keeps the cloud-side key.
+     Local-only rule re-evaluated: original video bytes (not frames or
+     text) are the only candidate for cloud egress — decide explicitly
+     before building.
+  3. **Purge** (this phase): `vs archive --purge N` deletes archived
+     originals older than N days (cold or cloud); the row stays with
+     location `purged` so the web shows "original no longer exists"
+     and restore degrades gracefully.
+- **Cold gateway** (the middle layer between the tool and the cloud):
+  - Every recovery path checks local cold first; on miss with
+    location `cloud`, the gateway fetches the object (rclone copy),
+    writes it into local cold (cache fill), and serves it from there.
+    Nothing above the gateway needs to know where the bytes live.
+  - **Two recovery flavors**:
+    - `--restore --job N` (full): the materialized original moves to
+      hot (`jobs.video_path`), tracking row cleared — permanent return,
+      same as today's cold restore.
+    - `--restore --job N --temp [Hh|Nd]` (temporary): the gateway
+      materializes into local cold only and serves/uses it there —
+      playback, report, evidence review — WITHOUT returning it to hot.
+      The cache entry is marked with an eviction deadline; a later sweep
+      (`vs archive --evict`, or the nightly) deletes the local copy —
+      the cloud object is authoritative and untouched.
+  - Tracking additions: `location` (`cold` | `cloud` | `purged`),
+    `checksum` for post-move verification, and a `cached_until`
+    timestamp for temporary materializations (what's in local cold vs
+    cloud-resident).
+  - An rclone **mount** can coexist as the zero-code variant (the
+    shipped restore already re-resolves under the current `cold_dir`,
+    so a mounted cold dir works transparently). Explicit gateway fetch
+    is preferred for restore flows: progress, retries, and no FUSE
+    dependency; the mount serves browse-only convenience.
+- **Web surface**: job detail shows the tier (on disk / cold / cloud /
+  purged) plus "cached until X" during temporary restores; restore and
+  temporary-restore buttons per job.
 - **Effort**: M–L
-- **Depends on**: archive v1 (shipped)
+- **Depends on**: archive v1 (shipped: proxy + cold, `--delete`,
+  `--deep`)
 - **Priority**: P3 (only when cold-disk pressure or retention policy
   demands it)
 
