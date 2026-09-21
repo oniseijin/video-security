@@ -680,7 +680,7 @@ treat the sections below as the design record for what shipped. R8
 sound classification currently no-ops on macOS 26 (pyobjc/SoundAnalysis
 bridge segfault) and activates where the framework is reachable.
 R9 (Photos library import + device detection) and R10 (Photos & device
-refinements) are designed but NOT yet implemented.
+refinements) are implemented and shipped in [Unreleased].
 
 ### Phase R1 — Face identity & people search
 

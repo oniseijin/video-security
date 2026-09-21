@@ -6,6 +6,25 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Photos library import (R9)**: `vs import <path>.photoslibrary` — videos only
+  (phototext owns photos) via the osxphotos adapter, auto-detected by library
+  suffix. Copy-at-import to `clips/<date>/PHOTOS/front/` (iCloud-eviction-proof),
+  insert-only `photos_imports` UUID dedup (skips known assets without file
+  reads), cloud-only assets skipped and counted, `--since YYYY-MM-DD` and
+  `--album` filters, filename-collision hash suffix, sanitized import_id label.
+- **Device detection (R9)**: every import records `device_kind`/`make`/`model`
+  in `jobs.metadata_json` — exiftool probe (optional binary) with
+  adapter-declared fallback (`dashcam` for Mazda cards) and `unknown` default;
+  surfaced in `/api/jobs/{id}`, job header, and report; jobs list gains a
+  `?device=` filter and web input.
+- **Photos refinements (R10)**: per-device priorities
+  (`[adapter.photos] device_priorities`, meta_glasses 0.8 > iphone 0.7), GPS
+  extraction from video EXIF into `clip_gps_data` (map presence for
+  phone/glasses clips), device-aware triage evidence context, report device
+  line.
+
 ## [0.4.1] - 2026-09-21
 
 ### Added
