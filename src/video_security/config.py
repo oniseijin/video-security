@@ -178,6 +178,13 @@ class CameraOverrides:
 
 
 @dataclasses.dataclass
+class IdentityConfig:
+    enabled: bool = True
+    min_quality: float = 0.2
+    distance_threshold: float = 0.4
+
+
+@dataclasses.dataclass
 class Config:
     storage: StorageConfig = dataclasses.field(default_factory=StorageConfig)
     import_: ImportConfig = dataclasses.field(default_factory=ImportConfig)
@@ -196,6 +203,7 @@ class Config:
     report: ReportConfig = dataclasses.field(default_factory=ReportConfig)
     map: MapConfig = dataclasses.field(default_factory=MapConfig)
     web: WebConfig = dataclasses.field(default_factory=WebConfig)
+    identity: IdentityConfig = dataclasses.field(default_factory=IdentityConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:

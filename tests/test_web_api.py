@@ -106,6 +106,15 @@ def _seed(base: Path) -> None:
         "UPDATE events SET keyframes_json = ? WHERE id = 10",
         (json.dumps([str(frames / "event_10_0.jpg")]),),
     )
+    conn.execute(
+        "INSERT INTO persons (sightings) VALUES (1)"
+    )
+    conn.execute(
+        "INSERT INTO faces (job_id, event_id, keyframe_index, face_index, "
+        "crop_path, quality, embedding, person_id) VALUES "
+        "(1, 10, 0, 0, ?, 0.9, x'0102', 1)",
+        (str(faces / "face_10_0_0.jpg"),),
+    )
     conn.commit()
     conn.close()
 
@@ -341,3 +350,27 @@ def test_faces_gallery(base_url: str) -> None:
 def test_stats_faces(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/stats")
     assert data["faces"] == 1
+
+
+def test_faces_gallery_person_ids(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/faces")
+    item = data["items"][0]
+    assert item["person_ids"] == [1]
+
+
+def test_persons_endpoints(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/persons")
+    assert data["total"] == 1
+    p = data["items"][0]
+    assert p["person_id"] == 1
+    assert p["sightings"] == 1
+    assert p["representative_crop_url"] == "/media/faces/1/face_10_0_0.jpg"
+    assert p["first_seen"] is not None
+    detail = _get_json(f"{base_url}/api/persons/1")
+    assert detail["person_id"] == 1
+    assert detail["total"] == 1
+    s = detail["sightings"][0]
+    assert s["event_id"] == 10
+    assert s["crop_url"] == "/media/faces/1/face_10_0_0.jpg"
+    status, _b = _status_of(f"{base_url}/api/persons/999")
+    assert status == 404

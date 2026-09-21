@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
@@ -1081,6 +1082,98 @@ def map_recent(
     return {"items": items}
 
 
+def persons(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    rows = conn.execute(
+        "SELECT p.id, p.sightings, "
+        "(SELECT f.crop_path FROM faces f WHERE f.person_id = p.id "
+        " ORDER BY f.quality DESC LIMIT 1) AS rep_crop, "
+        "(SELECT MIN(j.recording_start_utc) FROM faces f "
+        " JOIN events e ON e.id = f.event_id "
+        " JOIN jobs j ON j.id = f.job_id WHERE f.person_id = p.id) AS first_seen, "
+        "(SELECT MAX(j.recording_start_utc) FROM faces f "
+        " JOIN events e ON e.id = f.event_id "
+        " JOIN jobs j ON j.id = f.job_id WHERE f.person_id = p.id) AS last_seen "
+        "FROM persons p WHERE p.sightings > 0 "
+        "ORDER BY p.sightings DESC, p.id",
+        (),
+    ).fetchall()
+    items = []
+    for r in rows:
+        rep = r["rep_crop"]
+        rep_url = None
+        if rep:
+            p = Path(rep)
+            if p.is_file():
+                m = re.match(r"^.*?/faces/(\d+)/(.+)$", str(p))
+                if m:
+                    rep_url = f"/media/faces/{m.group(1)}/{m.group(2)}"
+        items.append(
+            {
+                "person_id": int(r["id"]),
+                "sightings": int(r["sightings"]),
+                "representative_crop_url": rep_url,
+                "first_seen": _iso(r["first_seen"]),
+                "last_seen": _iso(r["last_seen"]),
+            }
+        )
+    limit, offset = _limit_offset(params)
+    return {
+        "items": items[offset : offset + limit],
+        "total": len(items),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def person_detail(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    person_id = int(params["id"])
+    exists = conn.execute(
+        "SELECT id FROM persons WHERE id = ?", (person_id,)
+    ).fetchone()
+    if exists is None:
+        raise ApiError(404, "person not found")
+    rows = conn.execute(
+        "SELECT f.id, f.crop_path, f.quality, f.event_id, e.job_id, "
+        "e.event_type, e.start_sec, j.recording_start_utc "
+        "FROM faces f JOIN events e ON e.id = f.event_id "
+        "JOIN jobs j ON j.id = f.job_id "
+        "WHERE f.person_id = ? "
+        "ORDER BY j.recording_start_utc DESC, f.id DESC",
+        (person_id,),
+    ).fetchall()
+    sightings = []
+    for r in rows:
+        crop = r["crop_path"]
+        url = None
+        if crop and Path(crop).is_file():
+            m = re.match(r"^.*?/faces/(\d+)/(.+)$", crop)
+            if m:
+                url = f"/media/faces/{m.group(1)}/{m.group(2)}"
+        if url is None:
+            continue
+        sightings.append(
+            {
+                "job_id": int(r["job_id"]),
+                "event_id": int(r["event_id"]),
+                "event_type": str(r["event_type"]),
+                "tone": event_tone(str(r["event_type"])),
+                "recorded_at": _iso(r["recording_start_utc"]),
+                "start_sec": float(r["start_sec"]),
+                "quality": r["quality"],
+                "crop_url": url,
+            }
+        )
+    return {
+        "person_id": person_id,
+        "sightings": sightings,
+        "total": len(sightings),
+    }
+
+
 def faces(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1113,6 +1206,7 @@ def faces(
         if not isinstance(faces_data, list) or not isinstance(kf_paths, list):
             continue
         crops: list[str] = []
+        person_ids: list[int | None] = []
         for i in range(min(len(faces_data), len(kf_paths))):
             boxes = faces_data[i] if isinstance(faces_data[i], list) else []
             for j in range(len(boxes)):
@@ -1124,6 +1218,14 @@ def faces(
                 )
                 if crop.is_file():
                     crops.append(f"/media/faces/{int(row['job_id'])}/{crop.name}")
+                    frow = conn.execute(
+                        "SELECT person_id FROM faces WHERE event_id = ? "
+                        "AND keyframe_index = ? AND face_index = ?",
+                        (int(row["id"]), i, j),
+                    ).fetchone()
+                    person_ids.append(
+                        int(frow["person_id"]) if frow and frow["person_id"] else None
+                    )
         if not crops:
             continue
         items.append(
@@ -1135,6 +1237,7 @@ def faces(
                 "recorded_at": _iso(row["recording_start_utc"]),
                 "start_sec": float(row["start_sec"]),
                 "crops": crops,
+                "person_ids": person_ids,
             }
         )
     limit, offset = _limit_offset(params)
@@ -1182,6 +1285,8 @@ def api_routes() -> list[Route]:
         ("GET", "/api/categories", categories),
         ("GET", "/api/plates", plates_gallery),
         ("GET", "/api/plates/{norm_text}", plate_detail),
+        ("GET", "/api/persons", persons),
+        ("GET", "/api/persons/{id}", person_detail),
         ("GET", "/api/faces", faces),
         ("GET", "/api/search", search),
         ("GET", "/api/map/recent", map_recent),

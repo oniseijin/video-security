@@ -413,6 +413,7 @@ export interface FaceItem {
   recorded_at: string | null
   start_sec: number
   crops: string[]
+  person_ids: (number | null)[]
 }
 
 export interface FacesPage {
@@ -424,4 +425,44 @@ export interface FacesPage {
 
 export function fetchFaces(params: URLSearchParams): Promise<FacesPage> {
   return fetchJson<FacesPage>(`/api/faces?${params.toString()}`)
+}
+
+export interface PersonSummary {
+  person_id: number
+  sightings: number
+  representative_crop_url: string | null
+  first_seen: string | null
+  last_seen: string | null
+}
+
+export interface PersonsPage {
+  items: PersonSummary[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface PersonSighting {
+  job_id: number
+  event_id: number
+  event_type: string
+  tone: Tone
+  recorded_at: string | null
+  start_sec: number
+  quality: number | null
+  crop_url: string
+}
+
+export interface PersonDetail {
+  person_id: number
+  sightings: PersonSighting[]
+  total: number
+}
+
+export function fetchPersons(params: URLSearchParams): Promise<PersonsPage> {
+  return fetchJson<PersonsPage>(`/api/persons?${params.toString()}`)
+}
+
+export function fetchPersonDetail(id: number): Promise<PersonDetail> {
+  return fetchJson<PersonDetail>(`/api/persons/${id}`)
 }

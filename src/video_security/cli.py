@@ -422,6 +422,23 @@ def backfill_media_cmd(
         conn.close()
 
 
+@app.command(name="index-faces")
+def index_faces_cmd(ctx: typer.Context) -> None:
+    from video_security.identity import index_existing_faces
+
+    conn, cfg = _get_db(ctx)
+    try:
+        if not cfg.identity.enabled:
+            print("identity disabled in config — nothing to do")
+            return
+        registered = index_existing_faces(conn, cfg)
+        persons = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
+        print(f"face embeddings registered: {registered}")
+        print(f"persons clustered: {persons}")
+    finally:
+        conn.close()
+
+
 def _rerun_llm_only(
     conn: sqlite3.Connection, cfg: Config, max_llm_events: int | None
 ) -> None:

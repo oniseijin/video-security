@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from video_security.config import Config
 from video_security.fs import spotlight_ignore
 
 
@@ -193,6 +194,28 @@ MIGRATIONS: list[list[str]] = [
         "CREATE INDEX IF NOT EXISTS idx_plates_norm ON plates(norm_text)",
         "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
         "CREATE INDEX IF NOT EXISTS idx_jobs_import ON jobs(import_id)",
+    ],
+    [
+        """CREATE TABLE faces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            event_id INTEGER NOT NULL,
+            keyframe_index INTEGER NOT NULL,
+            face_index INTEGER NOT NULL,
+            crop_path TEXT NOT NULL,
+            quality REAL,
+            embedding BLOB,
+            person_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sightings INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_faces_job ON faces(job_id)",
+        "CREATE INDEX IF NOT EXISTS idx_faces_event ON faces(event_id)",
+        "CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id)",
     ],
 ]
 
@@ -618,15 +641,27 @@ def delete_job_rows(
 ) -> None:
     tables = [
         "frames", "events", "vehicle_tracks", "plates", "frame_text",
-        "transcript_segments", "analysis_results", "sessions", "clips", "clip_gps_data",
+        "transcript_segments", "analysis_results", "sessions", "clips",
+        "clip_gps_data", "faces",
     ]
     for table in tables:
         conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))
     conn.commit()
+    from video_security.identity import reconcile_persons
+
+    reconcile_persons(conn)
     if artifact_dir:
         import shutil
         for sub in ("frames", "plates", "faces"):
             shutil.rmtree(Path(artifact_dir) / sub / str(job_id), ignore_errors=True)
+
+
+def face_crop_path(
+    cfg: Config, job_id: int, event_id: int, kf_index: int, face_index: int
+) -> Path | None:
+    base = Path(cfg.storage.artifact_dir).expanduser()
+    cand = base / "faces" / str(job_id) / f"face_{event_id}_{kf_index}_{face_index}.jpg"
+    return cand if cand.is_file() else None
 
 
 def events_for_plate(

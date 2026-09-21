@@ -51,7 +51,7 @@ export function Faces() {
           </p>
           <div className="face-gallery">
             {data.items.flatMap((item) =>
-              item.crops.map((url) => (
+              item.crops.map((url, idx) => (
                 <figure
                   className={"subject subject--" + item.tone + " face-card"}
                   key={url}
@@ -70,6 +70,14 @@ export function Faces() {
                     />
                   </Link>
                   <figcaption>
+                    {item.person_ids[idx] != null ? (
+                      <>
+                        <Link to={`/persons/${item.person_ids[idx]}`}>
+                          PERSON {String(item.person_ids[idx]).padStart(3, "0")}
+                        </Link>{" "}
+                        ·{" "}
+                      </>
+                    ) : null}
                     {fmtDate(item.recorded_at)} ·{" "}
                     <Link className="job-link" to={`/jobs/${item.job_id}`}>
                       job {item.job_id}

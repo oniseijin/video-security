@@ -16,6 +16,7 @@ from video_security import db
 from video_security.config import CameraOverrides, Config
 from video_security.db import JobRow
 from video_security.fs import spotlight_ignore
+from video_security.identity import register_face
 from video_security.ingest.audio import AudioResult, analyze_audio
 from video_security.ingest.frames import FrameData, iter_frames, probe_video
 from video_security.llm.detail import detail_events
@@ -169,7 +170,7 @@ def _write_face_crop(
     event_id: int,
     keyframe_index: int,
     face_index: int,
-) -> None:
+) -> np.ndarray | None:
     h, w = img.shape[:2]
     bx, by, bw, bh = box[0], box[1], box[2], box[3]
     x1 = max(0.0, (bx - 0.15 * bw) * w)
@@ -178,11 +179,13 @@ def _write_face_crop(
     y2 = min(float(h), (by + bh * 1.15) * h)
     crop = upscale_crop(img[int(y1) : int(y2), int(x1) : int(x2)])
     if crop.size == 0:
-        return
+        return None
     out = faces_dir / f"face_{event_id}_{keyframe_index}_{face_index}.jpg"
     ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
     if ok:
         out.write_bytes(buf.tobytes())
+        return crop
+    return None
 
 
 def _collect_plate_reads(
@@ -632,7 +635,21 @@ def harvest_job(
                     faces_dir.mkdir(parents=True, exist_ok=True)
                     spotlight_ignore(faces_dir)
                     for j, box in enumerate(boxes):
-                        _write_face_crop(img, box, faces_dir, event_id, i, j)
+                        crop = _write_face_crop(img, box, faces_dir, event_id, i, j)
+                        if crop is not None:
+                            register_face(
+                                conn,
+                                config,
+                                job.id,
+                                event_id,
+                                i,
+                                j,
+                                str(
+                                    faces_dir
+                                    / f"face_{event_id}_{i}_{j}.jpg"
+                                ),
+                                crop,
+                            )
                     faces_total += len(boxes)
             else:
                 boxes = []

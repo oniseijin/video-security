@@ -6,6 +6,7 @@ const LINKS = [
   { to: "/events", label: "Events" },
   { to: "/plates", label: "Plates" },
   { to: "/faces", label: "Faces" },
+  { to: "/persons", label: "Persons" },
 ]
 
 export function Nav() {

@@ -9,6 +9,8 @@ import { Faces } from "./routes/Faces"
 import { JobDetail } from "./routes/JobDetail"
 import { JobsList } from "./routes/JobsList"
 import { NotFound } from "./routes/NotFound"
+import { PersonDetailRoute } from "./routes/PersonDetail"
+import { Persons } from "./routes/Persons"
 import { PlateDetailRoute } from "./routes/PlateDetail"
 import { Plates } from "./routes/Plates"
 import { Search } from "./routes/Search"
@@ -32,6 +34,8 @@ export function App() {
             <Route path="/plates" element={<Plates />} />
             <Route path="/plates/:norm" element={<PlateDetailRoute />} />
             <Route path="/faces" element={<Faces />} />
+            <Route path="/persons" element={<Persons />} />
+            <Route path="/persons/:id" element={<PersonDetailRoute />} />
             <Route path="/search" element={<Search />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -75,3 +75,37 @@ def test_face_crops_written(
                 wrote_any = True
     assert wrote_any
     assert (faces_root / ".metadata_never_index").is_file()
+
+
+def test_harvest_registers_face_rows(
+    db_conn: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import numpy as np
+
+    monkeypatch.setattr(
+        "video_security.pipeline.detect_faces",
+        lambda _img: [(0.1, 0.2, 0.3, 0.4)],
+    )
+    monkeypatch.setattr(
+        "video_security.identity.face_capture_quality", lambda _img: 0.9
+    )
+    monkeypatch.setattr(
+        "video_security.identity.feature_print",
+        lambda _img: np.ones(4, dtype=np.float32) / 2.0,
+    )
+    from tests.golden import golden_clip
+    from video_security.pipeline import harvest_job
+
+    clip = golden_clip(tmp_path / "t.mp4")
+    job, _ = enqueue_video(db_conn, clip)
+    config = Config()
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    harvest_job(job, config, db_conn)
+    n = db_conn.execute(
+        "SELECT COUNT(*) FROM faces WHERE job_id = ?", (job.id,)
+    ).fetchone()[0]
+    assert n > 0
+    persons = db_conn.execute(
+        "SELECT COUNT(*) FROM persons WHERE sightings > 0"
+    ).fetchone()[0]
+    assert persons == 1
