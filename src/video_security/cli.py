@@ -882,12 +882,43 @@ def archive_cmd(
         False, "--deep",
         help="Move proxies of already-archived jobs to cold too (evidence only on hot)",
     ),
+    relocate_from: str | None = typer.Option(
+        None, "--relocate", help="Cold location to move archived data FROM",
+    ),
+    relocate_to: str | None = typer.Option(
+        None, "--relocate-to", help="Cold location to move archived data TO",
+    ),
 ) -> None:
     from video_security.archive import run_archive
     from video_security.engine import EngineError
 
     conn, cfg = _get_db(ctx)
     try:
+        if relocate_from is not None or relocate_to is not None:
+            if relocate_from is None or relocate_to is None:
+                print(
+                    "Error: --relocate requires both FROM and --relocate-to",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(code=1)
+            from video_security.archive import relocate_cold
+
+            report = relocate_cold(
+                conn, relocate_from, relocate_to, dry_run=dry_run
+            )
+            if dry_run:
+                print(
+                    f"would relocate {report.planned} files "
+                    f"({report.bytes_moved} bytes)"
+                )
+            else:
+                print(
+                    f"relocated {report.moved} files "
+                    f"({report.bytes_moved} bytes), failed {report.failed}"
+                )
+            for failure in report.failures:
+                print(f"  {failure}")
+            raise typer.Exit(code=0)
         report = run_archive(
             conn, cfg,
             days=days,

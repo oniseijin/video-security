@@ -20,6 +20,7 @@ class ArchiveReport:
     bytes_saved: int = 0
     restored: int = 0
     deleted: int = 0
+    moved: int = 0
     planned: int = 0
     failures: list[str] = dataclasses.field(default_factory=list)
 
@@ -99,8 +100,12 @@ def archive_job(
         return
 
     proxy_tmp = src.with_name(src.name + ".vs-partial")
-    assert config.archive.cold_dir is not None
-    cold_root = Path(config.archive.cold_dir).expanduser()
+    roots = config.archive.cold_roots()
+    if not roots:
+        report.failed += 1
+        report.failures.append(f"job {job_id}: no cold location configured")
+        return
+    cold_root = Path(roots[0]).expanduser()
 
     try:
         _proxy(src, proxy_tmp, config.archive.video_height)
@@ -182,15 +187,24 @@ def delete_job(
         report.failures.append(f"job {job_id}: {e}")
 
 
-def _resolve_cold_path(recorded: str, cold_root: Path | None) -> Path:
-    p = Path(recorded)
-    if p.exists() or cold_root is None:
-        return p
-    parts = p.parts
+def _cold_tail(path: Path) -> tuple[str, ...]:
+    parts = path.parts
     if "clips" in parts:
         idx = len(parts) - 1 - parts[::-1].index("clips")
-        return cold_root.joinpath(*parts[idx:])
-    return cold_root / p.name
+        return parts[idx:]
+    return (path.name,)
+
+
+def _resolve_cold_path(recorded: str, roots: list[Path]) -> Path:
+    p = Path(recorded)
+    if p.exists():
+        return p
+    tail = _cold_tail(p)
+    for root in roots:
+        cand = root.joinpath(*tail)
+        if cand.exists():
+            return cand
+    return p
 
 
 def deep_archive_job(
@@ -221,15 +235,12 @@ def deep_archive_job(
         report.failed += 1
         report.failures.append(f"job {job_id}: proxy not found at {src}")
         return
-    assert config.archive.cold_dir is not None
-    cold_root = Path(config.archive.cold_dir).expanduser()
+    roots = [Path(r).expanduser() for r in config.archive.cold_roots()]
     try:
-        clips_root = _find_clips_root(src)
-        if clips_root is not None:
-            cold_dest = cold_root / src.relative_to(clips_root)
-        else:
-            cold_dest = cold_root / src.name
-        proxy_dest = cold_dest.with_name(f"{cold_dest.stem}.proxy{cold_dest.suffix}")
+        orig_cold = _resolve_cold_path(str(row["original_path"]), roots)
+        proxy_dest = orig_cold.with_name(
+            f"{orig_cold.stem}.proxy{orig_cold.suffix}"
+        )
         proxy_dest.parent.mkdir(parents=True, exist_ok=True)
         proxy_bytes = src.stat().st_size
         shutil.move(str(src), str(proxy_dest))
@@ -268,12 +279,8 @@ def restore_job(
         return
 
     src = Path(job.video_path)
-    cold_root = (
-        Path(config.archive.cold_dir).expanduser()
-        if config.archive.cold_dir
-        else None
-    )
-    cold = _resolve_cold_path(str(row["original_path"]), cold_root)
+    roots = [Path(r).expanduser() for r in config.archive.cold_roots()]
+    cold = _resolve_cold_path(str(row["original_path"]), roots)
     if not cold.exists():
         report.failed += 1
         report.failures.append(f"job {job_id}: archived original not found at {cold}")
@@ -283,7 +290,7 @@ def restore_job(
         src.unlink()
     proxy_cold = row["proxy_cold_path"]
     if proxy_cold is not None:
-        proxy_path = Path(str(proxy_cold))
+        proxy_path = _resolve_cold_path(str(proxy_cold), roots)
         if proxy_path.is_file():
             proxy_path.unlink()
     shutil.move(str(cold), str(src))
@@ -325,10 +332,10 @@ def run_archive(
                 )
             ]
         if not dry_run and deep_ids:
-            if config.archive.cold_dir is None:
+            if not config.archive.cold_roots():
                 raise EngineError(
-                    "set [archive] cold_dir in config "
-                    "(cold storage target for archived originals)"
+                    "set [archive] cold_dirs in config "
+                    "(priority-ordered cold storage locations)"
                 )
         for jid in deep_ids:
             if dry_run:
@@ -354,10 +361,10 @@ def run_archive(
         jobs_to_process = [int(r["id"]) for r in select_jobs(conn, d)]
 
     if not dry_run and jobs_to_process and not delete:
-        if config.archive.cold_dir is None:
+        if not config.archive.cold_roots():
             raise EngineError(
-                "set [archive] cold_dir in config "
-                "(cold storage target for archived originals)"
+                "set [archive] cold_dirs in config "
+                "(priority-ordered cold storage locations)"
             )
 
     for jid in jobs_to_process:
@@ -378,4 +385,54 @@ def run_archive(
             else:
                 archive_job(conn, config, jid, report)
 
+    return report
+
+def relocate_cold(
+    conn: sqlite3.Connection,
+    src: str,
+    dst: str,
+    dry_run: bool = False,
+) -> ArchiveReport:
+    report = ArchiveReport()
+    src_p = Path(src).expanduser()
+    dst_p = Path(dst).expanduser()
+    if not src_p.exists():
+        raise EngineError(f"source cold location not found: {src_p}")
+    rows = conn.execute(
+        "SELECT job_id, original_path, proxy_cold_path FROM archived_originals "
+        "ORDER BY job_id"
+    ).fetchall()
+    for row in rows:
+        for col in ("original_path", "proxy_cold_path"):
+            val = row[col]
+            if val is None:
+                continue
+            old = Path(val)
+            if not old.is_relative_to(src_p):
+                continue
+            new = dst_p / old.relative_to(src_p)
+            if dry_run:
+                report.planned += 1
+                if old.exists():
+                    report.bytes_moved += old.stat().st_size
+                continue
+            try:
+                if not old.exists():
+                    report.failed += 1
+                    report.failures.append(
+                        f"job {row['job_id']}: missing {old}"
+                    )
+                    continue
+                new.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old), str(new))
+                conn.execute(
+                    f"UPDATE archived_originals SET {col} = ? WHERE job_id = ?",
+                    (str(new), row["job_id"]),
+                )
+                conn.commit()
+                report.moved += 1
+                report.bytes_moved += new.stat().st_size
+            except (OSError, sqlite3.Error) as e:
+                report.failed += 1
+                report.failures.append(f"job {row['job_id']}: {e}")
     return report

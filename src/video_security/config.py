@@ -230,8 +230,16 @@ class WatchlistConfig:
 @dataclasses.dataclass
 class ArchiveConfig:
     cold_dir: str | None = None
+    cold_dirs: list[str] = dataclasses.field(default_factory=list)
     days: int = 30
     video_height: int = 720
+
+    def cold_roots(self) -> list[str]:
+        if self.cold_dirs:
+            return list(self.cold_dirs)
+        if self.cold_dir is not None:
+            return [self.cold_dir]
+        return []
 
 
 @dataclasses.dataclass
@@ -296,6 +304,12 @@ def _merge_value(default: Any, override: Any, path: str) -> Any:
                 continue
             result[k] = _merge_value(default[k], v, f"{path}.{k}")
         return result
+    if isinstance(default, list):
+        if not isinstance(override, list) or not all(
+            isinstance(x, str) for x in override
+        ):
+            raise ConfigError(f"Expected list of strings at {path}")
+        return list(override)
     if default is None:
         return override
     if dataclasses.is_dataclass(default):

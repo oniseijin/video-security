@@ -444,3 +444,155 @@ def test_restore_from_deep(
     assert clip.exists()
     assert clip.stat().st_size == original_bytes
     assert db.get_archived_original(db_conn, job_id) is None
+
+
+def _mk_clip(root: Path, date: str, name: str) -> Path:
+    clips = root / "artifacts" / "clips" / date / "NORMAL" / "front"
+    clips.mkdir(parents=True, exist_ok=True)
+    clip = clips / name
+    golden_clip(clip)
+    return clip
+
+
+def test_multi_cold_archive_uses_first(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_b = tmp_path / "cold-b"
+    cold_a.mkdir()
+    cold_b.mkdir()
+    config.archive.cold_dirs = [str(cold_a), str(cold_b)]
+
+    clip = _mk_clip(tmp_path, "20250920", "multi.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    report = run_archive(db_conn, config, job_ids=[job_id])
+    assert report.archived == 1
+
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    assert Path(str(row["original_path"])).is_relative_to(cold_a)
+
+
+def test_multi_cold_restore_fallback_secondary(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_b = tmp_path / "cold-b"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a), str(cold_b)]
+
+    clip = _mk_clip(tmp_path, "20250921", "fallback.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    cold_a.rename(cold_b)
+    report = run_archive(db_conn, config, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert report.failed == 0
+    assert clip.exists()
+
+
+def test_multi_cold_restore_prefers_recorded(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_b = tmp_path / "cold-b"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a), str(cold_b)]
+
+    clip = _mk_clip(tmp_path, "20250922", "prefer.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    import shutil as _sh
+
+    _sh.copytree(cold_a, cold_b)
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    tainted = Path(str(row["original_path"])).relative_to(cold_a)
+    b_copy = cold_b / tainted
+    b_copy.write_bytes(b"tainted-copy")
+
+    report = run_archive(db_conn, config, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert clip.read_bytes() != b"tainted-copy"
+
+
+def test_relocate_moves_and_updates_tracking(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a)]
+
+    clip = _mk_clip(tmp_path, "20250923", "reloc.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+    run_archive(db_conn, config, job_ids=[job_id], deep=True)
+
+    from video_security.archive import relocate_cold
+
+    cold_b = tmp_path / "cold-b"
+    dry = relocate_cold(db_conn, str(cold_a), str(cold_b), dry_run=True)
+    assert dry.planned == 2
+
+    report = relocate_cold(db_conn, str(cold_a), str(cold_b))
+    assert report.moved == 2
+    assert report.failed == 0
+
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    assert Path(str(row["original_path"])).is_relative_to(cold_b)
+    assert Path(str(row["proxy_cold_path"])).is_relative_to(cold_b)
+
+    report = run_archive(db_conn, config, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert clip.exists()
+
+
+def test_deep_colocates_with_original(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_b = tmp_path / "cold-b"
+    cold_a.mkdir()
+    cold_b.mkdir()
+    config.archive.cold_dirs = [str(cold_a), str(cold_b)]
+
+    clip = _mk_clip(tmp_path, "20250924", "coloc.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    from video_security.archive import relocate_cold
+
+    relocate_cold(db_conn, str(cold_a), str(cold_b))
+    config.archive.cold_dirs = [str(cold_b)]
+
+    report = run_archive(db_conn, config, job_ids=[job_id], deep=True)
+    assert report.archived == 1
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    proxy = Path(str(row["proxy_cold_path"]))
+    original = Path(str(row["original_path"]))
+    assert proxy.is_relative_to(cold_b)
+    assert proxy.parent == original.parent
