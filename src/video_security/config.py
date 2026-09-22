@@ -54,10 +54,18 @@ class EngineConfig:
 
 
 @dataclasses.dataclass
+class LLMConfig:
+    provider: str = "ollama"
+    ollama_url: str = "http://localhost:11434"
+    mlx_url: str = "http://127.0.0.1:11234"
+
+
+@dataclasses.dataclass
 class LLMStageConfig:
     model: str = ""
     num_ctx: int = 0
     timeout_s: int = 0
+    models: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass
@@ -250,11 +258,15 @@ class Config:
     adapter_photos: AdapterPhotosConfig = dataclasses.field(default_factory=AdapterPhotosConfig)
     archive: ArchiveConfig = dataclasses.field(default_factory=ArchiveConfig)
     engine: EngineConfig = dataclasses.field(default_factory=EngineConfig)
+    llm: LLMConfig = dataclasses.field(default_factory=LLMConfig)
     llm_triage: LLMStageConfig = dataclasses.field(
         default_factory=lambda: LLMStageConfig(model="gemma3:4b", num_ctx=2048, timeout_s=120)
     )
     llm_detail: LLMStageConfig = dataclasses.field(
         default_factory=lambda: LLMStageConfig(model="gemma4:12b", num_ctx=8192, timeout_s=300)
+    )
+    llm_embed: LLMStageConfig = dataclasses.field(
+        default_factory=lambda: LLMStageConfig(model="nomic-embed-text", timeout_s=120)
     )
     whisper: WhisperConfig = dataclasses.field(default_factory=WhisperConfig)
     prefilter: PrefilterConfig = dataclasses.field(default_factory=PrefilterConfig)
@@ -333,6 +345,15 @@ def _expand_paths(obj: Any) -> Any:
     return obj
 
 
+def _resolve_provider_models(config: Config) -> None:
+    provider = config.llm.provider
+    for attr in ("llm_triage", "llm_detail", "llm_embed"):
+        stage = getattr(config, attr)
+        override = stage.models.get(provider)
+        if override:
+            setattr(config, attr, dataclasses.replace(stage, model=override))
+
+
 def load_config(path: Path | None = None) -> Config:
     config = Config()
     if path is not None:
@@ -345,8 +366,14 @@ def load_config(path: Path | None = None) -> Config:
         except Exception as e:
             raise ConfigError(f"TOML parse error in {path}: {e}") from e
         config = _apply_toml_overrides(config, toml_data)
+    _resolve_provider_models(config)
     _expand_paths(config.storage)
     _expand_paths(config.import_)
+    if config.llm.provider not in ("ollama", "mlx-serve"):
+        raise ConfigError(
+            f"llm.provider must be 'ollama' or 'mlx-serve' "
+            f"(got: {config.llm.provider!r})"
+        )
     return config
 
 
@@ -407,14 +434,26 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
         elif section == "engine":
             kwargs["engine"] = _merge_dataclass(config.engine, values, "engine")
         elif section == "llm":
-            if "triage" in values and isinstance(values["triage"], dict):
-                kwargs["llm_triage"] = _merge_dataclass(
-                    config.llm_triage, values["triage"], "llm.triage"
+            kwargs["llm"] = _merge_dataclass(config.llm, values, "llm")
+            for stage_key, stage_attr in (
+                ("triage", "llm_triage"),
+                ("detail", "llm_detail"),
+                ("embed", "llm_embed"),
+            ):
+                if stage_key not in values or not isinstance(values[stage_key], dict):
+                    continue
+                stage_values = dict(values[stage_key])
+                provider_models = stage_values.pop("models", None)
+                stage = _merge_dataclass(
+                    getattr(config, stage_attr), stage_values, f"llm.{stage_key}"
                 )
-            if "detail" in values and isinstance(values["detail"], dict):
-                kwargs["llm_detail"] = _merge_dataclass(
-                    config.llm_detail, values["detail"], "llm.detail"
-                )
+                if isinstance(provider_models, dict):
+                    merged = dict(stage.models)
+                    for provider, name in provider_models.items():
+                        if isinstance(name, str):
+                            merged[str(provider)] = name
+                    stage = dataclasses.replace(stage, models=merged)
+                kwargs[stage_attr] = stage
         elif section == "whisper":
             kwargs["whisper"] = _merge_dataclass(config.whisper, values, "whisper")
         elif section == "audio":

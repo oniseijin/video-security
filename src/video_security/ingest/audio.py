@@ -135,7 +135,7 @@ def transcribe_regions(
     else:
         import mlx_whisper
         repo = {
-            "small": "mlx-community/whisper-small",
+            "small": "mlx-community/whisper-small-mlx",
             "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
         }.get(config.whisper.model, config.whisper.model)
 

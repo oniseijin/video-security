@@ -4,10 +4,44 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
-## [Unreleased]
+## [0.6.0] - 2026-09-22
+
+### Fixed
+
+- **Audio stage model repo**: the `small` → HF repo mapping pointed at
+  `mlx-community/whisper-small`, which does not exist (HF answers anonymous
+  lookups for missing repos with a misleading "Invalid username or
+  password" error) — the mlx-whisper audio stage could never download its
+  default model. Now maps to `mlx-community/whisper-small-mlx` (verified;
+  model pre-cached). `large-v3-turbo` was already correct.
 
 ### Added
 
+- **mlx-serve LLM backend**: new `llm/mlx_serve.py` client (OpenAI-compatible:
+  `/v1/chat/completions` with `json_schema` structured output and image content
+  parts, `/v1/unload-model`, `/v1/embeddings`) mirroring `OllamaClient`;
+  `make_llm_client(cfg)` factory selected by `[llm] provider` ("ollama" |
+  "mlx-serve", validated at load). Per-provider stage model maps
+  (`[llm.triage.models]` / `[llm.detail.models]`) resolve the active provider's
+  model at config load, so switching providers is a one-line rollback with
+  ollama names kept as the base. KV-gate 400s (GPU-memory pressure) are
+  retried like 5xx. `vs index` and web-api semantic search stay on
+  ollama/nomic. Test doubles: `tests/mock_mlx_serve.py` + `tests/test_mlx_client.py`.
+- **Detail-stage model fallback**: when the detail model fails an event
+  (e.g. the 12b hitting the KV GPU-memory gate under daytime load), the event
+  is retried with the triage stage's model and the rest of the sweep goes
+  straight to it (sticky per `detail_events` call, re-probing on the next
+  job). Result digests record whichever model actually produced them.
+- **Embeddings provider support + model-scoped search**: semantic-search
+  embeddings moved from the hardcoded `EMBED_MODEL` constant to an
+  `[llm.embed]` stage (model + per-provider map, resolved like triage/detail)
+  flowing through `make_llm_client` in `vs index` and the web-api search
+  endpoint. `semantic_search` / `semantic_search_transcripts` /
+  `get_all_embeddings` now require a `model` and filter `WHERE model = ?` —
+  queries embed once with the active provider's model and match only its
+  rows, so stores holding multiple models' vectors (different dims/spaces)
+  stay safe. Switching embedding models = flip provider + `vs index`
+  (incremental per model; old rows kept for rollback).
 - **Clip repair**: `vs repair --job N` — rebuilds the MP4 index of truncated/
   corrupt clips (moov-less files from card-full or power loss) with `untrunc`
   (optional binary), using a healthy sibling as reference; writes

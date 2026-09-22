@@ -276,3 +276,78 @@ def test_archive_cold_dir_null(tmp_path: Path) -> None:
     cfg = load_config(toml_file)
     assert cfg.archive.cold_dir is None
     assert cfg.archive.video_height == 1080
+
+def test_llm_provider_models_resolve(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        "[llm]\n"
+        'provider = "mlx-serve"\n'
+        'mlx_url = "http://127.0.0.1:21234"\n'
+        "\n"
+        "[llm.triage]\n"
+        'model = "gemma3:4b"\n'
+        "\n"
+        "[llm.triage.models]\n"
+        '"mlx-serve" = "mlx-community/gemma-4-e4b-it-4bit"\n'
+        "\n"
+        "[llm.detail]\n"
+        'model = "gemma4:12b"\n'
+        "\n"
+        "[llm.detail.models]\n"
+        '"mlx-serve" = "mlx-community/gemma-4-12b-it-4bit"\n'
+        "\n"
+        "[llm.embed]\n"
+        'model = "nomic-embed-text"\n'
+        "\n"
+        "[llm.embed.models]\n"
+        '"mlx-serve" = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"\n'
+    )
+    cfg = load_config(p)
+    assert cfg.llm.provider == "mlx-serve"
+    assert cfg.llm.mlx_url == "http://127.0.0.1:21234"
+    assert cfg.llm.ollama_url == "http://localhost:11434"
+    assert cfg.llm_triage.model == "mlx-community/gemma-4-e4b-it-4bit"
+    assert cfg.llm_detail.model == "mlx-community/gemma-4-12b-it-4bit"
+    assert (
+        cfg.llm_embed.model == "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+    )
+    assert (
+        cfg.llm_triage.models["mlx-serve"]
+        == "mlx-community/gemma-4-e4b-it-4bit"
+    )
+
+
+def test_llm_provider_flip_resolves_ollama(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        "[llm]\n"
+        'provider = "ollama"\n'
+        "\n"
+        "[llm.triage]\n"
+        'model = "gemma3:4b"\n'
+        "\n"
+        "[llm.triage.models]\n"
+        '"mlx-serve" = "mlx-community/gemma-4-e4b-it-4bit"\n'
+    )
+    cfg = load_config(p)
+    assert cfg.llm_triage.model == "gemma3:4b"
+
+
+def test_llm_explicit_model_without_map(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        "[llm]\n"
+        'provider = "mlx-serve"\n'
+        "\n"
+        "[llm.triage]\n"
+        'model = "mlx-community/custom"\n'
+    )
+    cfg = load_config(p)
+    assert cfg.llm_triage.model == "mlx-community/custom"
+
+
+def test_llm_provider_invalid(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('[llm]\nprovider = "vllm"\n')
+    with pytest.raises(ConfigError, match="llm.provider"):
+        load_config(p)

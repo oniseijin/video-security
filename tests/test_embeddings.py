@@ -76,13 +76,13 @@ def test_embed_query_missing_model_raises() -> None:
 
 
 def test_get_all_embeddings_empty(seeded_db: sqlite3.Connection) -> None:
-    rows = get_all_embeddings(seeded_db)
+    rows = get_all_embeddings(seeded_db, "nomic-embed-text")
     assert rows == []
 
 
 def test_semantic_search_empty(seeded_db: sqlite3.Connection) -> None:
     q = list(np.random.default_rng(42).random(768).astype(np.float32))
-    results = semantic_search(seeded_db, q)
+    results = semantic_search(seeded_db, q, model="nomic-embed-text")
     assert results == []
 
 
@@ -113,7 +113,7 @@ def test_semantic_search_returns_top(seeded_db: sqlite3.Connection) -> None:
     conn.commit()
 
     q = e1.tolist()
-    results = semantic_search(conn, q)
+    results = semantic_search(conn, q, model="nomic-embed-text")
     assert len(results) == 3
     assert results[0]["event_id"] == 10
     assert results[0]["score"] == pytest.approx(1.0, abs=0.01)
@@ -134,10 +134,37 @@ def test_semantic_search_respects_top_k(seeded_db: sqlite3.Connection) -> None:
         )
     conn.commit()
     q = list(rng.random(768).astype(np.float32))
-    results = semantic_search(conn, q, top_k=2)
+    results = semantic_search(conn, q, top_k=2, model="nomic-embed-text")
     assert len(results) == 2
-    results_full = semantic_search(conn, q, top_k=10)
+    results_full = semantic_search(conn, q, top_k=10, model="nomic-embed-text")
     assert len(results_full) == 3
+
+
+def test_semantic_search_model_scoped(seeded_db: sqlite3.Connection) -> None:
+    rng = np.random.default_rng(7)
+    e1 = rng.random(768).astype(np.float32)
+    qwen = rng.random(1024).astype(np.float32)
+    conn = seeded_db
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, ?, 'nomic-embed-text')",
+        (10, struct.pack("768f", *e1)),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO event_embeddings (event_id, embedding, model) "
+        "VALUES (?, ?, 'mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ')",
+        (11, struct.pack("1024f", *qwen)),
+    )
+    conn.commit()
+
+    results = semantic_search(conn, e1.tolist(), model="nomic-embed-text")
+    assert [r["event_id"] for r in results] == [10]
+    results_q = semantic_search(
+        conn,
+        qwen.tolist(),
+        model="mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ",
+    )
+    assert [r["event_id"] for r in results_q] == [11]
 
 
 def test_event_10_snippet(seeded_db: sqlite3.Connection) -> None:

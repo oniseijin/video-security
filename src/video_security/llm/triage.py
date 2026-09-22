@@ -6,7 +6,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from video_security.config import Config
-from video_security.llm.ollama import OllamaClient, OllamaError, encode_image_jpeg
+from video_security.llm import LLMClient
+from video_security.llm.ollama import OllamaError, encode_image_jpeg
 from video_security.llm.prompts import PROMPT_VERSION, TRIAGE_SCHEMA, build_triage_prompt
 
 
@@ -39,7 +40,7 @@ class TriageResult:
 def triage_events(
     events: list[LLMEvent],
     config: Config,
-    client: OllamaClient,
+    client: LLMClient,
 ) -> list[TriageResult]:
     sorted_events = sorted(
         events, key=lambda e: (e.priority, e.detector_score), reverse=True

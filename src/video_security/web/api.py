@@ -1089,19 +1089,22 @@ def search(
     semantic: list[dict[str, Any]] = []
     semantic_transcripts: list[dict[str, Any]] = []
     try:
-        from video_security.llm.embeddings import EMBED_MODEL, embed_query
+        from video_security.llm import make_llm_client
+        from video_security.llm.embeddings import (
+            embed_query,
+        )
         from video_security.llm.embeddings import (
             semantic_search as sem_search,
         )
         from video_security.llm.embeddings import (
             semantic_search_transcripts as sem_search_t,
         )
-        from video_security.llm.ollama import OllamaClient
 
-        client = OllamaClient(timeout_s=10)
-        q_embed = embed_query(client, EMBED_MODEL, q)
-        semantic = sem_search(conn, q_embed, top_k=10)
-        semantic_transcripts = sem_search_t(conn, q_embed, top_k=10)
+        embed_model = cfg.llm_embed.model
+        client = make_llm_client(cfg, timeout_s=cfg.llm_embed.timeout_s or 10)
+        q_embed = embed_query(client, embed_model, q)
+        semantic = sem_search(conn, q_embed, top_k=10, model=embed_model)
+        semantic_transcripts = sem_search_t(conn, q_embed, top_k=10, model=embed_model)
         semantic_available = True
     except Exception:
         pass

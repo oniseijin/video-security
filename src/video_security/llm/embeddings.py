@@ -7,12 +7,11 @@ from typing import Any
 
 import numpy as np
 
-from video_security.llm.ollama import OllamaClient, OllamaError
+from video_security.llm import LLMClient
+from video_security.llm.ollama import OllamaError
 
-EMBED_MODEL = "nomic-embed-text"
 
-
-def embed_query(client: OllamaClient, model: str, text: str) -> list[float]:
+def embed_query(client: LLMClient, model: str, text: str) -> list[float]:
     return client.embed(model, text)
 
 
@@ -45,7 +44,7 @@ def _event_text(conn: sqlite3.Connection, event_id: int) -> str | None:
 
 
 def embed_events(
-    client: OllamaClient,
+    client: LLMClient,
     model: str,
     conn: sqlite3.Connection,
     refresh: bool = False,
@@ -82,7 +81,7 @@ def embed_events(
 
 
 def embed_transcripts(
-    client: OllamaClient,
+    client: LLMClient,
     model: str,
     conn: sqlite3.Connection,
     refresh: bool = False,
@@ -137,6 +136,8 @@ def semantic_search_transcripts(
     conn: sqlite3.Connection,
     query_embedding: list[float],
     top_k: int = 10,
+    *,
+    model: str,
 ) -> list[dict[str, Any]]:
     qvec = np.array(query_embedding, dtype=np.float32)
     q_norm = float(np.linalg.norm(qvec))
@@ -145,7 +146,8 @@ def semantic_search_transcripts(
     qvec_norm = qvec / q_norm
     rows = conn.execute(
         "SELECT id, embedding, job_id, segment_id, start_time, end_time, text "
-        "FROM transcript_embeddings"
+        "FROM transcript_embeddings WHERE model = ?",
+        (model,),
     ).fetchall()
     if not rows:
         return []
@@ -180,10 +182,11 @@ def semantic_search_transcripts(
 
 
 def get_all_embeddings(
-    conn: sqlite3.Connection,
+    conn: sqlite3.Connection, model: str
 ) -> list[tuple[int, np.ndarray]]:
     rows = conn.execute(
-        "SELECT event_id, embedding FROM event_embeddings"
+        "SELECT event_id, embedding FROM event_embeddings WHERE model = ?",
+        (model,),
     ).fetchall()
     out: list[tuple[int, np.ndarray]] = []
     for row in rows:
@@ -198,13 +201,15 @@ def semantic_search(
     conn: sqlite3.Connection,
     query_embedding: list[float],
     top_k: int = 10,
+    *,
+    model: str,
 ) -> list[dict[str, Any]]:
     qvec = np.array(query_embedding, dtype=np.float32)
     q_norm = float(np.linalg.norm(qvec))
     if q_norm == 0:
         return []
     qvec_norm = qvec / q_norm
-    candidates = get_all_embeddings(conn)
+    candidates = get_all_embeddings(conn, model)
     if not candidates:
         return []
     ids: list[int] = []

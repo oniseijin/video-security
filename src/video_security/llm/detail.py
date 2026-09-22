@@ -7,7 +7,8 @@ from typing import Any
 import numpy as np
 
 from video_security.config import Config
-from video_security.llm.ollama import OllamaClient, OllamaError, encode_image_jpeg
+from video_security.llm import LLMClient
+from video_security.llm.ollama import OllamaError, encode_image_jpeg
 from video_security.llm.prompts import DETAIL_SCHEMA, PROMPT_VERSION, build_detail_prompt
 from video_security.llm.triage import LLMEvent, TriageResult
 
@@ -52,14 +53,17 @@ def detail_events(
     triaged: list[TriageResult],
     events: list[LLMEvent],
     config: Config,
-    client: OllamaClient,
+    client: LLMClient,
 ) -> list[DetailResult]:
     relevant_triaged = [t for t in triaged if t.relevant]
     if not relevant_triaged:
         return []
     events_by_id = {e.id: e for e in events}
     model = config.llm_detail.model
+    fallback_model = config.llm_triage.model
     digest = client.model_digest(model)
+    fallback_digest: str | None = None
+    use_fallback = False
     results: list[DetailResult] = []
     for t in relevant_triaged:
         event = events_by_id.get(t.event_id)
@@ -76,15 +80,46 @@ def detail_events(
             tiled=False,
             evidence_summary=event.evidence_summary,
         )
-        try:
-            data = client.generate_json(
-                model,
-                prompt,
-                images,
-                DETAIL_SCHEMA,
-                num_ctx=config.llm_detail.num_ctx,
-            )
-        except OllamaError:
+        active_model = model
+        active_digest = digest
+        data: dict[str, Any] | None = None
+        if not use_fallback:
+            try:
+                data = client.generate_json(
+                    model,
+                    prompt,
+                    images,
+                    DETAIL_SCHEMA,
+                    num_ctx=config.llm_detail.num_ctx,
+                )
+            except OllamaError:
+                data = None
+            if data is None:
+                use_fallback = True
+        if (
+            data is None
+            and use_fallback
+            and fallback_model
+            and fallback_model != model
+        ):
+            if fallback_digest is None:
+                try:
+                    fallback_digest = client.model_digest(fallback_model)
+                except OllamaError:
+                    fallback_digest = fallback_model
+            try:
+                data = client.generate_json(
+                    fallback_model,
+                    prompt,
+                    images,
+                    DETAIL_SCHEMA,
+                    num_ctx=config.llm_detail.num_ctx,
+                )
+                active_model = fallback_model
+                active_digest = fallback_digest or fallback_model
+            except OllamaError:
+                continue
+        if data is None:
             continue
         confidence = str(data.get("confidence", "low"))
         tiled = False
@@ -105,7 +140,7 @@ def detail_events(
                 )
                 try:
                     tdata = client.generate_json(
-                        model,
+                        active_model,
                         tile_prompt,
                         [encode_image_jpeg(tile)],
                         DETAIL_SCHEMA,
@@ -132,7 +167,7 @@ def detail_events(
                 confidence=confidence,
                 tiled=tiled,
                 raw_response=json.dumps(data),
-                model_digest=digest,
+                model_digest=active_digest,
                 prompt_version=PROMPT_VERSION,
             )
         )

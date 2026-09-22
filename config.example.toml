@@ -27,15 +27,41 @@ retention_days = 30
 disk_preflight_gb = 10
 disk_watermark_gb = 5
 
+[llm]
+# provider = "ollama" | "mlx-serve" (default: ollama)
+# ollama_url = "http://localhost:11434"
+# mlx_url = "http://127.0.0.1:11234"
+
 [llm.triage]
 model = "gemma3:4b"
 num_ctx = 2048
 timeout_s = 120
 
+# Per-provider model names — the active provider's entry overrides `model`
+# at config load, so switching [llm] provider is a one-line rollback.
+[llm.triage.models]
+# "mlx-serve" = "mlx-community/gemma-4-e4b-it-4bit"
+
 [llm.detail]
 model = "gemma4:12b"
 num_ctx = 8192
 timeout_s = 300
+# On primary-model failure (e.g. the 12b KV-gate under daytime memory
+# pressure), detail retries the event with the TRIAGE stage's model for the
+# rest of the sweep (sticky), recording that model in the result digest.
+
+[llm.embed]
+model = "nomic-embed-text"
+timeout_s = 120
+
+# Semantic-search embeddings (vs index, web-api search). Search is
+# model-scoped: a query embeds once with the active provider's model and
+# matches only that model's rows — mixed-model stores stay safe.
+[llm.embed.models]
+# "mlx-serve" = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+
+[llm.detail.models]
+# "mlx-serve" = "mlx-community/gemma-4-12b-it-4bit"
 
 [whisper]
 model = "small"

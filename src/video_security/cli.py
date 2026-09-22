@@ -18,7 +18,7 @@ from video_security.db import connect, init_db, list_jobs
 
 if TYPE_CHECKING:
     from video_security.engine import BatchEngine, SignalGuard
-    from video_security.llm.ollama import OllamaClient
+    from video_security.llm import LLMClient
 
 app = typer.Typer()
 
@@ -160,11 +160,12 @@ def analyze_cmd(
     budget_s: float | None = parse_duration(stop_after) if stop_after else None
     started = time.monotonic()
 
-    from video_security.llm.ollama import OllamaClient, OllamaError
+    from video_security.llm import make_llm_client
+    from video_security.llm.ollama import OllamaError
 
-    client: OllamaClient | None = None
+    client: LLMClient | None = None
     if needs_llm:
-        client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
+        client = make_llm_client(cfg)
         try:
             health_models = []
             if 2 in phase_list:
@@ -214,7 +215,7 @@ def _phase_sweeps(
     conn: sqlite3.Connection,
     cfg: Config,
     phase_list: list[int],
-    client: OllamaClient | None,
+    client: LLMClient | None,
     budget_hit: Callable[[], bool],
     guard: SignalGuard,
 ) -> None:
@@ -295,7 +296,8 @@ def run_cmd(
         on_ac_power,
         set_watermark_config,
     )
-    from video_security.llm.ollama import OllamaClient, OllamaError
+    from video_security.llm import make_llm_client
+    from video_security.llm.ollama import OllamaError
 
     cfg: Config = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
@@ -349,9 +351,9 @@ def run_cmd(
     budget_s: float | None = parse_duration(stop_after) if stop_after else None
     started = time.monotonic()
 
-    client: OllamaClient | None = None
+    client: LLMClient | None = None
     if needs_llm:
-        client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
+        client = make_llm_client(cfg)
         try:
             health_models = []
             if 2 in phase_list:
@@ -634,25 +636,26 @@ def index_cmd(
     ctx: typer.Context,
     refresh: bool = typer.Option(False, "--refresh", help="Re-embed already indexed events"),
 ) -> None:
+    from video_security.llm import make_llm_client
     from video_security.llm.embeddings import (
-        EMBED_MODEL,
         embed_events,
         embed_transcripts,
     )
-    from video_security.llm.ollama import OllamaClient, OllamaError
+    from video_security.llm.ollama import OllamaError
 
     conn, cfg = _get_db(ctx)
-    client = OllamaClient(timeout_s=120)
+    client = make_llm_client(cfg, timeout_s=cfg.llm_embed.timeout_s or 120)
+    embed_model = cfg.llm_embed.model
     try:
-        count = embed_events(client, EMBED_MODEL, conn, refresh=refresh)
-        tcount = embed_transcripts(client, EMBED_MODEL, conn, refresh=refresh)
+        count = embed_events(client, embed_model, conn, refresh=refresh)
+        tcount = embed_transcripts(client, embed_model, conn, refresh=refresh)
     except OllamaError as e:
         print(f"Error: {e}", file=sys.stderr)
         conn.close()
         raise typer.Exit(code=1) from e
     print(f"embedded {count} events, {tcount} transcript segments")
     try:
-        client.unload(EMBED_MODEL)
+        client.unload(embed_model)
     except Exception:
         pass
     conn.close()
@@ -766,11 +769,11 @@ def index_faces_cmd(ctx: typer.Context) -> None:
 def _rerun_llm_only(
     conn: sqlite3.Connection, cfg: Config, max_llm_events: int | None
 ) -> None:
-    from video_security.llm.ollama import OllamaClient
+    from video_security.llm import make_llm_client
     from video_security.llm.triage import triage_events
     from video_security.pipeline import detail_job, load_llm_events
 
-    client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
+    client = make_llm_client(cfg)
     if max_llm_events is not None:
         cfg.engine.max_llm_events = max_llm_events
     rows = conn.execute(
@@ -814,15 +817,16 @@ def _watch_and_run(
 ) -> None:
     from video_security.engine import BatchEngine, EngineError, SignalGuard, on_ac_power
     from video_security.ingest.frames import IngestError
-    from video_security.llm.ollama import OllamaClient, OllamaError
+    from video_security.llm import make_llm_client
+    from video_security.llm.ollama import OllamaError
     from video_security.pipeline import PipelineError, analyze_video, enqueue_video
     from video_security.watch import watch_loop
 
     if not on_ac_power():
         print("Warning: not on AC power — running anyway (overnight runs should be AC)")
-    client: OllamaClient | None = None
+    client: LLMClient | None = None
     if not no_llm:
-        client = OllamaClient(timeout_s=cfg.llm_triage.timeout_s)
+        client = make_llm_client(cfg)
         try:
             client.health_check([cfg.llm_triage.model, cfg.llm_detail.model])
         except OllamaError as e:

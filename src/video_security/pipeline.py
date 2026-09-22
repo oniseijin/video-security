@@ -19,6 +19,7 @@ from video_security.fs import spotlight_ignore
 from video_security.identity import register_face
 from video_security.ingest.audio import AudioResult, analyze_audio
 from video_security.ingest.frames import FrameData, iter_frames, probe_video
+from video_security.llm import LLMClient
 from video_security.llm.detail import detail_events
 from video_security.llm.ollama import OllamaClient
 from video_security.llm.triage import LLMEvent, TriageResult, triage_events
@@ -291,7 +292,7 @@ def analyze_video(
     config: Config,
     conn: sqlite3.Connection,
     camera: CameraOverrides | None = None,
-    client: OllamaClient | None = None,
+    client: LLMClient | None = None,
     no_llm: bool = False,
     max_llm_events: int | None = None,
 ) -> AnalyzeReport:
@@ -806,7 +807,7 @@ def triage_job(
     job: JobRow,
     config: Config,
     conn: sqlite3.Connection,
-    client: OllamaClient,
+    client: LLMClient,
 ) -> int:
     llm_events = load_llm_events(conn, job.id, status="pending")
     if not llm_events:
@@ -837,7 +838,7 @@ def detail_job(
     job: JobRow,
     config: Config,
     conn: sqlite3.Connection,
-    client: OllamaClient,
+    client: LLMClient,
 ) -> int:
     llm_events = load_llm_events(conn, job.id, status="triaged")
     if not llm_events:
