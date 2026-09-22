@@ -71,6 +71,18 @@ def _register(
     return job.id
 
 
+def _probe_ok(dest: Path) -> bool:
+    if shutil.which("ffprobe") is None:
+        return True
+    from video_security.ingest.frames import probe_video
+
+    try:
+        probe_video(dest)
+        return True
+    except Exception:
+        return False
+
+
 def _import_one(
     conn: sqlite3.Connection,
     clip: ClipInfo,
@@ -91,6 +103,13 @@ def _import_one(
         if not _verify_copy(clip.path, dest, h):
             dest.unlink(missing_ok=True)
             report.failed += 1
+            return None
+        if not _probe_ok(dest):
+            dest.unlink(missing_ok=True)
+            if sidecar is not None and sidecar.exists():
+                dest.with_suffix(".NMEA").unlink(missing_ok=True)
+            report.failed += 1
+            print(f"import failed for {clip.path}: unreadable video (no moov/corrupt)")
             return None
         job_id = _register(
             conn, clip, dest, h, import_id, session_id, session_clips

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.golden import golden_variant
 from video_security import db
 from video_security.config import Config
 from video_security.db import connect, init_db
@@ -32,11 +33,11 @@ def _make_card(root: Path) -> None:
         (root / mode).mkdir(parents=True)
         (root / "REAR" / mode).mkdir(parents=True)
         (root / "System" / "NMEA" / mode).mkdir(parents=True)
-    (root / "EVENT" / "250807121252.MP4").write_bytes(b"front-event-data")
-    (root / "REAR" / "EVENT" / "250807121252.MP4").write_bytes(b"rear-event-data")
+    golden_variant(root / "EVENT" / "250807121252.MP4", b"front-event")
+    golden_variant(root / "REAR" / "EVENT" / "250807121252.MP4", b"rear-event")
     (root / "System" / "NMEA" / "EVENT" / "250807121252.NMEA").write_text("$X\n")
-    (root / "NORMAL" / "250921170102.MP4").write_bytes(b"front-normal-data")
-    (root / "NORMAL" / "250921170300.MP4").write_bytes(b"other-normal-data")
+    golden_variant(root / "NORMAL" / "250921170102.MP4", b"front-normal")
+    golden_variant(root / "NORMAL" / "250921170300.MP4", b"other-normal")
 
 
 def _import_date_dir(artifacts: Path) -> Path:
@@ -100,8 +101,11 @@ def test_run_import_copy_layout_and_sidecar(
     front = day / "EVENT" / "front" / "250807121252.MP4"
     rear = day / "EVENT" / "rear" / "250807121252.MP4"
     nmea = day / "EVENT" / "front" / "250807121252.NMEA"
-    assert front.read_bytes() == b"front-event-data"
-    assert rear.read_bytes() == b"rear-event-data"
+    card = tmp_path / "card"
+    assert front.read_bytes() == (card / "EVENT" / "250807121252.MP4").read_bytes()
+    assert rear.read_bytes() == (
+        card / "REAR" / "EVENT" / "250807121252.MP4"
+    ).read_bytes()
     assert nmea.exists()
     assert (day / "NORMAL" / "front" / "250921170102.MP4").exists()
     assert not (day / "NORMAL" / "rear").exists()

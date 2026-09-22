@@ -125,3 +125,10 @@ def golden_clip(path: Path) -> Path:
         _cache = tmpdir / "golden.mp4"
         make_golden_clip(_cache)
     return Path(shutil.copy2(str(_cache), str(path)))
+
+
+def golden_variant(path: Path, salt: bytes) -> Path:
+    golden_clip(path)
+    with open(path, "ab") as f:
+        f.write((8 + len(salt)).to_bytes(4, "big") + b"free" + salt)
+    return path

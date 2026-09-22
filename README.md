@@ -33,6 +33,7 @@ macOS Vision OCR and mlx-whisper are automatic dependencies.
 vs import <card-or-archive>    # Copy + dedup new clips (auto-detects Mazda CX-8)
 vs archive                    # Proxy + cold-store originals of done jobs (needs [archive] cold_dirs)
 vs archive --relocate A B     # Move archived cold data between locations (updates tracking)
+vs repair --job 187           # Recover a corrupt/truncated clip via untrunc (optional binary)
 vs archive --deep             # Later: move the proxies to cold too (evidence only on hot disk)
 vs archive --delete          # Delete done-job videos outright (no proxy, no cold copy)
 vs analyze <video.mp4>          # Full pipeline
@@ -82,6 +83,15 @@ Core complete. Source adapters: `mazda_cx8` (filename timestamps, front/rear pai
 Mazda CX-8 G-sensor events (`hard_brake`, `hard_corner`, `impact`) are detected from NMEA sidecars at zero vision cost and flow through LLM triage/detail like visual events.
 
 **Archive lifecycle**: `vs archive` (needs `[archive] cold_dirs` — a priority-ordered list; the first entry receives new archives, and restore tries the recorded location first, then each configured location) replaces done-job videos with a 720p H.264 proxy in place (playback keeps working, ~6x smaller) and moves the original bytes to the primary cold dir, tracked in `archived_originals` for future cloud-tiering/purge. `--dry-run` previews, `--days N`/`--job ID` select, `--restore --job ID` brings an original back. `--relocate FROM --relocate-to TO` moves archived data between cold locations and updates tracking. If you relocate cold storage behind the scenes (rename/move it without telling the tool), restore and `--deep` discover the new location by a bounded, size-verified search and self-heal the tracked paths. Evidence (keyframes, plates, faces, search, reports) is unaffected either way.
+
+**Repair**: clips whose MP4 index was never written (truncated by card-full or
+power loss — `ffprobe: moov atom not found`) are recoverable when the data
+survives: `vs repair --job N` rebuilds the index with `untrunc` (build from
+https://github.com/anthwlock/untrunc, put on PATH) using a healthy sibling clip
+as the structural reference, writes `<name>.repaired.MP4` next to the untouched
+original, and requeues the job for analysis. Import now rejects unprobeable files
+(counted as failed, no job created), and a corrupt clip no longer aborts an
+analyze sweep — the job is marked failed and the batch continues.
 
 ## Development
 

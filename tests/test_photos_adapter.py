@@ -32,9 +32,13 @@ def cfg(tmp_path: Path) -> Config:
     return config
 
 
-def _video(tmp_path: Path, name: str = "IMG_1234.MOV", data: bytes = b"mov-bytes") -> str:
+def _video(
+    tmp_path: Path, name: str = "IMG_1234.MOV", data: bytes = b"mov-bytes"
+) -> str:
+    from tests.golden import golden_variant
+
     p = tmp_path / name
-    p.write_bytes(data)
+    golden_variant(p, data)
     return str(p)
 
 
@@ -140,7 +144,7 @@ def test_run_import_photos_end_to_end(
     assert date_dir.name == f"{datetime.now().strftime('%Y%m%d')}"
     dest = date_dir / "PHOTOS" / "front" / "IMG_1.MOV"
     assert dest.is_file()
-    assert dest.read_bytes() == b"mov-bytes"
+    assert dest.read_bytes() == Path(v1).read_bytes()
 
     job = db_conn.execute(
         "SELECT import_id, metadata_json FROM jobs WHERE id = ?", (job_id,)
@@ -177,7 +181,7 @@ def test_run_import_collision_renames(
     h = prow["video_hash"]
     renamed = date_dir / f"IMG_DUP-{h[:8]}.MOV"
     assert renamed.is_file()
-    assert renamed.read_bytes() == b"new-content"
+    assert renamed.read_bytes() == Path(v).read_bytes()
 
 
 def test_run_import_hash_hit_records_uuid(

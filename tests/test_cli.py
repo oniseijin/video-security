@@ -59,9 +59,11 @@ def test_analyze_no_llm_missing_video(tmp_path: Path) -> None:
 
 
 def test_import_command(tmp_path: Path) -> None:
+    from tests.golden import golden_variant
+
     card = tmp_path / "card"
     (card / "EVENT").mkdir(parents=True)
-    (card / "EVENT" / "250807121252.MP4").write_bytes(b"clip")
+    golden_variant(card / "EVENT" / "250807121252.MP4", b"clip")
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     cfg_file = tmp_path / "cfg.toml"

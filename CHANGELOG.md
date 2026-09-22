@@ -8,6 +8,14 @@ follow semantic versioning.
 
 ### Added
 
+- **Clip repair**: `vs repair --job N` — rebuilds the MP4 index of truncated/
+  corrupt clips (moov-less files from card-full or power loss) with `untrunc`
+  (optional binary), using a healthy sibling as reference; writes
+  `<name>.repaired.MP4`, requeues the job, leaves the original untouched.
+- **Import validation**: unprobeable files are rejected at import (counted as
+  failed, no job created) instead of entering the queue and failing at analyze.
+- **Sweep resilience**: a corrupt clip (`IngestError`) no longer aborts the
+  analyze run/watch loops — the job is marked failed and the batch continues.
 - **Archive lifecycle**: `vs archive` — done-job videos are transcoded to a
   720p H.264 proxy in place (playback keeps working, ~6x smaller) and the
   original bytes move to `[archive] cold_dir`, tracked in `archived_originals`.

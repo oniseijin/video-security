@@ -219,6 +219,7 @@ def _phase_sweeps(
     guard: SignalGuard,
 ) -> None:
     from video_security.engine import EngineError
+    from video_security.ingest.frames import IngestError
     from video_security.llm.ollama import OllamaError
     from video_security.pipeline import (
         PipelineError,
@@ -263,7 +264,7 @@ def _phase_sweeps(
                     n = detail_job(job, cfg, conn, ollama_client) if ollama_client else 0
                     print(f"job {job.id} detailed: {n} events")
                 processed += 1
-            except (PipelineError, OllamaError, EngineError) as e:
+            except (PipelineError, OllamaError, EngineError, IngestError) as e:
                 print(f"job {job.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(job.id)
         print(f"phase {phase} sweep complete: {processed} jobs processed")
@@ -803,6 +804,7 @@ def _watch_and_run(
     max_llm_events: int | None,
 ) -> None:
     from video_security.engine import BatchEngine, EngineError, SignalGuard, on_ac_power
+    from video_security.ingest.frames import IngestError
     from video_security.llm.ollama import OllamaClient, OllamaError
     from video_security.pipeline import PipelineError, analyze_video, enqueue_video
     from video_security.watch import watch_loop
@@ -849,7 +851,7 @@ def _watch_and_run(
                     f"job {claimed.id} done: {report.events} events, "
                     f"{report.plates} plates"
                 )
-            except (PipelineError, OllamaError, EngineError) as e:
+            except (PipelineError, OllamaError, EngineError, IngestError) as e:
                 print(f"job {claimed.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(claimed.id)
     if client is not None:
@@ -961,6 +963,31 @@ def archive_cmd(
         raise typer.Exit(code=1) from e
     finally:
         conn.close()
+
+
+@app.command(name="repair")
+def repair_cmd(
+    ctx: typer.Context,
+    job: list[int] = typer.Option([], "--job", help="Job IDs to repair"),  # noqa: B008
+    reference: Path | None = typer.Option(None, "--reference", help="Healthy reference clip for untrunc"),  # noqa: B008, E501
+) -> None:
+    from video_security.engine import EngineError
+    from video_security.repair import run_repair
+
+    conn, cfg = _get_db(ctx)
+    try:
+        report = run_repair(conn, job if job else [], reference=reference)
+        print(
+            f"repaired {report.repaired} jobs, "
+            f"skipped {report.skipped}, failed {report.failed}"
+        )
+        for note in report.failures:
+            print(f"  {note}")
+    except EngineError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1) from e
+    conn.close()
 
 
 @app.command(name="config")
