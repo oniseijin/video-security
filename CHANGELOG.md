@@ -12,6 +12,8 @@ follow semantic versioning.
   corrupt clips (moov-less files from card-full or power loss) with `untrunc`
   (optional binary), using a healthy sibling as reference; writes
   `<name>.repaired.MP4`, requeues the job, leaves the original untouched.
+  Analyze sweeps and watch loops auto-repair corrupt clips in-run when untrunc
+  is installed, falling back to mark-failed only when recovery is impossible.
 - **Import validation**: unprobeable files are rejected at import (counted as
   failed, no job created) instead of entering the queue and failing at analyze.
 - **Sweep resilience**: a corrupt clip (`IngestError`) no longer aborts the

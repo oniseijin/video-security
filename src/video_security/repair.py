@@ -125,6 +125,20 @@ def repair_job(
     report.repaired += 1
 
 
+def auto_repair_job(conn: sqlite3.Connection, job_id: int) -> bool:
+    job = db.get_job_by_id(conn, job_id)
+    if job is None:
+        return False
+    src = Path(job.video_path)
+    if ".repaired" in src.stem:
+        return False
+    if shutil.which("untrunc") is None:
+        return False
+    report = RepairReport()
+    repair_job(conn, job_id, None, report)
+    return report.repaired == 1
+
+
 def run_repair(
     conn: sqlite3.Connection,
     job_ids: list[int],

@@ -265,6 +265,15 @@ def _phase_sweeps(
                     print(f"job {job.id} detailed: {n} events")
                 processed += 1
             except (PipelineError, OllamaError, EngineError, IngestError) as e:
+                if isinstance(e, IngestError):
+                    from video_security.repair import auto_repair_job
+
+                    if auto_repair_job(conn, job.id):
+                        print(
+                            f"job {job.id}: corrupt video repaired via untrunc — "
+                            "requeued"
+                        )
+                        continue
                 print(f"job {job.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(job.id)
         print(f"phase {phase} sweep complete: {processed} jobs processed")
@@ -852,6 +861,14 @@ def _watch_and_run(
                     f"{report.plates} plates"
                 )
             except (PipelineError, OllamaError, EngineError, IngestError) as e:
+                if isinstance(e, IngestError):
+                    from video_security.repair import auto_repair_job
+
+                    if auto_repair_job(conn, claimed.id):
+                        print(
+                            f"job {claimed.id}: corrupt video repaired via untrunc — requeued"
+                        )
+                        continue
                 print(f"job {claimed.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(claimed.id)
     if client is not None:

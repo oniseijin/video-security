@@ -89,9 +89,11 @@ power loss — `ffprobe: moov atom not found`) are recoverable when the data
 survives: `vs repair --job N` rebuilds the index with `untrunc` (build from
 https://github.com/anthwlock/untrunc, put on PATH) using a healthy sibling clip
 as the structural reference, writes `<name>.repaired.MP4` next to the untouched
-original, and requeues the job for analysis. Import now rejects unprobeable files
-(counted as failed, no job created), and a corrupt clip no longer aborts an
-analyze sweep — the job is marked failed and the batch continues.
+original, and requeues the job for analysis. When untrunc is installed, the
+analyze sweep and watch loop attempt this repair **automatically** on a corrupt
+clip and requeue it in the same run; only unrecoverable files fall through to
+mark-failed. Import rejects unprobeable files (counted as failed, no job
+created), and a corrupt clip never aborts an analyze sweep.
 
 ## Development
 

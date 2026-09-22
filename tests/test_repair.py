@@ -107,3 +107,57 @@ def test_repair_missing_binary(
 
     with pytest.raises(EngineError, match="untrunc not found"):
         run_repair(db_conn, [1])
+
+
+def test_auto_repair_repairs_and_requeues(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from video_security.repair import auto_repair_job
+
+    broken = _broken_clip(tmp_path, "auto.mp4")
+    j = db.create_job(db_conn, str(broken), "autohash")
+    db_conn.execute(
+        "UPDATE jobs SET status = 'failed', attempts = 3 WHERE id = ?", (j.id,)
+    )
+    db_conn.commit()
+
+    assert auto_repair_job(db_conn, j.id) is True
+    row = db.get_job_by_id(db_conn, j.id)
+    assert row is not None
+    assert row.status == "pending"
+
+
+def test_auto_repair_skips_already_repaired(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from video_security.repair import auto_repair_job
+
+    broken = _broken_clip(tmp_path, "auto2.mp4")
+    j = db.create_job(db_conn, str(broken), "auto2hash")
+    assert auto_repair_job(db_conn, j.id) is True
+
+    row = db.get_job_by_id(db_conn, j.id)
+    assert row is not None
+    assert ".repaired" in Path(row.video_path).stem
+    db_conn.execute(
+        "UPDATE jobs SET status = 'failed', attempts = 3 WHERE id = ?", (j.id,)
+    )
+    db_conn.commit()
+
+    assert auto_repair_job(db_conn, j.id) is False
+    row = db.get_job_by_id(db_conn, j.id)
+    assert row is not None
+    assert row.status == "failed"
+
+
+def test_auto_repair_skips_healthy(
+    db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from video_security.repair import auto_repair_job
+
+    clips = tmp_path / "artifacts" / "clips" / "20251001" / "NORMAL" / "front"
+    clips.mkdir(parents=True)
+    good = golden_clip(clips / "healthy.mp4")
+    j = db.create_job(db_conn, str(good), "healthyhash")
+
+    assert auto_repair_job(db_conn, j.id) is False
