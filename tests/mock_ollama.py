@@ -23,7 +23,7 @@ class MockOllama:
         models: list[str] | None = None,
     ) -> None:
         if models is None:
-            models = ["gemma3:4b", "gemma4:12b"]
+            models = ["gemma3:4b", "gemma4:12b-mlx"]
         self.mode = mode
         self.response_text = response_text
         self.delay_s = delay_s

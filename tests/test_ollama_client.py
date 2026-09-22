@@ -54,9 +54,9 @@ def test_model_swap_evicts_previous_model() -> None:
     with MockOllama() as m:
         c = OllamaClient(base_url=m.base_url, timeout_s=5)
         c.generate("gemma3:4b", "hi")
-        c.generate("gemma4:12b", "hi")
+        c.generate("gemma4:12b-mlx", "hi")
         gens = [r["body"] for r in m.requests if r["path"] == "/api/generate"]
-        assert [g["model"] for g in gens] == ["gemma3:4b", "gemma3:4b", "gemma4:12b"]
+        assert [g["model"] for g in gens] == ["gemma3:4b", "gemma3:4b", "gemma4:12b-mlx"]
         assert gens[1]["keep_alive"] == 0
         assert gens[0]["keep_alive"] == "30m"
         assert gens[2]["keep_alive"] == "30m"
