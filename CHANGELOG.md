@@ -13,8 +13,12 @@ follow semantic versioning.
   original bytes move to `[archive] cold_dir`, tracked in `archived_originals`.
   `--dry-run`, `--days`, `--job`, `--restore --job`, `--deep` (proxies to cold too,
   leaving only evidence on hot disk), `--delete` (no proxy, no cold copy — playback
-  goes away, evidence stays). Job detail (API + web) shows the archived state and
-  bytes saved.
+  goes away, evidence stays), multiple priority-ordered cold locations
+  (`[archive] cold_dirs`), `--relocate FROM --relocate-to TO` (move archived data
+  between cold locations), and silent-relocation discovery — if cold storage is
+  moved/renamed behind the scenes, restore and `--deep` find it via a bounded
+  size-verified search and self-heal tracked paths. Job detail (API + web) shows
+  the archived state and bytes saved.
 
 ## [0.5.0] - 2026-09-21
 

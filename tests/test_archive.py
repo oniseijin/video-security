@@ -596,3 +596,96 @@ def test_deep_colocates_with_original(
     original = Path(str(row["original_path"]))
     assert proxy.is_relative_to(cold_b)
     assert proxy.parent == original.parent
+
+
+def test_silent_relocation_discovered_and_healed(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    import video_security.archive as arc
+
+    arc._DISCOVERED_ROOTS.clear()
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a)]
+
+    clip = _mk_clip(tmp_path, "20250925", "silent.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    cold_c = tmp_path / "cold-c"
+    cold_a.rename(cold_c)
+
+    report = run_archive(db_conn, config, job_ids=[job_id], deep=True)
+    assert report.archived == 1
+    assert report.failed == 0
+    row = db.get_archived_original(db_conn, job_id)
+    assert row is not None
+    healed = Path(str(row["original_path"]))
+    assert healed.is_relative_to(cold_c)
+    proxy = Path(str(row["proxy_cold_path"]))
+    assert proxy.parent == healed.parent
+
+
+def test_silent_relocation_restore(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    import video_security.archive as arc
+
+    arc._DISCOVERED_ROOTS.clear()
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a)]
+
+    clip = _mk_clip(tmp_path, "20250926", "silent2.mp4")
+    original_bytes = clip.stat().st_size
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    cold_c = tmp_path / "elsewhere" / "cold-c"
+    cold_c.parent.mkdir()
+    cold_a.rename(cold_c)
+
+    report = run_archive(db_conn, config, job_ids=[job_id], restore=True)
+    assert report.restored == 1
+    assert report.failed == 0
+    assert clip.stat().st_size == original_bytes
+
+
+def test_silent_relocation_rejects_wrong_size(
+    db_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    import video_security.archive as arc
+
+    arc._DISCOVERED_ROOTS.clear()
+    config = Config()
+    config.storage.db_path = str(tmp_path / "t.db")
+    config.storage.artifact_dir = str(tmp_path / "artifacts")
+    (tmp_path / "artifacts").mkdir()
+    cold_a = tmp_path / "cold-a"
+    cold_a.mkdir()
+    config.archive.cold_dirs = [str(cold_a)]
+
+    clip = _mk_clip(tmp_path, "20250927", "silent3.mp4")
+    job_id = _make_done_job(db_conn, clip)
+    run_archive(db_conn, config, job_ids=[job_id])
+
+    decoy_root = tmp_path / "decoy"
+    (decoy_root / "clips" / "20250927" / "NORMAL" / "front").mkdir(parents=True)
+    (decoy_root / "clips" / "20250927" / "NORMAL" / "front" / "silent3.mp4").write_bytes(
+        b"wrong-size"
+    )
+    import shutil as _shutil
+
+    _shutil.rmtree(cold_a)
+
+    report = run_archive(db_conn, config, job_ids=[job_id], restore=True)
+    assert report.restored == 0
+    assert report.failed == 1

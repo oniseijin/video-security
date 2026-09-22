@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -9,6 +10,9 @@ from pathlib import Path
 from video_security import db
 from video_security.config import Config
 from video_security.engine import EngineError
+
+_DISCOVERED_ROOTS: list[Path] = []
+_MAX_DISCOVERY_DIRS = 20000
 
 
 @dataclasses.dataclass
@@ -195,15 +199,72 @@ def _cold_tail(path: Path) -> tuple[str, ...]:
     return (path.name,)
 
 
-def _resolve_cold_path(recorded: str, roots: list[Path]) -> Path:
+def _find_relocated_root(
+    tail: tuple[str, ...], expected_bytes: int | None, bases: list[Path]
+) -> Path | None:
+    visited = 0
+    for base in bases:
+        if not base.is_dir():
+            continue
+        stack: list[tuple[Path, int]] = [(base, 0)]
+        while stack:
+            d, depth = stack.pop()
+            visited += 1
+            if visited > _MAX_DISCOVERY_DIRS:
+                return None
+            cand = d.joinpath(*tail)
+            try:
+                if cand.is_file() and (
+                    expected_bytes is None or cand.stat().st_size == expected_bytes
+                ):
+                    return d
+            except OSError:
+                pass
+            if depth >= 4:
+                continue
+            try:
+                entries = sorted(os.scandir(d), key=lambda e: e.name)
+            except OSError:
+                continue
+            for e in entries:
+                if e.name == "clips":
+                    continue
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append((Path(e.path), depth + 1))
+                except OSError:
+                    continue
+    return None
+
+
+def _resolve_cold_path(
+    recorded: str,
+    roots: list[Path],
+    expected_bytes: int | None = None,
+) -> Path:
     p = Path(recorded)
     if p.exists():
         return p
     tail = _cold_tail(p)
-    for root in roots:
+    for root in [*_DISCOVERED_ROOTS, *roots]:
         cand = root.joinpath(*tail)
         if cand.exists():
             return cand
+    bases: list[Path] = []
+    for r in roots:
+        if r.parent not in bases:
+            bases.append(r.parent)
+    parts = p.parts
+    if "clips" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("clips")
+        old_root = Path(*parts[:idx])
+        for b in (old_root, old_root.parent):
+            if b not in bases:
+                bases.append(b)
+    found = _find_relocated_root(tail, expected_bytes, bases)
+    if found is not None:
+        _DISCOVERED_ROOTS.append(found)
+        return found.joinpath(*tail)
     return p
 
 
@@ -237,7 +298,17 @@ def deep_archive_job(
         return
     roots = [Path(r).expanduser() for r in config.archive.cold_roots()]
     try:
-        orig_cold = _resolve_cold_path(str(row["original_path"]), roots)
+        orig_cold = _resolve_cold_path(
+            str(row["original_path"]),
+            roots,
+            expected_bytes=int(row["original_bytes"]),
+        )
+        if str(orig_cold) != str(row["original_path"]):
+            conn.execute(
+                "UPDATE archived_originals SET original_path = ? WHERE job_id = ?",
+                (str(orig_cold), job_id),
+            )
+            conn.commit()
         proxy_dest = orig_cold.with_name(
             f"{orig_cold.stem}.proxy{orig_cold.suffix}"
         )
@@ -280,11 +351,19 @@ def restore_job(
 
     src = Path(job.video_path)
     roots = [Path(r).expanduser() for r in config.archive.cold_roots()]
-    cold = _resolve_cold_path(str(row["original_path"]), roots)
+    cold = _resolve_cold_path(
+        str(row["original_path"]), roots, expected_bytes=int(row["original_bytes"])
+    )
     if not cold.exists():
         report.failed += 1
         report.failures.append(f"job {job_id}: archived original not found at {cold}")
         return
+    if str(cold) != str(row["original_path"]):
+        conn.execute(
+            "UPDATE archived_originals SET original_path = ? WHERE job_id = ?",
+            (str(cold), job_id),
+        )
+        conn.commit()
 
     if src.exists():
         src.unlink()
