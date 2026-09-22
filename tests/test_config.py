@@ -63,7 +63,7 @@ def test_defaults() -> None:
     assert cfg.llm_triage.timeout_s == 120
 
     assert isinstance(cfg.llm_detail, LLMStageConfig)
-    assert cfg.llm_detail.model == "gemma4:12b-mlx"
+    assert cfg.llm_detail.model == "gemma4:12b"
     assert cfg.llm_detail.num_ctx == 8192
     assert cfg.llm_detail.timeout_s == 300
 

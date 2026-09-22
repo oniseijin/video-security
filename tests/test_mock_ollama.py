@@ -66,7 +66,7 @@ def test_tags_show() -> None:
             assert resp.status == 200
             data = json.loads(resp.read())
         names = {md["name"] for md in data["models"]}
-        assert {"gemma3:4b", "gemma4:12b-mlx"} <= names
+        assert {"gemma3:4b", "gemma4:12b"} <= names
         digests = set[str]()
         for _ in range(2):
             with urllib.request.urlopen(m.base_url + "/api/show?model=gemma3:4b") as resp:
