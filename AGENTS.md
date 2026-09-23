@@ -80,5 +80,7 @@ See [DESIGN.md → Mandatory Rules](DESIGN.md#mandatory-rules). The 6 rules ther
 
 ## Dependencies
 
-ffmpeg, opencv-python, ultralytics, lap, Pillow, typer, faster-whisper,
-silero-vad, mlx-whisper, pyobjc-framework-Vision
+ffmpeg (external), LLM backend (mlx-serve primary or Ollama), typer,
+opencv-python, ultralytics, lap, Pillow, silero-vad, mlx-whisper,
+onnxruntime, osxphotos, pyobjc-framework-Vision,
+pyobjc-framework-SoundAnalysis

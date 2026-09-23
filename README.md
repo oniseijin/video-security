@@ -28,15 +28,25 @@ Creates a venv snapshot at `~/.local/opt/video-security`, moves the catalog to `
 
 **Manual (dev):**
 
-Requires Python 3.12+, ffmpeg on PATH, [Ollama](https://ollama.com) running locally:
+Requires macOS on Apple Silicon, Python 3.12+, ffmpeg on PATH, and a local
+LLM backend — either one:
+
+- **mlx-serve** (primary) — OpenAI-compatible MLX server; set
+  `[llm] provider = "mlx-serve"` with per-provider models
+  (`mlx-community/gemma-4-e4b-it-4bit` triage, `gemma-4-12b-it-4bit` detail,
+  `Qwen3-Embedding-0.6B-4bit-DWQ` embeddings)
+- **[Ollama](https://ollama.com)** — `ollama pull gemma3:4b` and
+  `ollama pull gemma4:12b`
 
 ```bash
-ollama pull gemma3:4b
-ollama pull gemma4:12b
 python3.12 -m venv .venv && .venv/bin/pip install -e .
 ```
 
-macOS Vision OCR and mlx-whisper are automatic dependencies.
+Python dependencies install automatically with the package: ultralytics + lap
+(YOLO prefilter, ByteTrack), opencv-python, Pillow, silero-vad + mlx-whisper
+(audio transcription), onnxruntime, osxphotos (Photos library import), and
+pyobjc Vision/SoundAnalysis (macOS OCR for plates and scene text, loudness
+detection).
 
 ## Quick Start
 
