@@ -1472,6 +1472,33 @@ night batches finish — implement after 2026-09-24.
   single-frame YOLO inference per stored keyframe (no tracking needed)
   via the existing Detector seam in `backfill.py`.
 
+### Face naming & person management (R1 follow-up, 2026-09-23)
+
+Face identity clustering is built but unused: `vs index-faces` computes
+Vision feature prints per face crop and greedy-clusters into `persons`
+(distance threshold 0.4, min quality 0.2), yet `faces`/`persons` are empty
+— the command has never been run on the archive. What's missing is names:
+tag a face once (e.g., family members), the name propagates to every
+sighting. Trigger example: job 443 event 2407 — known person, wants
+tracking across jobs.
+
+- Run `vs index-faces` on the archive first — validates clustering quality
+  on real data (faces across lighting/angles). Not during night batches:
+  it writes rows while analyze holds the WAL write lock.
+- `persons.name` column (existing ALTER TABLE pattern) + `vs person
+  name|merge|move` CLI — the web console stays read-only (v1 design;
+  click-to-tag would be the first deliberate web write path, later).
+- Propagation is automatic: one name covers every face in the cluster, and
+  future index runs assign new faces to the nearest named cluster
+  (`assign_person` at index time).
+- Display: web person pages + event face chips + report show names. Names
+  live in the local DB only — never in the repo (public).
+- Cluster QA: threshold clustering fragments (one person → several
+  clusters) and over-merges (similar family faces); rename/merge/move is
+  the minimal management set — tune `[identity] distance_threshold` if
+  the splits/merges look systematic.
+- Effort: S-M (CLI + column + display wiring; no pipeline changes).
+
 ### Shipped (was future work)
 
 - **Web console** (0.3.0): `vs serve` — local read-only web UI over the
