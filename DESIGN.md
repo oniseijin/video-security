@@ -1412,7 +1412,9 @@ Not in scope for current phases; captured so the intent isn't lost.
 - Transcript FTS5 index (volume too low to bother yet).
 - Web console writes (e.g. reviewed/resolved event flags) — v1 is
   read-only by design; any write path is a deliberate later decision
-  (see Web Console → v2 thoughts).
+  (see Web Console → v2 thoughts). **First candidate: the face/person
+  naming UI** (click-to-tag, name edits, face reassignment) — deferred
+  behind the CLI version; see Face naming & person management.
 - **Ultralytics → non-AGPL detector** (potential consideration — likely not
   worth the effort absent a concrete trigger): ultralytics is the only
   AGPL-3.0 component in the tree (and its yolov8n.pt weights are AGPL too;
@@ -1513,8 +1515,11 @@ tracking across jobs.
   Vision quality path intact for macOS versions where the request
   works.
 - `persons.name` column (existing ALTER TABLE pattern) + `vs person
-  name|merge|move` CLI — the web console stays read-only (v1 design;
-  click-to-tag would be the first deliberate web write path, later).
+  name|merge|move` CLI — the web console stays read-only. **Next version is
+  CLI-only**: the web naming UI (click-to-tag on face chips, name editing on
+  person pages, drag-a-face-to-another-person) is deliberately out of scope —
+  significant GUI surface (write API + React forms + bundle rebuild) for
+  convenience the CLI already provides. See Web console writes.
 - Propagation is automatic: one name covers every face in the cluster, and
   future index runs assign new faces to the nearest named cluster
   (`assign_person` at index time).
