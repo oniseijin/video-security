@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "prebuild": "python3 ../scripts/export_theme.py",
-    "build": "tsc -b && vite build"
+    "build": "tsc -b && vite build",
+    "shots": "node scripts/capture_screens.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.1",
@@ -19,6 +20,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "playwright": "^1.63.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   }
