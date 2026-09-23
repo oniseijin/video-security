@@ -2,6 +2,15 @@
 
 A local, resumable CLI for overnight security camera / dashcam footage analysis on Apple Silicon. Cheap-first pipeline: dedup → CV prefilter → local LLM triage → detail.
 
+## Why this exists
+
+Ever since seeing *Person of Interest*, I always thought it would be cool to
+have something like that. Then the pieces lined up: dashcam footage of my own,
+the power of local compute and LLMs on Apple Silicon, and AI coding that
+follows proper software engineering patterns. Mix them together, and voilà —
+a nightly Machine (and Samaritan) watching my drives. The themes aren't
+coincidence; they're the design language.
+
 ## Screenshots
 
 Reports and the web console share one design system (Person of Interest) with two themes — **Machine** (dark) and **Samaritan** (light):
