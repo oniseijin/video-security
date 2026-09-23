@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  video-security nightly run template (adjust HOME paths if installed elsewhere).
+  video-security nightly run template (replace CHANGE_ME with your
+  username, or adjust HOME paths if installed elsewhere).
 
   Install:
     cp extras/com.video-security.nightly.plist ~/Library/LaunchAgents/
@@ -21,7 +22,7 @@
     <string>com.video-security.nightly</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/ryan/.local/bin/vs</string>
+        <string>/Users/CHANGE_ME/.local/bin/vs</string>
         <string>run</string>
         <string>--source</string>
         <string>/Volumes/CX-8</string>
@@ -39,9 +40,9 @@
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/ryan/.local/opt/video-security/var/nightly.log</string>
+        <string>/Users/CHANGE_ME/.local/opt/video-security/var/nightly.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/ryan/.local/opt/video-security/var/nightly.log</string>
+        <string>/Users/CHANGE_ME/.local/opt/video-security/var/nightly.log</string>
     <key>Nice</key>
     <integer>10</integer>
 </dict>

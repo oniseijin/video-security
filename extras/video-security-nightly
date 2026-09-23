@@ -1,6 +1,6 @@
 #!/bin/bash
 # Nightly video-security run, called by cron at 23:00 (bounded to 3h).
-VAR="/Users/ryan/.local/opt/video-security/var"
+VAR="$HOME/.local/opt/video-security/var"
 LOG_DIR="$VAR/logs"
 mkdir -p "$LOG_DIR"
 touch "$LOG_DIR/.metadata_never_index"
@@ -19,7 +19,7 @@ if pgrep -f '[v]s run --source' >/dev/null 2>&1; then
     echo "previous run stopped"
 fi
 find "$LOG_DIR" -name 'run-*.log' -mtime +14 -delete
-exec /Users/ryan/.local/bin/vs run \
+exec "$HOME/.local/bin/vs" run \
     --phases 1,2,3 \
     --stop-after "${1:-3h}" \
     --resume

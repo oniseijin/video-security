@@ -18,8 +18,10 @@ Everything committed and pushed is world-visible.
   the CARTO key lives only in local config; `config.example.toml` keeps
   the placeholder.
 - Before committing docs or media, scan for personal traces:
-  `git grep -iE 'ryan|mills|cb1_[A-Za-z0-9]'` must come back empty
-  (except this rule itself).
+  `git grep -iE 'ryan|mills|cb1_[A-Za-z0-9]{16,}' -- . ':(exclude)src/video_security/web/static'`
+  must come back empty (except this rule itself; tests use the `cb1_test_key`
+  fixture, and the minified web bundle is excluded because it trips substring
+  false positives).
 - Push `main` to `origin` after committing.
 - Never force-push or rewrite `main` history without explicit instruction.
 - License is AGPL-3.0-only (ultralytics dep requires it): new dependencies
