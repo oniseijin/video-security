@@ -22,7 +22,8 @@ Everything committed and pushed is world-visible.
   must come back empty (except this rule itself; tests use the `cb1_test_key`
   fixture, and the minified web bundle is excluded because it trips substring
   false positives).
-- Push `main` to `origin` after committing.
+- Push `main` to `origin` only when cutting a release tag (`vX.Y.Z`) —
+  commits stay local between tags (decision 2026-09-23).
 - Never force-push or rewrite `main` history without explicit instruction.
 - License is AGPL-3.0-only (ultralytics dep requires it): new dependencies
   must be AGPL-compatible; never add proprietary code.
