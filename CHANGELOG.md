@@ -6,6 +6,13 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`vs status` command**: one-glance job/event counts by status for daily
+  runs — compact `Jobs: done:111, pending:91 | Events: pending:1743` line by
+  default, `--verbose` for a detailed table with totals. Works on a fresh DB
+  (events table may not exist yet).
+
 ### Fixed
 
 - **Installer pins phase-1 YOLO weights**: ultralytics auto-downloads bare

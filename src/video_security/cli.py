@@ -631,6 +631,44 @@ def list_cmd(ctx: typer.Context) -> None:
         conn.close()
 
 
+@app.command(name="status")
+def status_cmd(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(False, "--verbose", help="Show detailed table"),
+) -> None:
+    conn, _ = _get_db(ctx)
+    try:
+        job_rows = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM jobs GROUP BY status ORDER BY cnt DESC"
+        ).fetchall()
+        has_events = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name='events'"
+        ).fetchone()
+        event_rows = []
+        if has_events:
+            event_rows = conn.execute(
+                "SELECT status, COUNT(*) as cnt FROM events GROUP BY status ORDER BY cnt DESC"
+            ).fetchall()
+
+        if verbose:
+            print("Jobs:")
+            for row in job_rows:
+                print(f"  {row['status']:<15} {row['cnt']}")
+            if job_rows:
+                total = sum(r['cnt'] for r in job_rows)
+                print(f"  {'Total':<15} {total}")
+            if event_rows:
+                print("\nEvents:")
+                for row in event_rows:
+                    print(f"  {row['status']:<15} {row['cnt']}")
+        else:
+            job_parts = ", ".join(f"{r['status']}:{r['cnt']}" for r in job_rows)
+            event_parts = ", ".join(f"{r['status']}:{r['cnt']}" for r in event_rows)
+            print(f"Jobs: {job_parts}" + (f" | Events: {event_parts}" if event_parts else ""))
+    finally:
+        conn.close()
+
+
 @app.command(name="index")
 def index_cmd(
     ctx: typer.Context,
