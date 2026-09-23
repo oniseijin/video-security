@@ -1436,8 +1436,11 @@ Not in scope for current phases; captured so the intent isn't lost.
 
 ### Phase-1 output review (2026-09-23) — plate crops + overlay boxes
 
-Reviewed real phase-1 output; three linked follow-ups. Deferred until the
-night batches finish — implement after 2026-09-24.
+Reviewed real phase-1 output; three linked follow-ups, deferred until the
+night batches finish. Phases 2-3 completed 2026-09-23 17:05 and the
+triage verdict on #2369 resolved the flicker wait-and-see (below); a
+2026-09-24 post-run DB review added three operational items. All items
+now actionable — implement after 2026-09-24.
 
 - **JP-aware plate crops** (small, hours). The saved plate crop
   (`pipeline.py` crop block, ~line 505) is the OCR text bbox + uniform 15%
@@ -1477,12 +1480,49 @@ night batches finish — implement after 2026-09-24.
   #2369, priority-0.9 intrusion from a 5-frame night car→person
   misclassification; unanimous track votes, so vote-share gates can't help).
   Person events fire per-frame in `threats.py`, so a short misclassification
-  flicker passes motion+night gates. **Wait-and-see: check the triage verdict
-  on #2369 after tonight's phases 2-3 complete** — if LLM triage rejects it,
-  the pipeline works as designed and no change is warranted. If false
-  intrusions survive triage, the cheap gate is person persistence (require
-  ≥8 person-class frames on a track, ~0.25s, before it can flag intrusion;
-  optional detector-confidence floor). Effort: S.
+  flicker passes motion+night gates. **Wait-and-see resolved (2026-09-24):
+  LLM triage does not save us.** The 2026-09-23 phases 2-3 run triaged
+  #2369 `relevant: true / confidence: high` — and not just that one: all
+  11 priority-0.9 intrusions on job 420 (tracks 2, 5×3, 6×2, 13, 58, 72,
+  338, 379) survived as relevant/high. Per-frame firing plus
+  `merge_gap_sec` splits one flicker track into several events, so a
+  single misclassification multiplies. The persistence gate is warranted.
+  Fix (S): two-pass `detect_threat_events` (`threats.py:94`) — pass 1
+  counts person-class frames per `track_id` across `frame_dets`; pass 2
+  drops flagged items whose track total is below
+  `threat.min_person_frames` (new `[threat] min_person_frames = 8` in
+  `ThreatConfig` — ~0.25s at 30fps) before event building, so flicker
+  tracks emit no events at all (a ≤7-frame track cannot be loitering
+  either; dropping beats downgrading). `track_id IS NULL` detections bypass
+  the gate (tracker assigns nearly all person boxes). Optional companion:
+  `[threat] person_conf_floor = 0.0` (off by default) — only frames whose
+  best person conf ≥ floor count toward persistence. Tests: synthetic
+  5-frame flicker track → no events; 8-frame track → event; None-track
+  exemption; conf-floor counting. Validation: next night batch (the gate
+  is prefilter-stage; job 420's stored events are not rewritten — suppress
+  manually, next item).
+- **`vs event suppress` CLI** (S). The only suppress path today is triage
+  returning `relevant: false` (`pipeline.py:831`). Confirmed false positives
+  that survive triage — job 420's 11 flicker intrusions — need a manual
+  override: `vs event suppress <id>` / `--restore`, a thin wrapper over
+  `db.update_event_status`. Report rows already render suppressed dimmed
+  (`report_theme.py:226`). Also the review lever the R1 follow-up wants.
+- **Orphaned pending events on done jobs** (S). 45 events (mostly
+  `suspicious_behavior` 0.5 + `hard_corner` 0.6) on jobs 29-39
+  (2026-09-20 batch) never reached triage: `vs run` phases walk jobs by
+  status and these were already `done` before phases 2-3 landed. Either
+  one-off retriage of done jobs with pending events (reuse the
+  `load_llm_events(status="pending")` path per job, exposed as
+  `vs run --retriage-done`) or accept pending as terminal for the
+  pre-sweep era — decide by whether reports render them as actionable
+  (they show as untriaged today).
+- **Failed pair 421/422** (front+rear `260919182512.MP4`, 2026-09-20
+  import; 3 attempts, failed at stage `pending` with no evidence
+  recorded). Probed 2026-09-24: both files are moov-less (40 MiB each,
+  `moov atom not found`) — the known untrunc case, but the in-run
+  auto-repair did not recover them. Next: `vs repair --job 421` /
+  `--job 422`, then let the next sweep retry; if untrunc also fails,
+  delete the job rows so nightly runs stop retrying.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 
