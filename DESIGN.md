@@ -1432,6 +1432,46 @@ Not in scope for current phases; captured so the intent isn't lost.
   tree. Risk: detection-quality regression vs tuned yolov8n on dashcam
   angles/night. Verdict: hold as option-value only.
 
+### Phase-1 output review (2026-09-23) — plate crops + overlay boxes
+
+Reviewed real phase-1 output; three linked follow-ups. Deferred until the
+night batches finish — implement after 2026-09-24.
+
+- **JP-aware plate crops** (small, hours). The saved plate crop
+  (`pipeline.py` crop block, ~line 505) is the OCR text bbox + uniform 15%
+  padding inside the vehicle crop — Japanese plates stack
+  prefecture/class-number/hiragana/digits, so the text-hugging box clips
+  the kanji and hiragana rows (evidence: event #726 lost the prefecture and
+  misread の as "N"; job 170 event #1464 kept the top row, lost the bottom).
+  Fix: expand the text bbox to a JP plate aspect (≈2.2:1 wide / 1.84:1 kei)
+  with the text row anchored to the lower-right quadrant — or the simpler
+  tunable asymmetric multipliers (left 0.5 / up 0.6 / down 0.25 / right 0.2
+  of bbox dims), clamped to the vehicle crop. Config:
+  `[prefilter] plate_crop_pad`. Backfill existing crops by extending
+  `backfill_plate_crops` (`backfill.py:308` — FrameReader/ocr_fn seams
+  exist). Unit tests with synthetic JP plate bbox layouts; update goldens.
+- **Plate crop → source keyframe jump** (medium, ~half day). Persist per
+  plate row: `crop_src` (keyframe path) + `crop_box` (normalized rect on
+  that source image) — new columns via the existing ALTER TABLE pattern
+  (`db.py:334`). Web: clicking a plate crop opens the lightbox on the
+  source keyframe with the plate rect highlighted. Report: same treatment
+  in the report lightbox (`report_theme.py`). Backfill: derive for old rows
+  from `ocr_votes_json.best` via the same machinery as the crop regen.
+- **Person + animal boxes on keyframes, toggleable** (larger, 1-2 days).
+  Person tracks already exist (`vehicle_tracks.class_id=0`; job 457
+  track #1 identified but unboxed) — only `faces_json` is persisted per
+  keyframe. Add dog/cat (COCO 16/17) to default `yolo_classes`. Persist
+  `boxes_json` per keyframe alongside `faces_json`:
+  `[{kind: person|animal, track_id, box}]` in the same normalized
+  top-left convention as faces, recorded at keyframe-pick time from
+  `frame_dets`. Web: generalize `FaceBoxes` → `BoxOverlay` with
+  kind→color from `--vs-*` tokens; toggles `vs-persons` / `vs-animals`
+  mirroring `FacesToggle.tsx` (localStorage on/off), in filmstrip +
+  lightbox. Report: parallel to `THEME_FACES_JS` so toggles sync across
+  web UI and report iframe. Backfill: `vs backfill-media --boxes` —
+  single-frame YOLO inference per stored keyframe (no tracking needed)
+  via the existing Detector seam in `backfill.py`.
+
 ### Shipped (was future work)
 
 - **Web console** (0.3.0): `vs serve` — local read-only web UI over the
