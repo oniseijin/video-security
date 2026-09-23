@@ -11,7 +11,8 @@ follows proper software engineering patterns. Mix them together, and voilà —
 a nightly Machine (and Samaritan) watching my drives. The themes aren't
 coincidence; they're the design language.
 
-Its sibling, **phototext**, applies the same local-LLM approach to a photo
+Its sibling, [**phototext**](https://github.com/oniseijin/phototext), applies
+the same local-LLM approach to a photo
 library.
 
 Typhoon 2625 cleared my schedule, and this is one of the results.
@@ -83,7 +84,7 @@ vs config                     # Show config
 
 **Web console**: `vs serve` starts a local read-only web UI at `http://127.0.0.1:8377` (loopback only, no auth, no new dependencies) — dashboard with stats/active-job progress/import history, job list with filters, embedded dynamic reports, native events browser with filmstrip + zoomable lightbox + face boxes, plate gallery grouped by plate with ken + crops, cross-job search (FTS scene text, plates, transcripts), GPS Leaflet map (CARTO tiles, `[map] carto_api_key` optional), and dual front/rear synchronized playback with an event-tick timeline. The analyzer keeps running while the console is up (WAL readers).
 
-Typical card-swap workflow: `vs import /Volumes/CX-8`, eject card, then `vs analyze` (processes all pending jobs). Archive imports work too: `vs import /Volumes/lacie8/video/CX-8` recurses date-wrapped folders. Photos library: `vs import "~/Pictures/Photos Library.photoslibrary" --since 2026-09-01` imports videos only (phototext owns photos), copies them out so iCloud eviction can't touch them, skips cloud-only assets, and dedups by Photos UUID + content hash. Incremental — clips already imported (same content hash) are skipped.
+Typical card-swap workflow: `vs import /Volumes/CX-8`, eject card, then `vs analyze` (processes all pending jobs). Archive imports work too: `vs import /Volumes/lacie8/video/CX-8` recurses date-wrapped folders. Photos library: `vs import "~/Pictures/Photos Library.photoslibrary" --since 2026-09-01` imports videos only ([phototext](https://github.com/oniseijin/phototext) owns photos), copies them out so iCloud eviction can't touch them, skips cloud-only assets, and dedups by Photos UUID + content hash. Incremental — clips already imported (same content hash) are skipped.
 
 **Reports are on demand**: `vs analyze` never writes reports — everything lands in the DB and keyframe JPEGs under `frames/<job_id>/`. When you want to review a job, run `vs report <job-id>`, which renders `reports/job_<id>.html` from the DB without re-analyzing. Find interesting jobs with `vs list` (done status) or `vs search`, then report the ones you care about.
 
