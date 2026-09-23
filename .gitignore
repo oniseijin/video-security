@@ -11,6 +11,7 @@ build/
 *.db-shm
 *.sqlite*
 .DS_Store
+*.pt
 artifacts/
 test-output/
 .openchamber/
