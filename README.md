@@ -173,3 +173,8 @@ Package lives under `src/video_security/` (src layout).
 .venv/bin/vs --config test-output/smoke.toml analyze <clip>
 .venv/bin/vs --config test-output/smoke.toml report <job-id>
 ```
+
+## AI-First Development
+
+This is an AI-first project: built with [opencode](https://opencode.ai),
+assisted by a professional software engineer.
