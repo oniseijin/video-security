@@ -15,6 +15,13 @@ follow semantic versioning.
 
 ### Fixed
 
+- **Report Keyframes section never closed**: the generated report HTML
+  opened the Keyframes `<section class="panel">` but never closed it, so
+  browsers nested the Plates / Watchlist / Transcript / Driving Log panels
+  (and the lightbox script) inside it, compounding panel padding and
+  breaking section-scoped DOM queries. The close tag is now emitted after
+  the keyframe figures.
+
 - **Installer pins phase-1 YOLO weights**: ultralytics auto-downloads bare
   model names (the `yolov8n` default) into the process cwd, so the weights
   landed wherever the run happened to start (stray copies found in `~` and

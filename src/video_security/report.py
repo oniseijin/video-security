@@ -538,6 +538,7 @@ def render_report_html(
                 )
         parts.append(f"<figcaption>{caption}</figcaption>")
         parts.append("</figure>")
+    parts.append("</section>")
     parts.append("")
 
     parts.append('<section class="panel">')
