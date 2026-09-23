@@ -1520,9 +1520,31 @@ now actionable — implement after 2026-09-24.
   import; 3 attempts, failed at stage `pending` with no evidence
   recorded). Probed 2026-09-24: both files are moov-less (40 MiB each,
   `moov atom not found`) — the known untrunc case, but the in-run
-  auto-repair did not recover them. Next: `vs repair --job 421` /
-  `--job 422`, then let the next sweep retry; if untrunc also fails,
-  delete the job rows so nightly runs stop retrying.
+  auto-repair did not recover them (root cause: next item). **Manually
+  repaired 2026-09-24** (`vs repair --job 421 422`): untrunc recovered
+  ~47s per side into `*.repaired.MP4` next to the originals; jobs
+  repointed and requeued (pending, attempts reset) for the next sweep.
+- **Auto-repair never fires under cron** (root cause found 2026-09-24;
+  fix warranted). The cron wrappers export
+  `PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin`
+  (curated for ffmpeg) — no `~/.local/bin`, where untrunc lives. In the
+  nightly/daily environment `shutil.which("untrunc")` returns None, so
+  `auto_repair_job` (`repair.py:135`) bails **silently** — no log
+  line — and the IngestError falls through to `mark_failed`. Evidence:
+  zero "repaired via untrunc" lines across every run log since the
+  feature shipped; 421/422 failed 3× with `ffprobe failed: moov atom
+  not found` while a manual repair from an interactive shell (PATH
+  includes `~/.local/bin`) succeeded immediately. Fix (S):
+  (1) loud bail — when untrunc is missing, `auto_repair_job` prints a
+  stderr line ("auto-repair skipped: untrunc not on PATH — set
+  [repair] untrunc_path") instead of returning False silently, so run
+  logs diagnose themselves; (2) path-independent lookup — new
+  `[repair] untrunc_path` config key (absolute path; default: PATH
+  lookup with `~/.local/bin/untrunc` fallback) so repair does not
+  depend on the launcher environment; (3) optionally append
+  `$HOME/.local/bin` to the wrapper PATH exports (machine-local files,
+  not repo). Tests: monkeypatched `shutil.which` → None asserts the
+  skip message; config-path override bypasses PATH entirely.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 
