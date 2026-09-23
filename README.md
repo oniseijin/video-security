@@ -11,6 +11,11 @@ follows proper software engineering patterns. Mix them together, and voilà —
 a nightly Machine (and Samaritan) watching my drives. The themes aren't
 coincidence; they're the design language.
 
+Its sibling, **phototext**, applies the same local-LLM approach to a photo
+library.
+
+Typhoon 2625 cleared my schedule, and this is one of the results.
+
 ## Screenshots
 
 Reports and the web console share one design system (Person of Interest) with two themes — **Machine** (dark) and **Samaritan** (light):
