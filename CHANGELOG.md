@@ -8,6 +8,11 @@ follow semantic versioning.
 
 ### Added
 
+- **AGPL-3.0-only license**: `ultralytics` (YOLO prefilter + weights) is
+  AGPL-3.0, so the project license matches — permissive licensing would be
+  non-compliant for the combined work. `license`/`license-files` declared in
+  `pyproject.toml`, full text in `LICENSE`, summary in the README.
+
 - **`vs status` command**: one-glance job/event counts by status for daily
   runs — compact `Jobs: done:111, pending:91 | Events: pending:1743` line by
   default, `--verbose` for a detailed table with totals. Works on a fresh DB

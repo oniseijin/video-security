@@ -178,3 +178,8 @@ Package lives under `src/video_security/` (src layout).
 
 This is an AI-first project: built with [opencode](https://opencode.ai),
 assisted by a professional software engineer.
+
+## License
+
+[AGPL-3.0-only](LICENSE) — the prefilter's `ultralytics` dependency (and its
+YOLO weights) is AGPL-3.0, so the combined work is licensed accordingly.

@@ -7,6 +7,8 @@ name = "video-security"
 version = "0.6.0"
 description = "Local, resumable security camera footage analysis CLI"
 requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
 dependencies = [
     "typer>=0.12",
     "opencv-python>=4.9",
