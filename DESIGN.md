@@ -1413,6 +1413,24 @@ Not in scope for current phases; captured so the intent isn't lost.
 - Web console writes (e.g. reviewed/resolved event flags) — v1 is
   read-only by design; any write path is a deliberate later decision
   (see Web Console → v2 thoughts).
+- **Ultralytics → non-AGPL detector** (potential consideration — likely not
+  worth the effort absent a concrete trigger): ultralytics is the only
+  AGPL-3.0 component in the tree (and its yolov8n.pt weights are AGPL too;
+  everything else is MIT/Apache). AGPL binds nothing today (local personal
+  use, repo already AGPL) — it only matters if we relicense to MIT/BSD
+  (commercial reuse, AGPL-shy adopters). Swap path: YOLOX-n/s (Apache-2.0,
+  code *and* weights, COCO classes match ours) via the existing onnxruntime
+  dep (or cv2.dnn — zero new deps), ByteTrack from Roboflow `supervision`
+  (MIT) or vendored `ifzhang/ByteTrack` (MIT, ~250 lines; `lap` already
+  present). Alternative if YOLOX disappoints: RT-DETR (Apache-2.0, heavier).
+  Effort: rewrite the vehicles.py inference/tracking surface (~80 lines —
+  `YOLO()` load, `model.track()`, `result.boxes` unpacking; downstream
+  consumes dataclasses, untouched), letterbox/NMS glue, installer weight
+  download+pin, CoreML conversion if wanted, plus re-validation on real
+  footage and conf/iou re-tuning — est. 1-2 focused days + a validation
+  pass. Benefit: MIT relicensing becomes possible, drop the ultralytics dep
+  tree. Risk: detection-quality regression vs tuned yolov8n on dashcam
+  angles/night. Verdict: hold as option-value only.
 
 ### Shipped (was future work)
 
