@@ -1471,6 +1471,16 @@ night batches finish — implement after 2026-09-24.
   web UI and report iframe. Backfill: `vs backfill-media --boxes` —
   single-frame YOLO inference per stored keyframe (no tracking needed)
   via the existing Detector seam in `backfill.py`.
+- **Person-flicker false intrusions** (evidence: job 420 track 72 → event
+  #2369, priority-0.9 intrusion from a 5-frame night car→person
+  misclassification; unanimous track votes, so vote-share gates can't help).
+  Person events fire per-frame in `threats.py`, so a short misclassification
+  flicker passes motion+night gates. **Wait-and-see: check the triage verdict
+  on #2369 after tonight's phases 2-3 complete** — if LLM triage rejects it,
+  the pipeline works as designed and no change is warranted. If false
+  intrusions survive triage, the cheap gate is person persistence (require
+  ≥8 person-class frames on a track, ~0.25s, before it can flag intrusion;
+  optional detector-confidence floor). Effort: S.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 
