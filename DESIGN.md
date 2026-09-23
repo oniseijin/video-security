@@ -65,6 +65,36 @@ LLM Detail (Pass 2): multi-keyframe, only events escalated from Pass 1.
 Reports: timeline + plates catalog + events log + transcript export
 ```
 
+### System layout & data flow
+
+```mermaid
+flowchart LR
+    subgraph SYS["System disk · Apple M2 Pro"]
+        RT["installed runtime · ~/.local/opt/video-security<br>var/config.toml · SQLite catalog (WAL)"]
+        LLM["local LLM server · provider: ollama / mlx-serve<br>triage gemma3:4b · detail gemma4:12b"]
+        LOCAL["Apple Vision OCR · mlx-whisper · Silero VAD · ffmpeg · YOLO"]
+    end
+
+    subgraph HOTV["Artifact volume (hot)"]
+        CLIPS["clips/ by import date + mode + channel"]
+        EV["frames/job · plate crops · face crops · reports"]
+        PROXY["720p proxies (replace archived originals in place)"]
+    end
+
+    subgraph COLD["Cold tiers (priority list)"]
+        C1["primary · external disk"]
+        C2["secondary · Dropbox-synced (manual cloud tier)"]
+    end
+
+    SRC["sources · Mazda card · archives · Photos library"] -->|"vs import · hash dedup + verified copy + job registration"| CLIPS
+    CLIPS -->|"vs analyze · decode → prefilter → LLM triage/detail"| EV
+    RT -.-> LLM & LOCAL
+    CLIPS -->|"vs archive · transcode proxy + move original"| C1
+    C1 -->|"--relocate"| C2
+    C2 -.->|"--restore · bounded size-verified self-healing discovery"| CLIPS
+    EV -->|"vs report / vs serve (readonly WAL)"| USER["review · dashboard · search"]
+```
+
 ---
 
 ## Modules

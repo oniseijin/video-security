@@ -2,6 +2,17 @@
 
 A local, resumable CLI for overnight security camera / dashcam footage analysis on Apple Silicon. Cheap-first pipeline: dedup → CV prefilter → local LLM triage → detail.
 
+## Screenshots
+
+Reports and the web console share one design system (Person of Interest) with two themes — **Machine** (dark) and **Samaritan** (light):
+
+| Machine | Samaritan |
+|---|---|
+| [![report, machine theme](docs/images/report-top-machine.png)](docs/images/report-full-machine.png) | [![report, samaritan theme](docs/images/report-top-samaritan.png)](docs/images/report-full-samaritan.png) |
+| [![web console, machine theme](docs/images/web-dashboard-machine.png)](docs/images/web-dashboard-machine.png) | [![web console, samaritan theme](docs/images/web-dashboard-samaritan.png)](docs/images/web-dashboard-samaritan.png) |
+
+Every major visual element (report sections, job tabs, lightbox, playback, map) is in [docs/screenshots.md](docs/screenshots.md).
+
 ## Install
 
 Two ways:
@@ -67,6 +78,54 @@ SQLite DB at `~/.video-security/db`. Artifacts on external volume: `/Volumes/lac
 ## Pipeline Overview
 
 Single ffmpeg decode pass → motion + dHash + MOG2 dedup gate → OSD masking → CLAHE night enhancement → YOLO/ByteTrack vehicle + plate OCR consensus (Apple Vision) + person threat scoring + 30s scene-text OCR → audio: mlx-whisper + Silero VAD + RMS loudness events → NMEA G-sensor events (Mazda CX-8) → LLM triage (gemma3:4b, single keyframe) → detail (gemma4:12b, multi-keyframe + tile escalation). Reports are rendered separately on demand via `vs report`.
+
+```mermaid
+flowchart TD
+    subgraph SRC["Sources"]
+        CARD["SD card / archive folder"]
+        PHOTOS["Photos library (videos)"]
+    end
+
+    IMP["vs import · scan → hash dedup → verified copy → job"]
+    DB[("SQLite catalog")]
+    HOT[("Artifact volume · clips + keyframes + crops")]
+
+    CARD --> IMP
+    PHOTOS --> IMP
+    IMP --> DB
+    IMP --> HOT
+
+    subgraph AN["vs analyze · cheap-first, resumable"]
+        DECODE["single ffmpeg decode pass"]
+        GATE["motion + dHash + MOG2 dedup gate · OSD mask · CLAHE night boost"]
+        VEH["YOLO + ByteTrack · plate OCR consensus"]
+        PERSON["person threat scoring"]
+        SCENE["scene-text OCR → FTS"]
+        AUDIO["mlx-whisper + Silero VAD · loudness"]
+        GSEN["G-sensor events (NMEA)"]
+        T1["LLM triage · gemma3:4b · one keyframe"]
+        T2["LLM detail · gemma4:12b · multi-keyframe"]
+        DECODE --> GATE
+        GATE --> VEH & PERSON & SCENE
+        DECODE --> AUDIO
+        VEH & PERSON & SCENE & AUDIO & GSEN --> T1
+        T1 -->|escalated| T2
+    end
+
+    HOT --> AN
+    AN --> DB
+
+    REP["vs report · POI-themed HTML, on demand"]
+    WEB["vs serve · web console :8377"]
+    SEARCH["vs search · plates / text / transcripts"]
+    DB --> REP & WEB & SEARCH
+    HOT --> REP & WEB
+
+    ARCH["vs archive · 720p proxy in place, originals to cold"]
+    COLD[("cold dirs · primary → secondary → cloud tier")]
+    AN -->|done jobs| ARCH
+    ARCH --> COLD
+```
 
 ## Safety Rules (built-in, automatic)
 
