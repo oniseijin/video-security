@@ -9,8 +9,13 @@ local vision LLM for detailed analysis. All processing runs offline on Apple Sil
 
 **Hardware**: Apple M2 Pro, 16 GB unified memory, 10-core CPU.
 
-**Models**: gemma4:12b (detail pass), gemma3:4b (triage pass) — already installed.
-gemma4:12b vision capability must be verified before implementation.
+**Models**: triage gemma3:4b / detail gemma4:12b via Ollama, or the mlx_serve
+primaries — `mlx-community/gemma-4-e4b-it-4bit` (triage),
+`mlx-community/gemma-4-12b-it-4bit` (detail), and
+`mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` (embeddings). mlx_serve is the
+primary backend; `[llm] provider` selects it or "ollama" at config load, so
+switching is a one-line rollback. gemma4:12b vision capability must be verified
+before implementation.
 
 **Key design constraint**: only 39 GB free on system disk. All artifacts
 (keyframes, crops, reports) go to an optional external volume. System disk is
@@ -169,7 +174,8 @@ Gemma3:4b. ~6-8s per event. Only top-N events by score.
 Gemma4:12b. ~20-40s per event. Escalation ladder: whole event → tile (10-20%
 overlap mandatory) → merge/dedup. No temperature-boost retry.
 
-Per-row storage: model_digest (`ollama show`), prompt_version, raw_response (for
+Per-row storage: model_digest (provider model id; Ollama `ollama show` or the
+mlx_serve model name), prompt_version, raw_response (for
 re-parseability without re-inference).
 
 ### Module 4: Batch Engine
@@ -299,7 +305,7 @@ analysis_results(
     id INTEGER PRIMARY KEY,
     job_id INTEGER NOT NULL,
     event_id INTEGER NOT NULL,
-    model_digest TEXT NOT NULL,     -- ollama show output
+    model_digest TEXT NOT NULL,     -- provider model id (ollama show output or mlx_serve model name)
     prompt_version TEXT NOT NULL,
     analysis_type TEXT NOT NULL,     -- triage|detail|tiled|ocr_fallback
     raw_response TEXT NOT NULL,      -- original LLM JSON output
@@ -388,7 +394,10 @@ Node + npm are dev-only requirements for building the committed React bundle.
 - Apple M2 Pro, 16 GB unified memory, 10-core CPU
 - 39 GB free system disk (96% full)
 - Single machine, no distributed setup
-- Ollama models already installed: gemma4:12b (7.6 GB), gemma3:4b (3.3 GB)
+- Ollama models already installed: gemma4:12b (7.6 GB), gemma3:4b (3.3 GB);
+  mlx_serve (primary backend) serves
+  `mlx-community/gemma-4-e4b-it-4bit` + `mlx-community/gemma-4-12b-it-4bit`
+  with `--kv-quant 8`
 - qwen3:14b and qwen2.5-coder should be deleted (~10.3 GB reclaimed)
 - Secondary disk strongly recommended for artifacts
 
@@ -396,14 +405,16 @@ Node + npm are dev-only requirements for building the committed React bundle.
 
 1. **Sleep prevention**: `caffeinate -s -i` wrapper. AC-only.
 2. **Hard stage serialization**: never run two heavy stages concurrently.
-   **Single-model residency**: at most one Ollama model in memory at a
+   **Single-model residency**: at most one LLM model in memory at a
    time — the client evicts the previous model before generating with a
    different one (triage 4b → detail 12b swaps, never both resident;
    ~10 GB combined was contributing to memory-pressure kills on 16 GB).
-   `keep_alive: "30m"` sliding window keeps the active model warm between
-   sparse calls during a run; explicit unload of all used models when the
-   run ends (clean exit, Ctrl+C, or time budget) so nothing stays resident
-   after the tool exits. `num_ctx` capped: 2048 triage, 4096-8192 detail.
+   Ollama: `keep_alive: "30m"` sliding window keeps the active model warm
+   between sparse calls during a run; explicit unload of all used models
+   when the run ends (clean exit, Ctrl+C, or time budget) so nothing stays
+   resident after the tool exits. mlx_serve: single-model residency via
+   `--idle-evict-secs` on the server (`/v1/unload-model` from the client).
+   `num_ctx` capped: 2048 triage, 4096-8192 detail.
 3. **Disk preflight** ≥10 GB free + **runtime watermark** ≥5 GB.
    Frames never persisted to disk (streamed in memory). Only event keyframes
    (~3/event, JPEG q80, max width 1280px) + plate crops hit disk.
@@ -456,6 +467,12 @@ max_llm_events = 100                              # LLM budget circuit breaker
 retention_days = 30                               # prune disk + DB rows older than N days
 disk_preflight_gb = 10                            # system disk: refuse start below
 disk_watermark_gb = 5                             # system disk: checkpoint + abort below
+
+[llm]
+provider = "mlx-serve"                              # mlx-serve (primary) | ollama
+# ollama_url = "http://localhost:11434"
+# mlx_url = "http://127.0.0.1:11234"
+# Per-provider model overrides: [llm.triage.models] "mlx-serve" = "mlx-community/gemma-4-e4b-it-4bit"
 
 [llm.triage]
 model = "gemma3:4b"
@@ -542,15 +559,24 @@ cleanly. `--resume` after remount.
 
 ## Model Strategy
 
+- **Provider selection**: `[llm] provider = "mlx-serve"` (primary) or `"ollama"`;
+  `make_llm_client(cfg)` factory validates at load. Per-provider stage model
+  maps (`[llm.triage.models]`, `[llm.detail.models]`, `[llm.embed.models]`)
+  resolve the active provider's model at config load.
 - Lazy fetching — don't pull models at install. Config specifies per-stage models.
   Startup verifies presence, warns if missing. User pre-pulls.
-- Already installed: gemma4:12b (detail pass), gemma3:4b (triage pass)
+- Installed: Ollama gemma4:12b (detail pass), gemma3:4b (triage pass);
+  mlx_serve `mlx-community/gemma-4-e4b-it-4bit` (triage),
+  `mlx-community/gemma-4-12b-it-4bit` (detail),
+  `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` (embeddings)
 - `--only-llm` for re-running analysis with different models on existing prefilter
   output — prompt iteration without re-processing video
-- Model digest (`ollama show`) + prompt_version stored per analysis_result row
-- Single-model residency: one Ollama model resident at a time; the client
-  evicts the previous model on swap, keeps the active model warm via a 30m
-  sliding `keep_alive`, and unloads everything when the run ends
+- Model digest (provider model id; `ollama show` under Ollama, the mlx_serve
+  model name under mlx_serve) + prompt_version stored per analysis_result row
+- Single-model residency: one model resident at a time; the client
+   evicts the previous model on swap, keeps the active model warm via a 30m
+   sliding `keep_alive` (Ollama) or server-side `--idle-evict-secs` (mlx_serve),
+   and unloads everything when the run ends
 
 ---
 
@@ -769,7 +795,8 @@ refinements) are implemented and shipped in [Unreleased].
   embed once, numpy cosine over the table — thousands of rows
   brute-force in ms, no vector DB. Runs as a dedicated indexing pass
   (`vs index` / post-harvest hook) that respects single-model residency:
-  the embed model loads, generates, and unloads like any Ollama swap.
+  the embed model loads, generates, and unloads like any other model swap
+  (nomic-embed-text under Ollama; Qwen3-Embedding-0.6B under mlx_serve).
   Web search gains a semantic results group.
 - **Effort**: M
 - **Depends on**: value scales with R3's better descriptions
@@ -1289,7 +1316,8 @@ video_security/
 │   ├── threats.py    # person/motion/time scoring → events
 │   └── scenetext.py  # 1-per-30s Vision OCR sample
 ├── llm/
-│   ├── ollama.py     # client, retry/backoff, health check
+│   ├── ollama.py     # Ollama client, retry/backoff, health check
+│   ├── mlx_serve.py  # mlx_serve client (OpenAI-compatible, json_schema output)
 │   ├── prompts.py    # prompt templates + PROMPT_VERSION constants
 │   ├── triage.py     # pass 1
 │   └── detail.py     # pass 2 + escalation ladder
@@ -1302,7 +1330,9 @@ video_security/
 
 ### LLM Output Schema
 
-Ollama `format` parameter enforces structure. Triage response schema:
+Structure is enforced per provider: Ollama `format` parameter; mlx_serve
+`json_schema` structured output (both reject malformed responses the same
+way client-side). Triage response schema:
 
 ```json
 {
@@ -1323,14 +1353,18 @@ Detail response adds `evidence_rationale` (string) and `recommended_action`
 (enum: escalate|log_only|none). Any reported weapon goes in description text
 with "unverified" — never a dedicated field.
 
-### Ollama Retry Policy
+### LLM Retry Policy (both providers)
 
 - Timeout: 120s per request (triage), 300s (detail)
 - On timeout/5xx: exponential backoff 2s → 4s → 8s, max 3 attempts
 - On malformed JSON: one repair retry with "JSON only, no prose" instruction
 - After max attempts: event marked `failed`, job continues (no poison-pill loop)
-- Startup health check: ffmpeg present, Ollama reachable, configured models
-  present — fail fast with actionable error before touching video
+- Startup health check: ffmpeg present, the configured LLM backend (mlx_serve
+  or Ollama) reachable, configured models present — fail fast with actionable
+  error before touching video
+- mlx_serve specifics: memory-gate (4xx KV) responses trigger the detail
+  fallback to the triage model for the rest of the sweep (sticky),
+  `/v1/unload-model` for residency control
 
 ### Video Hash Method
 
@@ -1361,7 +1395,8 @@ new work. Default: 30 days.
 
 ## Testing Strategy
 
-- Mock Ollama server: ok, fail500, slow, trickle, junkonce modes.
+- Mock Ollama server (ok, fail500, slow, trickle, junkonce modes) and mock
+  mlx_serve (`tests/mock_mlx_serve.py`) for client tests.
 - Golden synthetic clip: car with known plate driving known path + static person.
   End-to-end asserts: plate correct, event bounds correct, static-person event
   survives dedup.
