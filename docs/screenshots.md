@@ -5,6 +5,13 @@ job (front/rear pair, GPS track, plates, transcript) in both themes:
 **Machine** (dark) and **Samaritan** (light). One design system drives both the
 HTML report and the web console (`report_theme.py` → `--vs-*` tokens).
 
+The captures are redacted for publishing: photographic content (keyframes,
+plate/face crops, map tiles, video) is blurred at capture time, and the shots
+are served from a scrubbed DB clone — plate numbers keep their prefecture
+ken but the rest is masked (`千葉■■■`), transcripts / scene OCR text /
+reverse-geocoded place names / LLM scene descriptions are replaced with
+`[redacted]`, and file paths are blurred. See `scripts/scrub_db.py`.
+
 Regenerate everything after design changes:
 
 ```bash

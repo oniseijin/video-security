@@ -1,7 +1,8 @@
 import { chromium } from "playwright"
-import { spawn } from "node:child_process"
-import { existsSync, mkdirSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import net from "node:net"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -11,6 +12,9 @@ const DEFAULT_CONFIG = path.join(
   ".local/opt/video-security/var/config.toml"
 )
 const VIEWPORT = { width: 1440, height: 900 }
+const REDACT_CSS =
+  "img, video, canvas, .leaflet-overlay-pane, .leaflet-marker-icon { filter: blur(14px) !important } " +
+  ".filepath, .path-note { filter: blur(5px) !important }"
 const REPORT_SECTIONS = [
   "Summary",
   "Timeline",
@@ -32,6 +36,8 @@ function parseArgs(argv) {
     baseUrl: null,
     only: null,
     themes: ["machine", "samaritan"],
+    redact: false,
+    db: null,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -41,9 +47,17 @@ function parseArgs(argv) {
     else if (a === "--base-url") opts.baseUrl = argv[++i]
     else if (a === "--only") opts.only = argv[++i]
     else if (a === "--themes") opts.themes = argv[++i].split(",")
+    else if (a === "--redact") opts.redact = true
+    else if (a === "--db") opts.db = argv[++i]
     else throw new Error(`unknown arg: ${a}`)
   }
   return opts
+}
+
+function dbPathFromConfig(configPath) {
+  const text = readFileSync(configPath, "utf8")
+  const m = text.match(/db_path\s*=\s*"([^"]+)"/)
+  return m ? m[1] : null
 }
 
 function freePort() {
@@ -60,22 +74,43 @@ function freePort() {
 async function startServer(opts) {
   const vs = path.join(ROOT, ".venv/bin/vs")
   if (!existsSync(vs)) throw new Error(`${vs} not found`)
+  const dbArgs = []
+  let scrubbed = null
+  if (opts.redact) {
+    const srcDb = opts.db ?? dbPathFromConfig(opts.config)
+    if (!srcDb) throw new Error("--redact needs --db or a db_path in the config")
+    scrubbed = path.join(os.tmpdir(), `vs-scrub-${Date.now()}.db`)
+    const py = path.join(ROOT, ".venv/bin/python")
+    const res = spawnSync(py, [path.join(ROOT, "scripts/scrub_db.py"), srcDb, scrubbed], {
+      encoding: "utf8",
+    })
+    if (res.status !== 0) throw new Error(`scrub_db.py failed: ${res.stderr}`)
+    console.log(`redact: scrubbed DB\n${res.stdout.trim()}`)
+    dbArgs.push("--db", scrubbed)
+  }
   const port = await freePort()
   const child = spawn(
     vs,
-    ["--config", opts.config, "serve", "--port", String(port)],
+    ["--config", opts.config, ...dbArgs, "serve", "--port", String(port)],
     { stdio: ["ignore", "pipe", "pipe"] }
   )
   const base = `http://127.0.0.1:${port}`
   const deadline = Date.now() + 30000
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${base}/api/health`)
-      if (r.ok) return { child, base }
-    } catch {}
-    await sleep(250)
+  try {
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch(`${base}/api/health`)
+        if (r.ok) return { child, base, scrubbed }
+      } catch {}
+      await sleep(250)
+    }
+  } catch (err) {
+    child.kill()
+    if (scrubbed) rmSync(scrubbed, { force: true })
+    throw err
   }
   child.kill()
+  if (scrubbed) rmSync(scrubbed, { force: true })
   throw new Error("vs serve did not become healthy")
 }
 
@@ -183,6 +218,20 @@ async function main() {
             localStorage.setItem("vs-faces", "on")
           } catch {}
         }, theme)
+        if (opts.redact) {
+          await context.addInitScript((css) => {
+            const style = document.createElement("style")
+            style.textContent = css
+            const apply = () => {
+              ;(document.head || document.documentElement).appendChild(style)
+            }
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", apply)
+            } else {
+              apply()
+            }
+          }, REDACT_CSS)
+        }
         const page = await context.newPage()
         page.setDefaultTimeout(30000)
         for (const shot of shots) {
@@ -233,7 +282,10 @@ async function main() {
     for (const f of captured) console.log(`  ok   ${f}`)
     for (const f of skipped) console.log(`  skip ${f}`)
   } finally {
-    if (spawned) spawned.child.kill()
+    if (spawned) {
+      spawned.child.kill()
+      if (spawned.scrubbed) rmSync(spawned.scrubbed, { force: true })
+    }
   }
 }
 
