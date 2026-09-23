@@ -1485,6 +1485,23 @@ tracking across jobs.
 - Run `vs index-faces` on the archive first — validates clustering quality
   on real data (faces across lighting/angles). Not during night batches:
   it writes rows while analyze holds the WAL write lock.
+  **Ran 2026-09-23: 0 faces registered — root cause found and fix
+  designed (below); re-run after the fix lands.**
+- **Quality-gate fix (validated, not yet applied)**:
+  `VNDetectFaceCaptureQualityRequest` returns zero results on this
+  macOS — verified on all 23 face crops AND full keyframes (request
+  "succeeds" with 0 observations). `VNDetectFaceRectanglesRequest`
+  still works on keyframes (1 face found) but 0/23 on tight crops
+  (face fills the frame; the detector can't lock). Measured: all crops
+  are 216-504 px with uniform sharpness (1.5-6.9 Laplacian variance
+  after upscale), so resolution is the honest usability gate. Fix:
+  in `register_face`, when `face_capture_quality` returns None, fall
+  back to a resolution gate — `min(image.shape[:2]) >= 48 px →
+  quality = 1.0`, else reject (`FALLBACK_MIN_CROP_PX = 48` constant in
+  identity.py) + a None-quality fallback test in tests/test_identity.py
+  (~4 lines + test; suite verified green with it applied). Keeps the
+  Vision quality path intact for macOS versions where the request
+  works.
 - `persons.name` column (existing ALTER TABLE pattern) + `vs person
   name|merge|move` CLI — the web console stays read-only (v1 design;
   click-to-tag would be the first deliberate web write path, later).
