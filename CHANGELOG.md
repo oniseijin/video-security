@@ -4,6 +4,20 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **Installer pins phase-1 YOLO weights**: ultralytics auto-downloads bare
+  model names (the `yolov8n` default) into the process cwd, so the weights
+  landed wherever the run happened to start (stray copies found in `~` and
+  `var/logs/`). `install.sh` now pre-downloads `yolov8n.pt` to
+  `<prefix>/var/models/` and pins `[prefilter] yolo_model` to that absolute
+  path in generated configs; offline installs skip the pin with a warning
+  (bare-name behavior preserved), and upgrades finding an unpinned config
+  print a hint with the exact lines to add. Existing installs can pin
+  manually the same way.
+
 ## [0.6.0] - 2026-09-22
 
 ### Fixed

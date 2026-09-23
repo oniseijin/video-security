@@ -9,6 +9,9 @@
 #                               artifact_dir -> the configured output volume)
 #   <prefix>/var/db             the sqlite catalog (migrated from
 #                               ~/.video-security on first install, original kept)
+#   <prefix>/var/models/        local model weights (yolov8n.pt); config.toml
+#                               pins [prefilter] yolo_model to the absolute path
+#                               so ultralytics never auto-downloads to the cwd
 #   <bin-dir>/vs, vs-analyze, vs-import, vs-search, vs-report, vs-list
 #                               wrappers that run the installed CLI with the var
 #                               config (so they use <prefix>/var/db and the
@@ -52,7 +55,7 @@ PURGE=0
 ASSUME_YES=0
 
 usage() {
-  sed -n '3,40p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,43p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -93,6 +96,8 @@ fi
 VENV="$PREFIX/venv"
 VAR="$PREFIX/var"
 MARKER="video-security-installer:prefix=$PREFIX"
+MODELS_DIR="$VAR/models"
+YOLO_WEIGHTS_URL="https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt"
 
 remove_file() {
   local f="$1"
@@ -170,13 +175,41 @@ mkdir -p "$VAR"
 touch "$VAR/.metadata_never_index"
 info "spotlight: $VAR excluded from indexing"
 
+# Phase-1 prefilter weights live in var/models and are pinned by absolute path
+# in config.toml: ultralytics auto-downloads bare model names (e.g. "yolov8n")
+# into the process cwd, littering whichever directory the run happened to start
+# in (seen 2026-09-23: copies landed in ~ and var/logs).
+mkdir -p "$MODELS_DIR"
+if [ -f "$MODELS_DIR/yolov8n.pt" ]; then
+  info "keeping $MODELS_DIR/yolov8n.pt"
+elif command -v curl >/dev/null 2>&1; then
+  info "downloading yolov8n.pt prefilter weights"
+  if curl -fsSL "$YOLO_WEIGHTS_URL" -o "$MODELS_DIR/yolov8n.pt.part" \
+      && [ -s "$MODELS_DIR/yolov8n.pt.part" ]; then
+    mv "$MODELS_DIR/yolov8n.pt.part" "$MODELS_DIR/yolov8n.pt"
+    info "saved $MODELS_DIR/yolov8n.pt"
+  else
+    rm -f "$MODELS_DIR/yolov8n.pt.part"
+    echo "warning: yolov8n.pt download failed (offline?); the generated config"
+    echo "         will not pin it, so the first phase-1 run auto-downloads it"
+    echo "         (re-run install.sh when online to get the pinned copy)"
+  fi
+else
+  echo "warning: curl not found; cannot pre-download yolov8n.pt"
+fi
+
+YOLO_PIN=""
+if [ -f "$MODELS_DIR/yolov8n.pt" ]; then
+  YOLO_PIN="$MODELS_DIR/yolov8n.pt"
+fi
+
 if [ ! -f "$VAR/config.toml" ]; then
   info "writing $VAR/config.toml"
-  "$VENV/bin/python" - "$VAR/config.toml" "$VAR/db" "$ARTIFACT_DIR" <<'PY'
+  "$VENV/bin/python" - "$VAR/config.toml" "$VAR/db" "$ARTIFACT_DIR" "$YOLO_PIN" <<'PY'
 import json
 import sys
 
-config_path, db_path, artifact_dir = sys.argv[1:4]
+config_path, db_path, artifact_dir, yolo_model = sys.argv[1:5]
 config = (
     "[storage]\n"
     f"db_path = {json.dumps(db_path)}\n"
@@ -185,11 +218,23 @@ config = (
     "[import]\n"
     "preflight_gb = 25\n"
 )
+if yolo_model:
+    config += (
+        "\n"
+        "[prefilter]\n"
+        "# absolute path so ultralytics never auto-downloads weights to the cwd\n"
+        f"yolo_model = {json.dumps(yolo_model)}\n"
+    )
 with open(config_path, "w") as f:
     f.write(config)
 PY
 else
   info "keeping existing $VAR/config.toml"
+  if [ -n "$YOLO_PIN" ] && ! grep -q 'yolo_model' "$VAR/config.toml"; then
+    echo "note: existing config has no yolo_model pin; consider adding:"
+    echo "        [prefilter]"
+    echo "        yolo_model = \"$YOLO_PIN\""
+  fi
 fi
 
 if [ ! -f "$VAR/db" ] && [ -f "$HOME/.video-security/db" ]; then
