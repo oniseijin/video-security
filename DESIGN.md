@@ -428,12 +428,12 @@ numbers live here — no hardcoded paths or thresholds in code.
 ```toml
 [storage]
 db_path = "~/.video-security/db"                  # SQLite (internal, fast)
-artifact_dir = "/Volumes/lacie8/Ryan/video/vs"    # persistent artifacts (external)
+artifact_dir = "/Volumes/lacie8/video/vs"    # persistent artifacts (external)
 staging_dir = null                                # optional local in-transit dir, cleaned per job
 
 [import]
 card_mount = "/Volumes/CX-8"                      # live card source
-archive_dirs = ["/Volumes/lacie8/Ryan/video/CX-8"]  # archived card copies
+archive_dirs = ["/Volumes/lacie8/video/CX-8"]  # archived card copies
 preflight_gb = 25                                 # artifact_dir free space required
 
 [adapter.mazda_cx8]
@@ -674,9 +674,9 @@ every few days. Never process from the card — import first:
 vs-import <source>
   <source> is either:
     - a live card mount (e.g. /Volumes/CX-8), or
-    - an archived card copy (e.g. /Volumes/lacie8/Ryan/video/CX-8/20250923)
+     - an archived card copy (e.g. /Volumes/lacie8/video/CX-8/20250923)
       — identical MODE layout, optionally wrapped in date folders
-      (vs-import /Volumes/lacie8/Ryan/video/CX-8 recurses all date subfolders)
+       (vs-import /Volumes/lacie8/video/CX-8 recurses all date subfolders)
 
   1. Preflight: artifact_dir mounted, ≥ [import] preflight_gb free
   2. Scan source with mazda_cx8 adapter → clip list with front/rear pairs
@@ -690,7 +690,7 @@ vs-import <source>
   7. Card can be ejected immediately after import — processing happens later
 ```
 
-First import target: existing archive at `/Volumes/lacie8/Ryan/video/CX-8/`
+First import target: existing archive at `/Volumes/lacie8/video/CX-8/`
 (14 GB, 574 files, full card copies incl. REAR + System + NMEA).
 
 Loop-recording makes frequent imports matter: the card is always near-full, so

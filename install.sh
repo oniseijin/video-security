@@ -26,7 +26,7 @@
 #
 # The prefix defaults to ~/.local/opt/video-security; the bin dir defaults to
 # ~/.local/bin. The artifact (output) dir defaults to
-# /Volumes/lacie8/Ryan/video/vs and can be set with --artifact-dir.
+# /Volumes/lacie8/video/vs and can be set with --artifact-dir.
 #
 # Wrappers are created for every entry point declared in pyproject.toml, so a
 # future entry point is picked up automatically. All entry points accept the
@@ -90,7 +90,7 @@ if [ -z "$BIN_DIR" ]; then
   if [ "$(id -u)" -eq 0 ]; then BIN_DIR="/usr/local/bin"; else BIN_DIR="$HOME/.local/bin"; fi
 fi
 if [ -z "$ARTIFACT_DIR" ]; then
-  ARTIFACT_DIR="/Volumes/lacie8/Ryan/video/vs"
+  ARTIFACT_DIR="/Volumes/lacie8/video/vs"
 fi
 
 VENV="$PREFIX/venv"

@@ -34,7 +34,7 @@ def test_defaults() -> None:
 
     assert isinstance(cfg.import_, ImportConfig)
     assert cfg.import_.card_mount == "/Volumes/CX-8"
-    assert cfg.import_.archive_dirs == ["/Volumes/lacie8/Ryan/video/CX-8"]
+    assert cfg.import_.archive_dirs == ["/Volumes/lacie8/video/CX-8"]
     assert cfg.import_.preflight_gb == 25
 
     assert isinstance(cfg.adapter_mazda_cx8, MazdaCx8Config)

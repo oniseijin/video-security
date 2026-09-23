@@ -1,11 +1,11 @@
 [storage]
 db_path = "~/.video-security/db"
-artifact_dir = "/Volumes/lacie8/Ryan/video/vs"
+artifact_dir = "/Volumes/lacie8/video/vs"
 # staging_dir = null  (optional local in-transit dir)
 
 [import]
 card_mount = "/Volumes/CX-8"
-archive_dirs = ["/Volumes/lacie8/Ryan/video/CX-8"]
+archive_dirs = ["/Volumes/lacie8/video/CX-8"]
 preflight_gb = 25
 
 [adapter.mazda_cx8]

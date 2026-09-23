@@ -39,7 +39,7 @@ class StorageConfig:
 class ImportConfig:
     card_mount: str = "/Volumes/CX-8"
     archive_dirs: list[str] = dataclasses.field(
-        default_factory=lambda: ["/Volumes/lacie8/Ryan/video/CX-8"]
+        default_factory=lambda: ["/Volumes/lacie8/video/CX-8"]
     )
     preflight_gb: int = 25
 
