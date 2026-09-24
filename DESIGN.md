@@ -1439,8 +1439,14 @@ Not in scope for current phases; captured so the intent isn't lost.
 Reviewed real phase-1 output; three linked follow-ups, deferred until the
 night batches finish. Phases 2-3 completed 2026-09-23 17:05 and the
 triage verdict on #2369 resolved the flicker wait-and-see (below); a
-2026-09-24 post-run DB review added three operational items. All items
-now actionable — implement after 2026-09-24.
+2026-09-24 post-run DB review added three operational items. The
+2026-09-24 daily + nightly sweeps then finished the entire catalog —
+all 460 jobs `done`, 0 pending events, 0 failed — closing two of the
+operational items (failed pair, orphaned events) on their own. What
+remains is all actionable; suggested order: person-persistence gate →
+`vs event suppress` → auto-repair loud bail + `[repair] untrunc_path` →
+JP plate crops → plate→source jump → person+animal boxes (face naming
+in parallel per its own section below).
 
 - **JP-aware plate crops** (small, hours). The saved plate crop
   (`pipeline.py` crop block, ~line 505) is the OCR text bbox + uniform 15%
@@ -1500,7 +1506,12 @@ now actionable — implement after 2026-09-24.
   5-frame flicker track → no events; 8-frame track → event; None-track
   exemption; conf-floor counting. Validation: next night batch (the gate
   is prefilter-stage; job 420's stored events are not rewritten — suppress
-  manually, next item).
+  manually, next item). **Update 2026-09-25**: the 2026-09-24 sweeps
+  analyzed the whole archive, so no stored footage is left to validate
+  against — validation is now the next import batch. Scale check: 715
+  priority-0.85+ intrusion events across 111 jobs (not just job 420's
+  11), all still `detailed`/unsuppressed — the gate plus the suppress
+  CLI are the top two items.
 - **`vs event suppress` CLI** (S). The only suppress path today is triage
   returning `relevant: false` (`pipeline.py:831`). Confirmed false positives
   that survive triage — job 420's 11 flicker intrusions — need a manual
@@ -1515,7 +1526,11 @@ now actionable — implement after 2026-09-24.
   `load_llm_events(status="pending")` path per job, exposed as
   `vs run --retriage-done`) or accept pending as terminal for the
   pre-sweep era — decide by whether reports render them as actionable
-  (they show as untriaged today).
+  (they show as untriaged today). **Resolved 2026-09-24**: the 23:00
+  nightly's phase-2 sweep picked up all 8 jobs still holding pending
+  events (29, 30, 37, 38, 39, 63, 109, 122 — they re-entered the walk as
+  `harvested`) and triaged + detailed them. 0 pending events remain;
+  no `--retriage-done` machinery was needed.
 - **Failed pair 421/422** (front+rear `260919182512.MP4`, 2026-09-20
   import; 3 attempts, failed at stage `pending` with no evidence
   recorded). Probed 2026-09-24: both files are moov-less (40 MiB each,
@@ -1524,6 +1539,8 @@ now actionable — implement after 2026-09-24.
   repaired 2026-09-24** (`vs repair --job 421 422`): untrunc recovered
   ~47s per side into `*.repaired.MP4` next to the originals; jobs
   repointed and requeued (pending, attempts reset) for the next sweep.
+  **Closed 2026-09-24**: the daily sweep processed both repaired files
+  through phases 2-3 (2 events each); both jobs are `done`.
 - **Auto-repair never fires under cron** (root cause found 2026-09-24;
   fix warranted). The cron wrappers export
   `PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin`
@@ -1544,7 +1561,9 @@ now actionable — implement after 2026-09-24.
   depend on the launcher environment; (3) optionally append
   `$HOME/.local/bin` to the wrapper PATH exports (machine-local files,
   not repo). Tests: monkeypatched `shutil.which` → None asserts the
-  skip message; config-path override bypasses PATH entirely.
+  skip message; config-path override bypasses PATH entirely. Not
+  exercised by the 2026-09-24 sweeps (no corrupt imports; the 421/422
+  recovery was manual) — fix stays warranted but unvalidated in-run.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 
