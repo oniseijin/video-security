@@ -32,6 +32,7 @@ export function EventDetailRoute() {
     url: kf.url,
     raw_url: kf.raw_url,
     faces: kf.faces,
+    boxes: kf.boxes,
     caption: `${data.event_type} // ${fmtSec(data.start_sec)} // frame ${i + 1}`,
   }))
 

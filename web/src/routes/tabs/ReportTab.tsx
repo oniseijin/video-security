@@ -17,6 +17,14 @@ function syncFrame(frame: HTMLIFrameElement | null): void {
     "hide-faces",
     document.body.classList.contains("hide-faces")
   )
+  doc.body.classList.toggle(
+    "hide-persons",
+    document.body.classList.contains("hide-persons")
+  )
+  doc.body.classList.toggle(
+    "hide-animals",
+    document.body.classList.contains("hide-animals")
+  )
 }
 
 export function ReportTab({ jobId }: { jobId: number }) {

@@ -141,11 +141,18 @@ export interface EventSummary {
   plate_norm: string | null
 }
 
+export interface EventKeyframeBox {
+  kind: "person" | "animal"
+  track_id: number | null
+  box: number[]
+}
+
 export interface EventKeyframe {
   url: string
   raw_url: string | null
   faces: number[][]
   face_crops: string[]
+  boxes: EventKeyframeBox[]
 }
 
 export interface EventPlate {

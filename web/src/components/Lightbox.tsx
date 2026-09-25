@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { EventKeyframeBox } from "../api"
+import { BoxOverlay } from "./BoxOverlay"
 import { FaceBoxes, toFaceBoxes } from "./FaceBoxes"
 
 export interface LightboxFrame {
   url: string
   faces: number[][]
+  boxes?: EventKeyframeBox[]
   caption: string
   rects?: number[][]
 }
@@ -149,6 +152,7 @@ export function Lightbox({ frames, index, onIndex, onClose }: LightboxProps) {
             src={frame.url}
           />
           <FaceBoxes boxes={toFaceBoxes(frame.faces)} />
+          <BoxOverlay boxes={frame.boxes} />
           {frame.rects ? (
             <FaceBoxes className="plate-box" boxes={toFaceBoxes(frame.rects)} />
           ) : null}

@@ -153,6 +153,8 @@ body::after {
 .face-toggle.off { color: var(--vs-ink-faint); border-style: dashed; }
 
 body.hide-faces .face-box { display: none; }
+body.hide-persons .person-box { display: none; }
+body.hide-animals .animal-box { display: none; }
 
 
 .flag {
@@ -304,6 +306,36 @@ body.hide-faces .face-box { display: none; }
   pointer-events: none;
 }
 .plate-box::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--vs-accent);
+  border-left: 2px solid var(--vs-accent);
+}
+.person-box {
+  position: absolute;
+  border: 2px solid var(--vs-warning);
+  pointer-events: none;
+}
+.person-box::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--vs-accent);
+  border-left: 2px solid var(--vs-accent);
+}
+.animal-box {
+  position: absolute;
+  border: 2px solid var(--vs-success);
+  pointer-events: none;
+}
+.animal-box::after {
   content: '';
   position: absolute;
   top: -2px;

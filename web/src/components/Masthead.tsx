@@ -1,4 +1,5 @@
 import { FacesToggle } from "./FacesToggle"
+import { OverlayToggle } from "./OverlayToggle"
 import { SearchBox } from "./SearchBox"
 import { ThemeToggle } from "./ThemeToggle"
 
@@ -11,6 +12,8 @@ export function Masthead() {
         <SearchBox />
         <ThemeToggle />
         <FacesToggle />
+        <OverlayToggle bodyClass="hide-persons" label="Persons" storageKey="vs-persons" />
+        <OverlayToggle bodyClass="hide-animals" label="Animals" storageKey="vs-animals" />
       </div>
     </header>
   )

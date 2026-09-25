@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react"
 import { Lightbox } from "./Lightbox"
 import type { LightboxFrame } from "./Lightbox"
+import type { EventKeyframeBox } from "../api"
+import { BoxOverlay } from "./BoxOverlay"
 import { FaceBoxes, toFaceBoxes } from "./FaceBoxes"
 
 export interface FilmFrame {
   url: string
   raw_url?: string | null
   faces: number[][]
+  boxes?: EventKeyframeBox[]
   caption: string
 }
 
@@ -57,6 +60,7 @@ export function Filmstrip({ frames, allowRaw = false }: FilmstripProps) {
   const lightboxFrames: LightboxFrame[] = frames.map((f) => ({
     url: raw && allowRaw && f.raw_url ? f.raw_url : f.url,
     faces: f.faces,
+    boxes: f.boxes,
     caption: f.caption,
   }))
   const hasRaw = allowRaw && frames.some((f) => f.raw_url)
@@ -74,6 +78,7 @@ export function Filmstrip({ frames, allowRaw = false }: FilmstripProps) {
             src={src}
           />
           <FaceBoxes boxes={toFaceBoxes(frame.faces)} />
+          <BoxOverlay boxes={frame.boxes} />
         </div>
       </figure>
       <div className="filmstrip-controls">
