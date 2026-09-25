@@ -4,9 +4,14 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
-## [Unreleased]
+## [0.7.0] - 2026-09-25
 
 ### Added
+
+- **Animals page (web)**: nav-level gallery of every event whose
+  keyframes contain animal detections — full keyframe thumbnails with
+  the green animal overlay, animal count + recorded date, links into
+  event detail; `/api/animals` behind it (job filter, pagination).
 
 - **Person + animal boxes on keyframes, toggleable**: dog/cat (COCO
   16/17) join the default YOLO classes; events persist `boxes_json`
