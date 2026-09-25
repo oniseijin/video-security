@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from video_security.backfill import (
+    backfill_event_boxes,
     backfill_face_crops,
     backfill_plate_crops,
     read_frame,
@@ -258,6 +259,62 @@ def test_backfill_face_crops_no_faces(tmp_path: Path) -> None:
     cfg = _faces_config(tmp_path)
     report = backfill_face_crops(conn, cfg)
     assert report.attempted == 0
+    conn.close()
+
+
+def test_backfill_event_boxes(tmp_path: Path) -> None:
+    db_path = _seed_faces(tmp_path, with_faces=False)
+    conn = connect(str(db_path))
+    cfg = _faces_config(tmp_path)
+
+    def detect(_img: np.ndarray) -> list[Detection]:
+        return [
+            Detection(track_id=3, class_id=0, bbox=(60, 40, 180, 200), conf=0.9),
+            Detection(track_id=4, class_id=16, bbox=(300, 200, 480, 320), conf=0.8),
+            Detection(track_id=5, class_id=2, bbox=(0, 0, 100, 100), conf=0.95),
+        ]
+
+    report = backfill_event_boxes(conn, cfg, detector=detect)
+    assert report.attempted == 1
+    assert report.written == 1
+    assert report.failed == 0
+    row = conn.execute(
+        "SELECT boxes_json FROM events WHERE id = 10"
+    ).fetchone()
+    data = json.loads(row["boxes_json"])
+    assert len(data) == 1
+    kinds = [e["kind"] for e in data[0]]
+    assert kinds == ["person", "animal"]
+    assert data[0][0]["track_id"] == 3
+    assert data[0][0]["box"] == pytest.approx(
+        [60 / 600, 40 / 400, 120 / 600, 160 / 400]
+    )
+    assert data[0][1]["track_id"] == 4
+    assert data[0][1]["box"] == pytest.approx(
+        [300 / 600, 200 / 400, 180 / 600, 120 / 400]
+    )
+    second = backfill_event_boxes(conn, cfg, detector=detect)
+    assert second.attempted == 0
+    assert second.written == 0
+    conn.close()
+
+
+def test_backfill_event_boxes_skips_when_empty(tmp_path: Path) -> None:
+    db_path = _seed_faces(tmp_path, with_faces=False)
+    conn = connect(str(db_path))
+    cfg = _faces_config(tmp_path)
+
+    def detect(_img: np.ndarray) -> list[Detection]:
+        return [Detection(track_id=5, class_id=2, bbox=(0, 0, 100, 100), conf=0.95)]
+
+    report = backfill_event_boxes(conn, cfg, detector=detect)
+    assert report.attempted == 1
+    assert report.written == 0
+    assert report.skipped == 1
+    row = conn.execute(
+        "SELECT boxes_json FROM events WHERE id = 10"
+    ).fetchone()
+    assert json.loads(row["boxes_json"]) == [[]]
     conn.close()
 
 

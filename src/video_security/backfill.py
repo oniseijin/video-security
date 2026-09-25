@@ -6,6 +6,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -26,6 +27,7 @@ from video_security.prefilter.plates import (
 from video_security.prefilter.vehicles import (
     VEHICLE_CLASSES,
     Detection,
+    box_kind,
     crop_vehicle,
     load_detector,
 )
@@ -311,6 +313,81 @@ def backfill_face_crops(
                     wrote += 1
         if wrote > 0:
             report.written += wrote
+        else:
+            report.skipped += 1
+    return report
+
+
+def backfill_event_boxes(
+    conn: sqlite3.Connection,
+    config: Config,
+    limit: int | None = None,
+    detector: Detector | None = None,
+) -> BackfillReport:
+    from video_security import db as vsdb
+
+    if detector is None:
+        detector = load_detector(config)
+    rows = conn.execute(
+        "SELECT e.id, e.job_id, e.keyframes_json FROM events e "
+        "WHERE e.keyframes_json != '[]' AND e.boxes_json IS NULL "
+        "ORDER BY e.job_id, e.id"
+    ).fetchall()
+    if limit is not None:
+        rows = rows[: max(0, limit)]
+    report = BackfillReport(attempted=len(rows))
+    for row in rows:
+        event_id = int(row["id"])
+        try:
+            kf_paths = json.loads(row["keyframes_json"])
+        except (json.JSONDecodeError, TypeError):
+            report.failed += 1
+            report.failures.append(f"event {event_id}: unparsable keyframes json")
+            continue
+        if not isinstance(kf_paths, list):
+            report.failed += 1
+            report.failures.append(f"event {event_id}: unexpected shape")
+            continue
+        boxes_per_kf: list[list[dict[str, Any]]] = []
+        found_any = False
+        for path_str in kf_paths:
+            kf_boxes: list[dict[str, Any]] = []
+            p = Path(str(path_str))
+            img = None
+            if p.is_file():
+                img = cv2.imdecode(
+                    np.frombuffer(p.read_bytes(), dtype=np.uint8), cv2.IMREAD_COLOR
+                )
+            if img is not None:
+                ih, iw = img.shape[:2]
+                for det in detector(img):
+                    kind = box_kind(det.class_id)
+                    if kind is None:
+                        continue
+                    x1 = max(0, det.bbox[0])
+                    y1 = max(0, det.bbox[1])
+                    x2 = min(iw, det.bbox[2])
+                    y2 = min(ih, det.bbox[3])
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+                    kf_boxes.append(
+                        {
+                            "kind": kind,
+                            "track_id": det.track_id,
+                            "box": [
+                                x1 / iw,
+                                y1 / ih,
+                                (x2 - x1) / iw,
+                                (y2 - y1) / ih,
+                            ],
+                        }
+                    )
+            if kf_boxes:
+                found_any = True
+            boxes_per_kf.append(kf_boxes)
+        vsdb.update_event_boxes(conn, event_id, json.dumps(boxes_per_kf))
+        if found_any:
+            report.written += 1
         else:
             report.skipped += 1
     return report

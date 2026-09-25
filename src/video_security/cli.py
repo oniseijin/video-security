@@ -722,8 +722,13 @@ def backfill_media_cmd(
     limit: int | None = typer.Option(None, "--limit", help="Max plates to process"),  # noqa: B008
     detect_faces: bool = typer.Option(False, "--detect-faces", help="Run face detection on keyframes of events without face data"),  # noqa: B008, E501
     regenerate: bool = typer.Option(False, "--regenerate", help="Re-crop plates that already have crops (after changing [prefilter] plate_crop_pad)"),  # noqa: B008, E501
+    boxes: bool = typer.Option(False, "--boxes", help="Detect person/animal boxes on stored keyframes of events without box data"),  # noqa: B008, E501
 ) -> None:
-    from video_security.backfill import backfill_face_crops, backfill_plate_crops
+    from video_security.backfill import (
+        backfill_event_boxes,
+        backfill_face_crops,
+        backfill_plate_crops,
+    )
 
     conn, cfg = _get_db(ctx)
     try:
@@ -745,6 +750,15 @@ def backfill_media_cmd(
         )
         for failure in face_report.failures:
             print(f"  {failure}")
+        if boxes:
+            box_report = backfill_event_boxes(conn, cfg, limit=limit)
+            print(
+                f"event boxes: events {box_report.attempted}, "
+                f"written {box_report.written}, skipped {box_report.skipped}, "
+                f"failed {box_report.failed}"
+            )
+            for failure in box_report.failures:
+                print(f"  {failure}")
     finally:
         conn.close()
 
