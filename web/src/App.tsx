@@ -1,4 +1,5 @@
 import { Route, Routes } from "react-router-dom"
+import { Animals } from "./routes/Animals"
 import { Breadcrumbs, CrumbProvider } from "./components/Breadcrumbs"
 import { Masthead } from "./components/Masthead"
 import { Nav } from "./components/Nav"
@@ -36,6 +37,7 @@ export function App() {
             <Route path="/plates" element={<Plates />} />
             <Route path="/plates/:norm" element={<PlateDetailRoute />} />
             <Route path="/faces" element={<Faces />} />
+            <Route path="/animals" element={<Animals />} />
             <Route path="/persons" element={<Persons />} />
             <Route path="/persons/:id" element={<PersonDetailRoute />} />
             <Route path="/search" element={<Search />} />

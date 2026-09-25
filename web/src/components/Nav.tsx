@@ -7,6 +7,7 @@ const LINKS = [
   { to: "/timeline", label: "Timeline" },
   { to: "/plates", label: "Plates" },
   { to: "/faces", label: "Faces" },
+  { to: "/animals", label: "Animals" },
   { to: "/persons", label: "Persons" },
 ]
 

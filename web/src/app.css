@@ -677,6 +677,11 @@ a.count-chip:hover {
   object-fit: cover;
 }
 
+.face-gallery .face-card.animal-card img {
+  height: auto;
+  object-fit: contain;
+}
+
 .date-strip {
   display: flex;
   gap: 0.3rem;

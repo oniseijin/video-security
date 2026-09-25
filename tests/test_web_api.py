@@ -469,6 +469,23 @@ def test_faces_gallery(base_url: str) -> None:
     assert filtered["total"] == 0
 
 
+def test_animals_gallery(base_url: str) -> None:
+    data = _get_json(f"{base_url}/api/animals")
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["event_id"] == 10
+    assert item["job_id"] == 1
+    assert item["event_type"] == "plate_capture"
+    assert len(item["keyframes"]) == 1
+    kf = item["keyframes"][0]
+    assert kf["url"] == "/media/frames/1/event_10_0.jpg"
+    assert kf["boxes"] == [
+        {"kind": "animal", "track_id": 9, "box": [0.6, 0.4, 0.2, 0.2]}
+    ]
+    filtered = _get_json(f"{base_url}/api/animals?job_id=2")
+    assert filtered["total"] == 0
+
+
 def test_stats_faces(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/stats")
     assert data["faces"] == 2

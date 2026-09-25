@@ -467,6 +467,32 @@ export function fetchFaces(params: URLSearchParams): Promise<FacesPage> {
   return fetchJson<FacesPage>(`/api/faces?${params.toString()}`)
 }
 
+export interface AnimalKeyframe {
+  url: string
+  boxes: EventKeyframeBox[]
+}
+
+export interface AnimalSighting {
+  job_id: number
+  event_id: number
+  event_type: string
+  tone: Tone
+  recorded_at: string | null
+  start_sec: number
+  keyframes: AnimalKeyframe[]
+}
+
+export interface AnimalsPage {
+  items: AnimalSighting[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function fetchAnimals(params: URLSearchParams): Promise<AnimalsPage> {
+  return fetchJson<AnimalsPage>(`/api/animals?${params.toString()}`)
+}
+
 export interface PersonSummary {
   person_id: number
   name: string | null

@@ -1081,6 +1081,78 @@ def job_transcript(
     return {"items": items}
 
 
+def animals(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    where = ["e.boxes_json LIKE '%\"animal\"%'"]
+    args: list[Any] = []
+    if params.get("job_id"):
+        where.append("e.job_id = ?")
+        args.append(int(params["job_id"]))
+    rows = conn.execute(
+        "SELECT e.id, e.job_id, e.event_type, e.start_sec, e.boxes_json, "
+        "e.keyframes_json, j.recording_start_utc "
+        "FROM events e JOIN jobs j ON j.id = e.job_id "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY j.recording_start_utc DESC, e.id DESC LIMIT 5000",
+        args,
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            boxes_data = json.loads(row["boxes_json"])
+            kf_paths = (
+                json.loads(row["keyframes_json"]) if row["keyframes_json"] else []
+            )
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(boxes_data, list) or not isinstance(kf_paths, list):
+            continue
+        kfs: list[dict[str, Any]] = []
+        for i in range(min(len(boxes_data), len(kf_paths))):
+            group = boxes_data[i] if isinstance(boxes_data[i], list) else []
+            animal_boxes = [
+                {
+                    "kind": b["kind"],
+                    "track_id": b.get("track_id"),
+                    "box": b["box"],
+                }
+                for b in group
+                if isinstance(b, dict)
+                and b.get("kind") == "animal"
+                and isinstance(b.get("box"), list)
+                and len(b["box"]) == 4
+            ]
+            if not animal_boxes:
+                continue
+            kfs.append(
+                {
+                    "url": _frames_url(str(kf_paths[i])),
+                    "boxes": animal_boxes,
+                }
+            )
+        if not kfs:
+            continue
+        items.append(
+            {
+                "job_id": int(row["job_id"]),
+                "event_id": int(row["id"]),
+                "event_type": str(row["event_type"]),
+                "tone": event_tone(str(row["event_type"])),
+                "recorded_at": _iso(row["recording_start_utc"]),
+                "start_sec": float(row["start_sec"]),
+                "keyframes": kfs,
+            }
+        )
+    limit, offset = _limit_offset(params)
+    return {
+        "items": items[offset : offset + limit],
+        "total": len(items),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 def search(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1766,6 +1838,7 @@ def api_routes() -> list[Route]:
         ("GET", "/api/persons/{id}", person_detail),
         ("GET", "/api/people/tracks", people_tracks),
         ("GET", "/api/faces", faces),
+        ("GET", "/api/animals", animals),
         ("GET", "/api/search", search),
         ("GET", "/api/map/recent", map_recent),
         ("GET", "/api/days", days),
