@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { fetchJobPlates } from "../../api"
 import type { JobPlatesPage } from "../../api"
+import { PlateCrop } from "../../components/PlateCrop"
 import { TerminalNote } from "../../components/TerminalNote"
 import { fmtSec } from "../../format"
 
@@ -60,11 +61,11 @@ export function PlatesTab({ jobId }: { jobId: number }) {
               <td>{fmtSec(plate.read_at_sec)}</td>
               <td>
                 {plate.crop_url ? (
-                  <img
+                  <PlateCrop
                     alt={`plate ${plate.norm_text ?? plate.track_id} crop`}
-                    className="thumb"
-                    loading="lazy"
-                    src={plate.crop_url}
+                    cropBox={plate.crop_box}
+                    cropSrcUrl={plate.crop_src_url}
+                    cropUrl={plate.crop_url}
                   />
                 ) : (
                   "—"

@@ -169,6 +169,24 @@ def _plate_media_url(path_str: str | None) -> str | None:
     return f"/media/plates/{p.parent.name}/{p.name}"
 
 
+def _plate_src_fields(crop_src: str | None, crop_box: str | None) -> dict[str, Any]:
+    box: list[float] | None = None
+    if crop_box:
+        try:
+            parsed = json.loads(crop_box)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if isinstance(parsed, list) and len(parsed) == 4:
+            try:
+                box = [float(v) for v in parsed]
+            except (TypeError, ValueError):
+                box = None
+    return {
+        "crop_src_url": _frames_url(crop_src) if crop_src else None,
+        "crop_box": box,
+    }
+
+
 def _faces_list(evt: sqlite3.Row) -> list[list[list[float]]]:
     raw = evt["faces_json"]
     if not raw:
@@ -683,6 +701,7 @@ def event_detail(
                     "ken_en": ken[1] if ken else None,
                     "crop_url": _plate_media_url(pr["crop_path"]),
                     "event_id": int(ev["id"]) if ev is not None else None,
+                    **_plate_src_fields(pr["crop_src"], pr["crop_box"]),
                 }
             )
     transcript_window = [
@@ -801,6 +820,7 @@ def job_plates(
                 "read_at_sec": read_at,
                 "crop_url": _plate_media_url(pr["crop_path"]),
                 "event_id": int(ev["id"]) if ev is not None else None,
+                **_plate_src_fields(pr["crop_src"], pr["crop_box"]),
             }
         )
     return {"items": items}
@@ -832,7 +852,8 @@ def plates_gallery(
     for row in rows:
         norm = str(row["norm_text"])
         crop = conn.execute(
-            "SELECT crop_path FROM plates WHERE norm_text = ? AND crop_path IS NOT NULL "
+            "SELECT crop_path, crop_src, crop_box FROM plates "
+            "WHERE norm_text = ? AND crop_path IS NOT NULL "
             "LIMIT 1",
             (norm,),
         ).fetchone()
@@ -848,6 +869,11 @@ def plates_gallery(
                 "jobs": [int(r["job_id"]) for r in job_rows],
                 "first_seen": _iso(row["first_seen"]),
                 "last_seen": _iso(row["last_seen"]),
+                **(
+                    _plate_src_fields(crop["crop_src"], crop["crop_box"])
+                    if crop
+                    else {"crop_src_url": None, "crop_box": None}
+                ),
             }
         )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
@@ -887,6 +913,7 @@ def plate_detail(
                 "recorded_at": _iso(pr["recording_start_utc"]),
                 "crop_url": _plate_media_url(pr["crop_path"]),
                 "event_id": int(ev["id"]) if ev is not None else None,
+                **_plate_src_fields(pr["crop_src"], pr["crop_box"]),
             }
         )
     ken = ken_for_plate(norm)
@@ -1032,9 +1059,11 @@ def search(
             "raw_text": r["raw_text"],
             "confidence": r["confidence"],
             "crop_url": _plate_media_url(r["crop_path"]),
+            **_plate_src_fields(r["crop_src"], r["crop_box"]),
         }
         for r in conn.execute(
-            "SELECT job_id, track_id, norm_text, raw_text, confidence, crop_path "
+            "SELECT job_id, track_id, norm_text, raw_text, confidence, crop_path, "
+            "crop_src, crop_box "
             "FROM plates WHERE norm_text LIKE ? OR raw_text LIKE ? LIMIT 50",
             (f"%{q}%", f"%{q}%"),
         )
@@ -1585,7 +1614,7 @@ def analytics_plates(
 ) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT p.norm_text, p.raw_text, p.confidence, p.job_id, "
-        "p.crop_path, j.recording_start_utc "
+        "p.crop_path, p.crop_src, p.crop_box, j.recording_start_utc "
         "FROM plates p JOIN jobs j ON j.id = p.job_id "
         "ORDER BY p.norm_text, j.recording_start_utc"
     ).fetchall()
@@ -1604,6 +1633,8 @@ def analytics_plates(
                 "first_job": None,
                 "last_job": None,
                 "crop_url": None,
+                "crop_src_url": None,
+                "crop_box": None,
             },
         )
         g["count"] += 1
@@ -1616,6 +1647,11 @@ def analytics_plates(
                     m = re.match(r"^.*?/plates/(\d+)/(.+)$", cp)
                     if m:
                         g["crop_url"] = f"/media/plates/{m.group(1)}/{m.group(2)}"
+            if r["crop_src"]:
+                sp = str(r["crop_src"])
+                if Path(sp).is_file():
+                    g["crop_src_url"] = _frames_url(sp)
+                    g["crop_box"] = _plate_src_fields(r["crop_src"], r["crop_box"])["crop_box"]
         rec = _iso(r["recording_start_utc"])
         if g["first_seen"] is None or (rec is not None and rec < g["first_seen"]):
             g["first_seen"] = rec

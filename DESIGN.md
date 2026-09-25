@@ -1482,6 +1482,15 @@ in parallel per its own section below).
   source keyframe with the plate rect highlighted. Report: same treatment
   in the report lightbox (`report_theme.py`). Backfill: derive for old rows
   from `ocr_votes_json.best` via the same machinery as the crop regen.
+  **Implemented 2026-09-25**: `crop_src` = saved source frame
+  `frames/<job_id>/track_<tid>_src.jpg` (the decoded frame at best_frame,
+  q85), `crop_box` = padded plate rect normalized top-left on it (matches
+  the faces convention; `plate_src_rect` in prefilter/plates.py owns the
+  vehicle-window + y-origin math). Web plate crops (event detail, job
+  plates, gallery/detail) open the React lightbox on the source with a
+  `.plate-box` overlay; report Plates section renders clickable crops with
+  `data-full`/`data-box` handled by the report lightbox JS. Backfill fills
+  rows missing either field and `--regenerate` refreshes both.
 - **Person + animal boxes on keyframes, toggleable** (larger, 1-2 days).
   Person tracks already exist (`vehicle_tracks.class_id=0`; job 457
   track #1 identified but unboxed) — only `faces_json` is persisted per

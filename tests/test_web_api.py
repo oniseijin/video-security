@@ -67,11 +67,13 @@ def _seed(base: Path) -> None:
         VALUES (1, 7, 0, 840, 1800, NULL, 'W',
                 '["{base}/artifacts/frames/1/track_7_0.jpg"]');
         INSERT INTO plates (job_id, track_id, clip_id, raw_text, norm_text,
-                            confidence, best_frame, crop_path)
+                            confidence, best_frame, crop_path, crop_src, crop_box)
         VALUES
         (1, 7, 0, '習志野5001', '習志野5001', 1.0, 960,
-         '{base}/artifacts/plates/1/track_7.jpg'),
-        (1, 8, 0, 'Y2', 'Y2', 0.9, 1500, NULL);
+         '{base}/artifacts/plates/1/track_7.jpg',
+         '{base}/artifacts/frames/1/track_7_src.jpg',
+         '[0.2, 0.3, 0.4, 0.1]'),
+        (1, 8, 0, 'Y2', 'Y2', 0.9, 1500, NULL, NULL, NULL);
         INSERT INTO clip_gps_data (job_id, clip_id, time_sec, lat, lon, speed_kmh,
                                   bearing, ax, ay, az)
         VALUES (1, 0, 0.0, 35.645, 140.045, 40.0, 90.0, 0.0, 0.0, 1.0),
@@ -136,6 +138,7 @@ def _seed(base: Path) -> None:
     (frames / "event_10_0.jpg").write_bytes(JPEG)
     (frames / "event_10_0_raw.jpg").write_bytes(JPEG)
     (frames / "track_7_0.jpg").write_bytes(JPEG)
+    (frames / "track_7_src.jpg").write_bytes(JPEG)
     (plates / "track_7.jpg").write_bytes(JPEG)
     (faces / "face_10_0_0.jpg").write_bytes(JPEG)
     conn = connect(str(db_path))
@@ -312,6 +315,8 @@ def test_event_detail(base_url: str) -> None:
     assert data["plates"][0]["norm_text"] == "習志野5001"
     assert data["plates"][0]["ken"] == "千葉県"
     assert data["plates"][0]["crop_url"] == "/media/plates/1/track_7.jpg"
+    assert data["plates"][0]["crop_src_url"] == "/media/frames/1/track_7_src.jpg"
+    assert data["plates"][0]["crop_box"] == [0.2, 0.3, 0.4, 0.1]
     assert data["track"]["track_id"] == 7
     assert data["track"]["strip"] == ["/media/frames/1/track_7_0.jpg"]
     assert data["location"]["lat"] == pytest.approx(35.647)

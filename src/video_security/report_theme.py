@@ -313,6 +313,21 @@ body.hide-faces .face-box { display: none; }
   border-top: 2px solid var(--vs-accent);
   border-left: 2px solid var(--vs-accent);
 }
+.plate-box {
+  position: absolute;
+  border: 2px solid var(--vs-info);
+  pointer-events: none;
+}
+.plate-box::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--vs-accent);
+  border-left: 2px solid var(--vs-accent);
+}
 
 .chip {
   display: inline-block;
@@ -451,6 +466,9 @@ a.chip:hover { border-color: var(--vs-accent); color: var(--vs-accent); }
 """)
 
 REPORT_CSS = """.wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
+.plate-crops { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.plate-crop { position: relative; display: inline-block; border: 1px solid var(--vs-line); }
+.plate-crop img { display: block; height: 48px; width: auto; cursor: zoom-in; }
 .filepath {
   font-family: var(--vs-font-mono);
   font-size: 0.75rem;
@@ -641,8 +659,12 @@ THEME_LIGHTBOX_JS = """
   function open(i) {
     var src = imgs[i];
     if (!src) return;
-    img.src = src.src;
+    var full = src.getAttribute('data-full');
+    img.src = full || src.src;
     Array.prototype.slice.call(zoomEl.querySelectorAll('.face-box')).forEach(
+      function (el) { el.remove(); }
+    );
+    Array.prototype.slice.call(zoomEl.querySelectorAll('.plate-box')).forEach(
       function (el) { el.remove(); }
     );
     var wrap = src.closest('.kf-wrap');
@@ -650,6 +672,21 @@ THEME_LIGHTBOX_JS = """
       Array.prototype.slice.call(wrap.querySelectorAll('.face-box')).forEach(
         function (el) { zoomEl.appendChild(el.cloneNode(true)); }
       );
+    }
+    var boxAttr = src.getAttribute('data-box');
+    if (boxAttr) {
+      try {
+        var rect = JSON.parse(boxAttr);
+        if (rect && rect.length === 4) {
+          var el = document.createElement('span');
+          el.className = 'plate-box';
+          el.style.left = (rect[0] * 100) + '%';
+          el.style.top = (rect[1] * 100) + '%';
+          el.style.width = (rect[2] * 100) + '%';
+          el.style.height = (rect[3] * 100) + '%';
+          zoomEl.appendChild(el);
+        }
+      } catch (err) { }
     }
     var fig = src.closest('figure');
     var capText = '';

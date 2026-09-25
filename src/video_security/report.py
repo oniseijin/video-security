@@ -569,6 +569,46 @@ def render_report_html(
             else:
                 parts.append(chip_body)
         parts.append("")
+        crop_thumbs: list[str] = []
+        for pr in plate_rows:
+            crop_p = pr["crop_path"]
+            src_p = pr["crop_src"]
+            box_raw = pr["crop_box"]
+            if not crop_p or not src_p or not box_raw:
+                continue
+            try:
+                box = [float(v) for v in json.loads(box_raw)]
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            if len(box) != 4:
+                continue
+            if media_base is not None:
+                try:
+                    crop_rel = os.path.relpath(str(crop_p), artifact_dir)
+                    src_rel = os.path.relpath(str(src_p), artifact_dir)
+                    crop_url = f"{media_base}/{crop_rel}"
+                    src_url = f"{media_base}/{src_rel}"
+                except ValueError:
+                    crop_url = _keyframe_src(str(crop_p), out_dir)
+                    src_url = _keyframe_src(str(src_p), out_dir)
+            else:
+                crop_url = _keyframe_src(str(crop_p), out_dir)
+                src_url = _keyframe_src(str(src_p), out_dir)
+            alt = html.escape(f"plate {pr['norm_text'] or ''} source frame")
+            crop_thumbs.append(
+                '<span class="plate-crop" '
+                f'data-full="{html.escape(src_url, quote=False)}" '
+                f'data-box="{html.escape(json.dumps(box), quote=True)}">'
+                f'<img src="{html.escape(crop_url, quote=False)}" alt="{alt}">'
+                "</span>"
+            )
+        if crop_thumbs:
+            parts.append('<div class="plate-crops">' + "".join(crop_thumbs) + "</div>")
+            parts.append("")
+            parts.append(
+                "<p class=\"note\">click a plate crop to open its source "
+                "frame with the plate region marked</p>"
+            )
         parts.append(
             '<table class="data-table"><tr><th>Plate</th><th>Raw</th>'
             "<th>Ken</th>"

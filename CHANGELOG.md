@@ -8,6 +8,15 @@ follow semantic versioning.
 
 ### Added
 
+- **Plate crop → source jump**: plate rows persist `crop_src` (saved
+  source frame, `frames/<job_id>/track_<tid>_src.jpg`) + `crop_box`
+  (normalized top-left rect on it). Clicking a plate crop in the web
+  console (event detail, job plates, plate gallery/detail) opens the
+  lightbox on the source frame with the plate region marked; the report
+  plates section gets clickable crops with the same treatment. Backfill
+  derives both for old rows via the OCR text-relocate machinery (runs
+  for rows missing either field; `--regenerate` refreshes both).
+
 - **JP-aware plate crops** (`[prefilter] plate_crop_pad`, default
   `[0.5, 0.6, 0.25, 0.2]`): the saved plate crop expands the OCR text
   bbox asymmetrically — up/left extend further than down/right — so

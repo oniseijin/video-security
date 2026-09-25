@@ -137,6 +137,26 @@ def test_plate_crop_written_with_bbox(tmp_path: Path) -> None:
     crop_out.write_bytes(buf.tobytes())
     assert crop_out.exists()
 
+    from video_security.prefilter.plates import plate_src_rect
+
+    sx1, sy1, sx2, sy2 = plate_src_rect(
+        img.shape, track_bboxes[read.best_frame], read.best_bbox,
+        config.prefilter.plate_crop_pad,
+    )
+    src_out = artifact_dir / "frames" / "1" / f"track_{read.track_id}_src.jpg"
+    ok_src, sbuf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    assert ok_src
+    src_out.parent.mkdir(parents=True, exist_ok=True)
+    src_out.write_bytes(sbuf.tobytes())
+    assert src_out.exists()
+    ih, iw = img.shape[:2]
+    crop_box = json.loads(
+        json.dumps([sx1 / iw, sy1 / ih, (sx2 - sx1) / iw, (sy2 - sy1) / ih])
+    )
+    assert len(crop_box) == 4
+    assert 0.0 <= crop_box[0] <= 1.0 and 0.0 <= crop_box[1] <= 1.0
+    assert crop_box[3] > 0.0
+
     votes_payload: dict[str, object] = {
         "votes": read.votes,
         "best": {"frame": read.best_frame, "bbox": list(read.best_bbox)},

@@ -57,6 +57,52 @@ def plate_like(text: str) -> bool:
     return any(c.isdigit() for c in norm) and any(c.isalpha() for c in norm)
 
 
+def vehicle_window(
+    frame_shape: tuple[int, ...],
+    bbox: tuple[int, int, int, int],
+    margin: float = 0.15,
+) -> tuple[int, int, int, int]:
+    """Full-frame pixel window crop_vehicle produces for a track bbox."""
+    x1, y1, x2, y2 = bbox
+    w = x2 - x1
+    h = y2 - y1
+    mx = int(round(w * margin))
+    my = int(round(h * margin))
+    h_img, w_img = frame_shape[:2]
+    return (
+        max(0, x1 - mx),
+        max(0, y1 - my),
+        min(w_img, x2 + mx),
+        min(h_img, y2 + my),
+    )
+
+
+def plate_src_rect(
+    frame_shape: tuple[int, ...],
+    track_bbox: tuple[int, int, int, int],
+    best_bbox: tuple[float, float, float, float],
+    pad: list[float],
+) -> tuple[int, int, int, int]:
+    """Padded plate rect in full-frame pixels, top-left origin.
+
+    best_bbox is the OCR text bbox normalized to the vehicle crop (any
+    uniform upscale), Vision bottom-left y origin.
+    """
+    if len(pad) != 4:
+        raise ValueError("plate_crop_pad must be [left, up, down, right]")
+    vx1, vy1, vx2, vy2 = vehicle_window(frame_shape, track_bbox)
+    vw = vx2 - vx1
+    vh = vy2 - vy1
+    bx, by, bw, bh = best_bbox
+    left, up, down, right = pad
+    top = 1.0 - by - bh
+    px1 = vx1 + max(0.0, bx - left * bw) * vw
+    py1 = vy1 + max(0.0, top - up * bh) * vh
+    px2 = vx1 + min(1.0, bx + bw * (1 + right)) * vw
+    py2 = vy1 + min(1.0, top + bh * (1 + down)) * vh
+    return int(px1), int(py1), int(px2), int(py2)
+
+
 @dataclass
 class PlateRead:
     track_id: int

@@ -5,6 +5,7 @@ export interface LightboxFrame {
   url: string
   faces: number[][]
   caption: string
+  rects?: number[][]
 }
 
 interface LightboxProps {
@@ -148,6 +149,9 @@ export function Lightbox({ frames, index, onIndex, onClose }: LightboxProps) {
             src={frame.url}
           />
           <FaceBoxes boxes={toFaceBoxes(frame.faces)} />
+          {frame.rects ? (
+            <FaceBoxes className="plate-box" boxes={toFaceBoxes(frame.rects)} />
+          ) : null}
         </div>
         <div className="lightbox-controls" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => zoomBy(1.25)} type="button">+</button>

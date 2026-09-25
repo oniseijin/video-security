@@ -25,7 +25,12 @@ from video_security.llm.ollama import OllamaClient
 from video_security.llm.triage import LLMEvent, TriageResult, triage_events
 from video_security.prefilter.faces import detect_faces
 from video_security.prefilter.ocr import upscale_crop
-from video_security.prefilter.plates import PlateRead, extract_plate_reads, plate_crop_rect
+from video_security.prefilter.plates import (
+    PlateRead,
+    extract_plate_reads,
+    plate_crop_rect,
+    plate_src_rect,
+)
 from video_security.prefilter.scenetext import SceneText, sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
 from video_security.prefilter.vehicles import (
@@ -479,6 +484,8 @@ def harvest_job(
     spotlight_ignore(plates_dir)
     for track_id, read in plate_reads.items():
         crop_path: str | None = None
+        crop_src: str | None = None
+        crop_box: str | None = None
         if read.best_bbox is not None:
             try:
                 raw_jpeg = jpeg_cache.get(read.best_frame)
@@ -515,8 +522,39 @@ def harvest_job(
                                 if ok:
                                     crop_out.write_bytes(_buf.tobytes())
                                     crop_path = str(crop_out)
+                            sx1, sy1, sx2, sy2 = plate_src_rect(
+                                img.shape,
+                                track_bbox,
+                                read.best_bbox,
+                                config.prefilter.plate_crop_pad,
+                            )
+                            if sx2 - sx1 > 0 and sy2 - sy1 > 0:
+                                src_out = (
+                                    artifact_dir
+                                    / "frames"
+                                    / str(job.id)
+                                    / f"track_{track_id}_src.jpg"
+                                )
+                                src_out.parent.mkdir(parents=True, exist_ok=True)
+                                ok_src, _sbuf = cv2.imencode(
+                                    ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85]
+                                )
+                                if ok_src:
+                                    src_out.write_bytes(_sbuf.tobytes())
+                                    crop_src = str(src_out)
+                                    ih, iw = img.shape[:2]
+                                    crop_box = json.dumps(
+                                        [
+                                            sx1 / iw,
+                                            sy1 / ih,
+                                            (sx2 - sx1) / iw,
+                                            (sy2 - sy1) / ih,
+                                        ]
+                                    )
             except Exception:
                 crop_path = None
+                crop_src = None
+                crop_box = None
 
         votes_payload: dict[str, object] = {"votes": read.votes}
         if read.best_bbox is not None:
@@ -535,6 +573,8 @@ def harvest_job(
             read.best_frame,
             json.dumps(votes_payload),
             crop_path=crop_path,
+            crop_src=crop_src,
+            crop_box=crop_box,
         )
 
     frames_dir = artifact_dir / "frames" / str(job.id)

@@ -33,10 +33,11 @@ def _seed(base: Path) -> Path:
     )
     conn.execute(
         "INSERT INTO plates (job_id, track_id, clip_id, norm_text, best_frame, "
-        "ocr_votes_json, crop_path) VALUES "
-        "(1, 4, 0, '277E0', NULL, ?, NULL), "
-        "(1, 7, 0, 'XYZ99', 900, NULL, NULL), "
-        "(1, 8, 0, 'DONE1', 900, NULL, '/already/crop.jpg')",
+        "ocr_votes_json, crop_path, crop_src, crop_box) VALUES "
+        "(1, 4, 0, '277E0', NULL, ?, NULL, NULL, NULL), "
+        "(1, 7, 0, 'XYZ99', 900, NULL, NULL, NULL, NULL), "
+        "(1, 8, 0, 'DONE1', 900, NULL, '/already/crop.jpg', "
+        "'/already/track_8_src.jpg', '[0.1, 0.2, 0.3, 0.1]')",
         (json.dumps({"votes": 2, "best": {"frame": 217, "bbox": [0.5, 0.2, 0.2, 0.04]}}),),
     )
     conn.commit()
@@ -77,10 +78,19 @@ def test_backfill_writes_crops(tmp_path: Path) -> None:
     crop_b = tmp_path / "artifacts" / "plates" / "1" / "track_7.jpg"
     assert crop_a.is_file()
     assert crop_b.is_file()
+    src_a = tmp_path / "artifacts" / "frames" / "1" / "track_4_src.jpg"
+    src_b = tmp_path / "artifacts" / "frames" / "1" / "track_7_src.jpg"
+    assert src_a.is_file()
+    assert src_b.is_file()
     row = conn.execute(
-        "SELECT crop_path FROM plates WHERE track_id = 4"
+        "SELECT crop_path, crop_src, crop_box FROM plates WHERE track_id = 4"
     ).fetchone()
     assert row["crop_path"] == str(crop_a)
+    assert row["crop_src"] == str(src_a)
+    box = json.loads(row["crop_box"])
+    assert len(box) == 4
+    assert all(0.0 <= v <= 1.0 for v in box)
+    assert box[2] > 0.0 and box[3] > 0.0
     marker = tmp_path / "artifacts" / "plates" / "1" / ".metadata_never_index"
     assert marker.is_file()
     conn.close()

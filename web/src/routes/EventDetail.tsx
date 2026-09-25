@@ -4,6 +4,7 @@ import { fetchEventDetail } from "../api"
 import type { EventDetail } from "../api"
 import { Filmstrip } from "../components/Filmstrip"
 import type { FilmFrame } from "../components/Filmstrip"
+import { PlateCrop } from "../components/PlateCrop"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtSec } from "../format"
 import { toneColor } from "../theme"
@@ -137,12 +138,12 @@ export function EventDetailRoute() {
           <div className="plate-block">
             {data.plates.map((plate) => (
               <div className="plate-card" key={plate.track_id}>
-                {plate.crop_url ? (
-                  <img
-                    alt={`plate ${plate.norm_text ?? ""}`}
-                    src={plate.crop_url}
-                  />
-                ) : null}
+                <PlateCrop
+                  alt={`plate ${plate.norm_text ?? ""}`}
+                  cropBox={plate.crop_box}
+                  cropSrcUrl={plate.crop_src_url}
+                  cropUrl={plate.crop_url}
+                />
                 <div className="chip-row">
                   <span className="chip chip--plate">{plate.norm_text ?? "—"}</span>
                   {plate.ken ? (

@@ -18,7 +18,11 @@ from video_security.prefilter.ocr import (
     upscale_crop,
     vision_ocr,
 )
-from video_security.prefilter.plates import normalize_plate, plate_crop_rect
+from video_security.prefilter.plates import (
+    normalize_plate,
+    plate_crop_rect,
+    plate_src_rect,
+)
 from video_security.prefilter.vehicles import (
     VEHICLE_CLASSES,
     Detection,
@@ -119,9 +123,11 @@ def _locate_in_frame(
     norm: str,
     detector: Detector,
     ocr: OcrFn,
-    pad: float | list[float] = 0.15,
-) -> np.ndarray | None:
+    pad: list[float],
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
+    """Matched plate: (crop pixels, full-frame padded rect top-left px)."""
     best_crop: np.ndarray | None = None
+    best_rect: tuple[int, int, int, int] | None = None
     best_score = 0.0
     for det in detector(frame):
         if det.class_id not in VEHICLE_CLASSES:
@@ -132,8 +138,9 @@ def _locate_in_frame(
             if score > best_score:
                 best_score = score
                 best_crop = crop_region(vehicle_crop, obs.bbox, pad)
-    if best_score >= _MATCH_THRESHOLD and best_crop is not None:
-        return best_crop
+                best_rect = plate_src_rect(frame.shape, det.bbox, obs.bbox, pad)
+    if best_score >= _MATCH_THRESHOLD and best_crop is not None and best_rect is not None:
+        return best_crop, best_rect
     return None
 
 
@@ -326,10 +333,10 @@ def backfill_plate_crops(
         detector = load_detector(config)
     where = "p.norm_text IS NOT NULL"
     if not regenerate:
-        where += " AND p.crop_path IS NULL"
+        where += " AND (p.crop_path IS NULL OR p.crop_src IS NULL)"
     rows = conn.execute(
         f"SELECT p.job_id, p.track_id, p.clip_id, p.norm_text, p.best_frame, "
-        f"p.ocr_votes_json, j.video_path "
+        f"p.ocr_votes_json, p.crop_path, j.video_path "
         f"FROM plates p JOIN jobs j ON j.id = p.job_id "
         f"WHERE {where} "
         f"ORDER BY p.job_id, p.track_id"
@@ -338,7 +345,7 @@ def backfill_plate_crops(
         rows = rows[: max(0, limit)]
     report = BackfillReport(attempted=len(rows))
     artifact = Path(config.storage.artifact_dir).expanduser()
-    pad: float | list[float] = config.prefilter.plate_crop_pad
+    pad = config.prefilter.plate_crop_pad
     cache: dict[tuple[str, int], np.ndarray | None] = {}
     for row in rows:
         norm = str(row["norm_text"])
@@ -347,12 +354,15 @@ def backfill_plate_crops(
             report.skipped += 1
             continue
         video_path = str(row["video_path"])
-        crop: np.ndarray | None = None
+        want_crop = regenerate or row["crop_path"] is None
+        located: tuple[np.ndarray, tuple[int, int, int, int]] | None = None
+        source_frame: np.ndarray | None = None
         for image in _keyframe_images(conn, int(row["job_id"]), int(row["track_id"])):
-            crop = _locate_in_frame(image, norm, detector, ocr, pad)
-            if crop is not None:
+            located = _locate_in_frame(image, norm, detector, ocr, pad)
+            if located is not None:
+                source_frame = image
                 break
-        if crop is None:
+        if located is None:
             for offset in _FRAME_OFFSETS:
                 fn = frame_number + offset
                 if fn < 0:
@@ -365,33 +375,74 @@ def backfill_plate_crops(
                 video_frame = cache[key]
                 if video_frame is None:
                     continue
-                crop = _locate_in_frame(video_frame, norm, detector, ocr, pad)
-                if crop is not None:
+                located = _locate_in_frame(video_frame, norm, detector, ocr, pad)
+                if located is not None:
+                    source_frame = video_frame
                     break
-        if crop is None or crop.size == 0:
+        if located is None or source_frame is None or located[0].size == 0:
             report.failed += 1
             report.failures.append(
                 f"job {row['job_id']} track {row['track_id']}: "
                 f"plate {norm} not relocated at frame {frame_number}"
             )
             continue
+        crop, src_rect = located
         plates_dir = artifact / "plates" / str(int(row["job_id"]))
         plates_dir.mkdir(parents=True, exist_ok=True)
         spotlight_ignore(plates_dir)
         out = plates_dir / f"track_{int(row['track_id'])}.jpg"
-        ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if not ok:
-            report.failed += 1
-            report.failures.append(
-                f"job {row['job_id']} track {row['track_id']}: jpeg encode failed"
+        wrote = False
+        if want_crop:
+            ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not ok:
+                report.failed += 1
+                report.failures.append(
+                    f"job {row['job_id']} track {row['track_id']}: jpeg encode failed"
+                )
+                continue
+            out.write_bytes(buf.tobytes())
+            conn.execute(
+                "UPDATE plates SET crop_path = ? "
+                "WHERE job_id = ? AND track_id = ? AND clip_id = ?",
+                (str(out), int(row["job_id"]), int(row["track_id"]), int(row["clip_id"])),
             )
-            continue
-        out.write_bytes(buf.tobytes())
-        conn.execute(
-            "UPDATE plates SET crop_path = ? "
-            "WHERE job_id = ? AND track_id = ? AND clip_id = ?",
-            (str(out), int(row["job_id"]), int(row["track_id"]), int(row["clip_id"])),
-        )
-        report.written += 1
+            wrote = True
+        sx1, sy1, sx2, sy2 = src_rect
+        if sx2 - sx1 > 0 and sy2 - sy1 > 0:
+            src_out = (
+                artifact
+                / "frames"
+                / str(int(row["job_id"]))
+                / f"track_{int(row['track_id'])}_src.jpg"
+            )
+            src_out.parent.mkdir(parents=True, exist_ok=True)
+            ok_src, sbuf = cv2.imencode(
+                ".jpg", source_frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
+            )
+            if ok_src:
+                src_out.write_bytes(sbuf.tobytes())
+                fh, fw = source_frame.shape[:2]
+                crop_box = json.dumps(
+                    [
+                        sx1 / fw,
+                        sy1 / fh,
+                        (sx2 - sx1) / fw,
+                        (sy2 - sy1) / fh,
+                    ]
+                )
+                conn.execute(
+                    "UPDATE plates SET crop_src = ?, crop_box = ? "
+                    "WHERE job_id = ? AND track_id = ? AND clip_id = ?",
+                    (
+                        str(src_out),
+                        crop_box,
+                        int(row["job_id"]),
+                        int(row["track_id"]),
+                        int(row["clip_id"]),
+                    ),
+                )
+                wrote = True
+        if wrote:
+            report.written += 1
     conn.commit()
     return report

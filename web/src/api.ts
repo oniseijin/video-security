@@ -156,6 +156,8 @@ export interface EventPlate {
   ken: string | null
   ken_en: string | null
   crop_url: string | null
+  crop_src_url: string | null
+  crop_box: number[] | null
   event_id: number | null
 }
 
@@ -312,6 +314,8 @@ export interface PlateGalleryItem {
   sightings: number
   best_confidence: number | null
   best_crop_url: string | null
+  crop_src_url: string | null
+  crop_box: number[] | null
   ken?: string | null
   jobs: number[]
   first_seen: string | null
@@ -332,6 +336,8 @@ export interface PlateSighting {
   read_at_sec: number | null
   recorded_at: string | null
   crop_url: string | null
+  crop_src_url: string | null
+  crop_box: number[] | null
   event_id: number | null
 }
 

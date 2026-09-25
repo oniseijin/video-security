@@ -20,6 +20,7 @@ from video_security.prefilter.plates import (
     normalize_plate,
     plate_crop_rect,
     plate_like,
+    plate_src_rect,
 )
 from video_security.prefilter.scenetext import (
     classify_text,
@@ -51,6 +52,32 @@ def test_plate_crop_rect_clamps_to_crop() -> None:
 def test_plate_crop_rect_rejects_bad_pad() -> None:
     with pytest.raises(ValueError):
         plate_crop_rect((0.1, 0.1, 0.2, 0.2), 100, 50, [0.1, 0.2, 0.3])
+
+
+def test_plate_src_rect_vehicle_window_and_y_origin() -> None:
+    # 640x480 frame, track bbox (100,100)-(300,250): crop_vehicle adds 15%
+    # margin → window (70, 78, 330, 272), vw=260, vh=194
+    x1, y1, x2, y2 = plate_src_rect(
+        (480, 640), (100, 100, 300, 250), (0.3, 0.2, 0.4, 0.2),
+        [0.5, 0.6, 0.25, 0.2],
+    )
+    assert x1 == 96  # 70 + (0.3 - 0.5*0.4)*260
+    assert y1 == 171  # 78 + (0.6 - 0.6*0.2)*194
+    assert x2 == 272  # 70 + (0.3 + 0.4*1.2)*260
+    assert y2 == 242  # 78 + (0.6 + 0.2*1.25)*194
+
+
+def test_plate_src_rect_clamps_into_vehicle_window() -> None:
+    x1, y1, x2, y2 = plate_src_rect(
+        (480, 640), (100, 100, 300, 250), (0.0, 0.0, 1.0, 1.0),
+        [0.5, 0.6, 0.25, 0.2],
+    )
+    assert (x1, y1, x2, y2) == (70, 78, 330, 272)
+
+
+def test_plate_src_rect_rejects_bad_pad() -> None:
+    with pytest.raises(ValueError):
+        plate_src_rect((480, 640), (100, 100, 300, 250), (0.1, 0.1, 0.2, 0.2), [0.1])
 
 
 def _frame(ts: float, number: int) -> FrameData:

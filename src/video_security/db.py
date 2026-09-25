@@ -334,6 +334,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "crop_path" not in plate_cols:
         conn.execute("ALTER TABLE plates ADD COLUMN crop_path TEXT")
         conn.commit()
+    if "crop_src" not in plate_cols:
+        conn.execute("ALTER TABLE plates ADD COLUMN crop_src TEXT")
+        conn.commit()
+    if "crop_box" not in plate_cols:
+        conn.execute("ALTER TABLE plates ADD COLUMN crop_box TEXT")
+        conn.commit()
     vt_cols = [row[1] for row in conn.execute("PRAGMA table_info(vehicle_tracks)").fetchall()]
     if "strip_json" not in vt_cols:
         conn.execute("ALTER TABLE vehicle_tracks ADD COLUMN strip_json TEXT")
@@ -586,14 +592,16 @@ def insert_plate(
     best_frame: int | None,
     ocr_votes_json: str | None,
     crop_path: str | None = None,
+    crop_src: str | None = None,
+    crop_box: str | None = None,
 ) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO plates "
         "(job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json, "
-        "crop_path) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "crop_path, crop_src, crop_box) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (job_id, track_id, clip_id, raw_text, norm_text, confidence, best_frame, ocr_votes_json,
-         crop_path),
+         crop_path, crop_src, crop_box),
     )
     conn.commit()
 

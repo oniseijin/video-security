@@ -907,3 +907,5 @@ a.count-chip:hover {
   border-style: dashed;
   opacity: 0.65;
 }
+
+.plate-crop-img { cursor: zoom-in; }

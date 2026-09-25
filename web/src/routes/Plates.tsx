@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { fetchPlatesGallery } from "../api"
 import type { PlatesGalleryPage } from "../api"
+import { PlateCrop } from "../components/PlateCrop"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate } from "../format"
 
@@ -87,10 +88,11 @@ export function Plates() {
                   to={platePath(plate.norm_text)}
                 >
                   {plate.best_crop_url ? (
-                    <img
+                    <PlateCrop
                       alt={`plate ${plate.norm_text} crop`}
-                      loading="lazy"
-                      src={plate.best_crop_url}
+                      cropBox={plate.crop_box}
+                      cropSrcUrl={plate.crop_src_url}
+                      cropUrl={plate.best_crop_url}
                     />
                   ) : (
                     <span className="plate-card-blank">no crop</span>

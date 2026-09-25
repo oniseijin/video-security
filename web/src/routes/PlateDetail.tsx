@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import { fetchPlateDetail } from "../api"
 import type { PlateDetail as PlateDetailData } from "../api"
+import { PlateCrop } from "../components/PlateCrop"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate, fmtSec } from "../format"
 
@@ -107,11 +108,11 @@ export function PlateDetailRoute() {
                 </td>
                 <td>
                   {sighting.crop_url ? (
-                    <img
+                    <PlateCrop
                       alt={`sighting ${index + 1} crop`}
-                      className="thumb"
-                      loading="lazy"
-                      src={sighting.crop_url}
+                      cropBox={sighting.crop_box}
+                      cropSrcUrl={sighting.crop_src_url}
+                      cropUrl={sighting.crop_url}
                     />
                   ) : (
                     "—"

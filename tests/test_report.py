@@ -63,6 +63,9 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     insert_plate(
         conn, job.id, 7, 0, "YOLO42", "YOLO42", 0.95, 100,
         json.dumps(["YOLO42"]),
+        crop_path=str(tmp_path / "art" / "plates" / str(job.id) / "track_7.jpg"),
+        crop_src=str(tmp_path / "art" / "frames" / str(job.id) / "track_7_src.jpg"),
+        crop_box=json.dumps([0.2, 0.3, 0.4, 0.1]),
     )
     insert_plate(
         conn, job.id, 2, 0, "習志野 れ 12-08", "習志野れ1208", 0.9, 110,
@@ -93,6 +96,12 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     )
 
     artifact_dir = tmp_path / "art"
+    plates_dir = artifact_dir / "plates" / str(job.id)
+    plates_dir.mkdir(parents=True, exist_ok=True)
+    (plates_dir / "track_7.jpg").write_bytes(b"fakejpg")
+    src_dir = artifact_dir / "frames" / str(job.id)
+    src_dir.mkdir(parents=True, exist_ok=True)
+    (src_dir / "track_7_src.jpg").write_bytes(b"fakejpg")
     p = generate_report(conn, job.id, artifact_dir)
     assert p.exists()
     content = p.read_text()
@@ -100,10 +109,13 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert "audio_distress" in content
     assert "YOLO42" in content
     assert "習志野" in content
+    assert 'class="plate-crop"' in content
+    assert "data-full=" in content
+    assert "plate-box" in content
     assert "Chiba" in content
     assert "suspicious person detected" in content
     assert content.count("<table") >= 4
-    assert content.count("<img") == 3
+    assert content.count("<img") == 4
     assert 'data-theme="machine"' in content
     assert 'id="theme-toggle"' in content
     assert "subject subject--threat" in content

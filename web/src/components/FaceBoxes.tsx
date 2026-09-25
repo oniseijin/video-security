@@ -11,12 +11,18 @@ export function toFaceBoxes(faces: number[][]): FaceBox[] {
     .map((box) => ({ x: box[0], y: box[1], w: box[2], h: box[3] }))
 }
 
-export function FaceBoxes({ boxes }: { boxes: FaceBox[] }) {
+export function FaceBoxes({
+  boxes,
+  className = "face-box",
+}: {
+  boxes: FaceBox[]
+  className?: string
+}) {
   return (
     <>
       {boxes.map((box, i) => (
         <span
-          className="face-box"
+          className={className}
           key={i}
           style={{
             left: `${box.x * 100}%`,
