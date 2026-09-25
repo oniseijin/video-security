@@ -97,6 +97,38 @@ def test_backfill_idempotent(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_backfill_regenerate_recrops(tmp_path: Path) -> None:
+    db_path = _seed(tmp_path)
+    conn = connect(str(db_path))
+    cfg = _config(tmp_path)
+
+    report = backfill_plate_crops(
+        conn, cfg, frame_reader=_reader, ocr_fn=_ocr, detector=_detect
+    )
+    assert report.attempted == 2
+
+    def ocr_all(img: np.ndarray) -> list[OCRResult]:
+        return _ocr(img) + [OCRResult("DONE 1", 0.9, (0.3, 0.4, 0.2, 0.05))]
+
+    report = backfill_plate_crops(
+        conn,
+        cfg,
+        frame_reader=_reader,
+        ocr_fn=ocr_all,
+        detector=_detect,
+        regenerate=True,
+    )
+    assert report.attempted == 3
+    assert report.written == 3
+    row = conn.execute(
+        "SELECT crop_path FROM plates WHERE track_id = 8"
+    ).fetchone()
+    assert row["crop_path"] == str(
+        tmp_path / "artifacts" / "plates" / "1" / "track_8.jpg"
+    )
+    conn.close()
+
+
 def test_backfill_relocation_failure(tmp_path: Path) -> None:
     db_path = _seed(tmp_path)
     conn = connect(str(db_path))

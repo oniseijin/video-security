@@ -106,6 +106,25 @@ hard_brake_g = 0.50
     assert cfg.adapter_mazda_cx8.timezone == "Asia/Tokyo"  # not overridden
 
 
+def test_plate_crop_pad_toml(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text(
+        "[prefilter]\nplate_crop_pad = [0.4, 0.5, 0.2, 0.1]\n"
+    )
+    cfg = load_config(toml_file)
+    assert cfg.prefilter.plate_crop_pad == [0.4, 0.5, 0.2, 0.1]
+    assert load_config().prefilter.plate_crop_pad == [0.5, 0.6, 0.25, 0.2]
+
+
+def test_plate_crop_pad_rejects_strings(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text(
+        "[prefilter]\nplate_crop_pad = [\"a\", \"b\", \"c\", \"d\"]\n"
+    )
+    with pytest.raises(ConfigError):
+        load_config(toml_file)
+
+
 def test_map_and_web_config(tmp_path: Path) -> None:
     toml_file = tmp_path / "config.toml"
     toml_file.write_text("""\

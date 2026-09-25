@@ -18,7 +18,7 @@ from video_security.prefilter.ocr import (
     upscale_crop,
     vision_ocr,
 )
-from video_security.prefilter.plates import normalize_plate
+from video_security.prefilter.plates import normalize_plate, plate_crop_rect
 from video_security.prefilter.vehicles import (
     VEHICLE_CLASSES,
     Detection,
@@ -86,9 +86,12 @@ def read_frame(video_path: str, frame_number: int, width: int = 1280) -> np.ndar
 def crop_region(
     frame: np.ndarray,
     bbox: tuple[float, float, float, float],
-    pad: float = 0.15,
+    pad: float | list[float] = 0.15,
 ) -> np.ndarray:
     h, w = frame.shape[:2]
+    if isinstance(pad, list):
+        x1, y1, x2, y2 = plate_crop_rect(bbox, w, h, pad)
+        return frame[y1:y2, x1:x2]
     bx, by, bw, bh = bbox
     top = 1.0 - by - bh
     x1 = max(0.0, (bx - pad * bw) * w)
@@ -116,6 +119,7 @@ def _locate_in_frame(
     norm: str,
     detector: Detector,
     ocr: OcrFn,
+    pad: float | list[float] = 0.15,
 ) -> np.ndarray | None:
     best_crop: np.ndarray | None = None
     best_score = 0.0
@@ -127,7 +131,7 @@ def _locate_in_frame(
             score = _match_score(normalize_plate(str(obs.text)), norm)
             if score > best_score:
                 best_score = score
-                best_crop = crop_region(vehicle_crop, obs.bbox)
+                best_crop = crop_region(vehicle_crop, obs.bbox, pad)
     if best_score >= _MATCH_THRESHOLD and best_crop is not None:
         return best_crop
     return None
@@ -312,6 +316,7 @@ def backfill_plate_crops(
     frame_reader: FrameReader | None = None,
     ocr_fn: OcrFn | None = None,
     detector: Detector | None = None,
+    regenerate: bool = False,
 ) -> BackfillReport:
     reader = frame_reader or read_frame
     ocr = ocr_fn or (
@@ -319,17 +324,21 @@ def backfill_plate_crops(
     )
     if detector is None:
         detector = load_detector(config)
+    where = "p.norm_text IS NOT NULL"
+    if not regenerate:
+        where += " AND p.crop_path IS NULL"
     rows = conn.execute(
-        "SELECT p.job_id, p.track_id, p.clip_id, p.norm_text, p.best_frame, "
-        "p.ocr_votes_json, j.video_path "
-        "FROM plates p JOIN jobs j ON j.id = p.job_id "
-        "WHERE p.crop_path IS NULL AND p.norm_text IS NOT NULL "
-        "ORDER BY p.job_id, p.track_id"
+        f"SELECT p.job_id, p.track_id, p.clip_id, p.norm_text, p.best_frame, "
+        f"p.ocr_votes_json, j.video_path "
+        f"FROM plates p JOIN jobs j ON j.id = p.job_id "
+        f"WHERE {where} "
+        f"ORDER BY p.job_id, p.track_id"
     ).fetchall()
     if limit is not None:
         rows = rows[: max(0, limit)]
     report = BackfillReport(attempted=len(rows))
     artifact = Path(config.storage.artifact_dir).expanduser()
+    pad: float | list[float] = config.prefilter.plate_crop_pad
     cache: dict[tuple[str, int], np.ndarray | None] = {}
     for row in rows:
         norm = str(row["norm_text"])
@@ -340,7 +349,7 @@ def backfill_plate_crops(
         video_path = str(row["video_path"])
         crop: np.ndarray | None = None
         for image in _keyframe_images(conn, int(row["job_id"]), int(row["track_id"])):
-            crop = _locate_in_frame(image, norm, detector, ocr)
+            crop = _locate_in_frame(image, norm, detector, ocr, pad)
             if crop is not None:
                 break
         if crop is None:
@@ -356,7 +365,7 @@ def backfill_plate_crops(
                 video_frame = cache[key]
                 if video_frame is None:
                     continue
-                crop = _locate_in_frame(video_frame, norm, detector, ocr)
+                crop = _locate_in_frame(video_frame, norm, detector, ocr, pad)
                 if crop is not None:
                     break
         if crop is None or crop.size == 0:

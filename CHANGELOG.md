@@ -8,6 +8,14 @@ follow semantic versioning.
 
 ### Added
 
+- **JP-aware plate crops** (`[prefilter] plate_crop_pad`, default
+  `[0.5, 0.6, 0.25, 0.2]`): the saved plate crop expands the OCR text
+  bbox asymmetrically — up/left extend further than down/right — so
+  Japanese plates keep the prefecture/class rows stacked above the text
+  row instead of clipping them. `vs backfill-media --regenerate`
+  re-crops plates that already have crops; analysis-time geometry is
+  forward-only.
+
 - **`[repair] untrunc_path` + loud auto-repair bail**: analyze-sweep
   auto-repair no longer skips corrupt clips silently when untrunc is
   missing from the launcher PATH (cron wrappers don't include

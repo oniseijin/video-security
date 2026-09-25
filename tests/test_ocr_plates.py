@@ -18,12 +18,39 @@ from video_security.prefilter.ocr import (
 from video_security.prefilter.plates import (
     extract_plate_reads,
     normalize_plate,
+    plate_crop_rect,
     plate_like,
 )
 from video_security.prefilter.scenetext import (
     classify_text,
     sample_scene_text,
 )
+
+
+def test_plate_crop_rect_jp_layout() -> None:
+    # JP plate: text row anchored lower-right of the vehicle crop; the
+    # prefecture/class rows live above-left of the OCR text bbox.
+    x1, y1, x2, y2 = plate_crop_rect(
+        (0.55, 0.15, 0.35, 0.25), 100, 50, [0.5, 0.6, 0.25, 0.2]
+    )
+    assert x1 == 37  # (0.55 - 0.5*0.35)*100
+    assert y1 == 22  # top = 0.6; (0.6 - 0.6*0.25)*50
+    assert x2 == 97  # (0.55 + 0.35*1.2)*100
+    assert y2 == 45  # (0.6 + 0.25*1.25)*50
+
+
+def test_plate_crop_rect_clamps_to_crop() -> None:
+    x1, y1, x2, y2 = plate_crop_rect(
+        (0.02, 0.75, 0.3, 0.2), 100, 50, [0.5, 0.6, 0.25, 0.2]
+    )
+    assert (x1, y1) == (0, 0)
+    assert x2 == 38  # (0.02 + 0.3*1.2)*100
+    assert y2 == 15  # top = 0.05; (0.05 + 0.2*1.25)*50
+
+
+def test_plate_crop_rect_rejects_bad_pad() -> None:
+    with pytest.raises(ValueError):
+        plate_crop_rect((0.1, 0.1, 0.2, 0.2), 100, 50, [0.1, 0.2, 0.3])
 
 
 def _frame(ts: float, number: int) -> FrameData:

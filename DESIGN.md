@@ -500,6 +500,7 @@ yolo_conf = 0.25                                    # YOLO confidence threshold
 yolo_coreml_path = null                             # pre-exported .mlpackage for ANE (optional)
 ocr_min_conf = 0.3                                  # Vision OCR read confidence floor
 plate_min_votes = 2                                 # consensus votes required for a plate
+plate_crop_pad = [0.5, 0.6, 0.25, 0.2]              # plate crop multipliers (left/up/down/right of bbox dims)
 
 [threat]
 score_threshold = 0.5                               # anomaly score to flag a frame
@@ -1466,7 +1467,14 @@ in parallel per its own section below).
   of bbox dims), clamped to the vehicle crop. Config:
   `[prefilter] plate_crop_pad`. Backfill existing crops by extending
   `backfill_plate_crops` (`backfill.py:308` — FrameReader/ocr_fn seams
-  exist). Unit tests with synthetic JP plate bbox layouts; update goldens.
+   exist). Unit tests with synthetic JP plate bbox layouts; update goldens.
+   **Implemented 2026-09-25**: asymmetric multipliers (default
+   `[0.5, 0.6, 0.25, 0.2]` left/up/down/right of bbox dims) via a
+   shared `plate_crop_rect` helper (prefilter/plates.py) used by both
+   the pipeline crop block and backfill `crop_region`;
+   `vs backfill-media --regenerate` re-crops rows that already have
+   crops. Stored crops are forward-only — run `--regenerate` to redo
+   them.
 - **Plate crop → source keyframe jump** (medium, ~half day). Persist per
   plate row: `crop_src` (keyframe path) + `crop_box` (normalized rect on
   that source image) — new columns via the existing ALTER TABLE pattern

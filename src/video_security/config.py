@@ -88,6 +88,9 @@ class PrefilterConfig:
     ocr_min_conf: float = 0.3
     plate_min_votes: int = 2
     night_luma_threshold: float = 40.0
+    plate_crop_pad: list[float] = dataclasses.field(
+        default_factory=lambda: [0.5, 0.6, 0.25, 0.2]
+    )
 
 
 @dataclasses.dataclass
@@ -325,9 +328,16 @@ def _merge_value(default: Any, override: Any, path: str) -> Any:
             result[k] = _merge_value(default[k], v, f"{path}.{k}")
         return result
     if isinstance(default, list):
-        if not isinstance(override, list) or not all(
-            isinstance(x, str) for x in override
-        ):
+        if not isinstance(override, list):
+            raise ConfigError(f"Expected list at {path}")
+        if default and all(isinstance(x, float) for x in default):
+            if not all(
+                isinstance(x, (int, float)) and not isinstance(x, bool)
+                for x in override
+            ):
+                raise ConfigError(f"Expected list of floats at {path}")
+            return [float(x) for x in override]
+        if not all(isinstance(x, str) for x in override):
             raise ConfigError(f"Expected list of strings at {path}")
         return list(override)
     if default is None:

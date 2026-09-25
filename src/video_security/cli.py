@@ -719,12 +719,15 @@ def backfill_media_cmd(
     ctx: typer.Context,
     limit: int | None = typer.Option(None, "--limit", help="Max plates to process"),  # noqa: B008
     detect_faces: bool = typer.Option(False, "--detect-faces", help="Run face detection on keyframes of events without face data"),  # noqa: B008, E501
+    regenerate: bool = typer.Option(False, "--regenerate", help="Re-crop plates that already have crops (after changing [prefilter] plate_crop_pad)"),  # noqa: B008, E501
 ) -> None:
     from video_security.backfill import backfill_face_crops, backfill_plate_crops
 
     conn, cfg = _get_db(ctx)
     try:
-        report = backfill_plate_crops(conn, cfg, limit=limit)
+        report = backfill_plate_crops(
+            conn, cfg, limit=limit, regenerate=regenerate
+        )
         print(
             f"plate crops: attempted {report.attempted}, written {report.written}, "
             f"skipped {report.skipped}, failed {report.failed}"

@@ -25,6 +25,31 @@ def normalize_plate(text: str) -> str:
     return re.sub(r"[^A-Z0-9\u3040-\u30ff\u4e00-\u9faf]", "", text.upper())
 
 
+def plate_crop_rect(
+    bbox: tuple[float, float, float, float],
+    width: int,
+    height: int,
+    pad: list[float],
+) -> tuple[int, int, int, int]:
+    """JP-aware plate crop rect in pixels.
+
+    bbox is the OCR text bbox normalized to the vehicle crop, Vision
+    bottom-left y origin. pad is [left, up, down, right] multipliers of
+    bbox dims — JP plates stack prefecture/class rows above the text
+    row, so up/left extend further than down/right.
+    """
+    if len(pad) != 4:
+        raise ValueError("plate_crop_pad must be [left, up, down, right]")
+    bx, by, bw, bh = bbox
+    left, up, down, right = pad
+    top = 1.0 - by - bh
+    x1 = max(0.0, (bx - left * bw) * width)
+    y1 = max(0.0, (top - up * bh) * height)
+    x2 = min(float(width), (bx + bw * (1 + right)) * width)
+    y2 = min(float(height), (top + bh * (1 + down)) * height)
+    return int(x1), int(y1), int(x2), int(y2)
+
+
 def plate_like(text: str) -> bool:
     norm = normalize_plate(text)
     if not 3 <= len(norm) <= 12:

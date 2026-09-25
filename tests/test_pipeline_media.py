@@ -121,13 +121,13 @@ def test_plate_crop_written_with_bbox(tmp_path: Path) -> None:
     assert img is not None
     vehicle_crop = crop_vehicle(img, track_bboxes[read.best_frame])
     vh, vw = vehicle_crop.shape[:2]
-    bx, by, bw, bh = read.best_bbox
-    top = 1.0 - by - bh
-    px1 = max(0.0, (bx - 0.15 * bw) * vw)
-    py1 = max(0.0, (top - 0.15 * bh) * vh)
-    px2 = min(float(vw), (bx + bw * 1.15) * vw)
-    py2 = min(float(vh), (top + bh * 1.15) * vh)
-    plate_crop = vehicle_crop[int(py1) : int(py2), int(px1) : int(px2)]
+    assert read.best_bbox is not None
+    from video_security.prefilter.plates import plate_crop_rect
+
+    px1, py1, px2, py2 = plate_crop_rect(
+        read.best_bbox, vw, vh, config.prefilter.plate_crop_pad
+    )
+    plate_crop = vehicle_crop[py1:py2, px1:px2]
     assert plate_crop.size > 0
     assert plate_crop.shape[0] < vh
 

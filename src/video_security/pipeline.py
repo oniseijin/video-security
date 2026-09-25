@@ -25,7 +25,7 @@ from video_security.llm.ollama import OllamaClient
 from video_security.llm.triage import LLMEvent, TriageResult, triage_events
 from video_security.prefilter.faces import detect_faces
 from video_security.prefilter.ocr import upscale_crop
-from video_security.prefilter.plates import PlateRead, extract_plate_reads
+from video_security.prefilter.plates import PlateRead, extract_plate_reads, plate_crop_rect
 from video_security.prefilter.scenetext import SceneText, sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
 from video_security.prefilter.vehicles import (
@@ -499,16 +499,14 @@ def harvest_job(
                         )
                         if track_bbox is not None:
                             vehicle_crop = upscale_crop(crop_vehicle(img, track_bbox))
-                            vh, vw = vehicle_crop.shape[:2]
-                            bx, by, bw, bh = read.best_bbox
-                            top = 1.0 - by - bh
-                            px1 = max(0.0, (bx - 0.15 * bw) * vw)
-                            py1 = max(0.0, (top - 0.15 * bh) * vh)
-                            px2 = min(float(vw), (bx + bw * 1.15) * vw)
-                            py2 = min(float(vh), (top + bh * 1.15) * vh)
-                            plate_crop = vehicle_crop[
-                                int(py1) : int(py2), int(px1) : int(px2)
-                            ]
+                            if read.best_bbox is not None:
+                                px1, py1, px2, py2 = plate_crop_rect(
+                                    read.best_bbox,
+                                    vehicle_crop.shape[1],
+                                    vehicle_crop.shape[0],
+                                    config.prefilter.plate_crop_pad,
+                                )
+                                plate_crop = vehicle_crop[py1:py2, px1:px2]
                             if plate_crop.size > 0:
                                 crop_out = plates_dir / f"track_{track_id}.jpg"
                                 ok, _buf = cv2.imencode(
