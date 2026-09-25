@@ -11,8 +11,17 @@ from ultralytics import YOLO  # type: ignore[attr-defined]
 from video_security.config import CameraOverrides, Config
 from video_security.ingest.frames import FrameData
 
-COCO_RELEVANT: list[int] = [0, 1, 2, 3, 5, 7]
+COCO_RELEVANT: list[int] = [0, 1, 2, 3, 5, 7, 16, 17]
 VEHICLE_CLASSES: list[int] = [2, 3, 5, 7]
+ANIMAL_CLASSES: list[int] = [16, 17]
+
+
+def box_kind(class_id: int) -> str | None:
+    if class_id == 0:
+        return "person"
+    if class_id in ANIMAL_CLASSES:
+        return "animal"
+    return None
 
 
 @dataclasses.dataclass

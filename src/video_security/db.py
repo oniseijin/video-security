@@ -74,6 +74,7 @@ MIGRATIONS: list[list[str]] = [
             track_id INTEGER,
             keyframes_json TEXT DEFAULT '[]',
             faces_json TEXT,
+            boxes_json TEXT,
             detector_score REAL NOT NULL,
             priority REAL NOT NULL DEFAULT 0.5,
             status TEXT NOT NULL DEFAULT 'pending',
@@ -329,6 +330,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
     if "faces_json" not in cols:
         conn.execute("ALTER TABLE events ADD COLUMN faces_json TEXT")
+        conn.commit()
+    if "boxes_json" not in cols:
+        conn.execute("ALTER TABLE events ADD COLUMN boxes_json TEXT")
         conn.commit()
     plate_cols = [row[1] for row in conn.execute("PRAGMA table_info(plates)").fetchall()]
     if "crop_path" not in plate_cols:
@@ -749,6 +753,18 @@ def update_event_faces(
     conn.execute(
         "UPDATE events SET faces_json = ? WHERE id = ?",
         (faces_json, event_id),
+    )
+    conn.commit()
+
+
+def update_event_boxes(
+    conn: sqlite3.Connection,
+    event_id: int,
+    boxes_json: str,
+) -> None:
+    conn.execute(
+        "UPDATE events SET boxes_json = ? WHERE id = ?",
+        (boxes_json, event_id),
     )
     conn.commit()
 

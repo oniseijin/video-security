@@ -34,11 +34,13 @@ from video_security.prefilter.plates import (
 from video_security.prefilter.scenetext import SceneText, sample_scene_text
 from video_security.prefilter.threats import detect_threat_events
 from video_security.prefilter.vehicles import (
+    ANIMAL_CLASSES,
     VEHICLE_CLASSES,
     Detection,
     FrameDetections,
     VehicleTrack,
     accumulate_tracks,
+    box_kind,
     crop_vehicle,
     load_detector,
 )
@@ -712,6 +714,11 @@ def harvest_job(
 
     faces_total = 0
     faces_dir = artifact_dir / "faces" / str(job.id)
+    boxes_by_frame: dict[int, list[Detection]] = {}
+    for fd in frame_dets:
+        for det in fd.detections:
+            if det.class_id == 0 or det.class_id in ANIMAL_CLASSES:
+                boxes_by_frame.setdefault(fd.frame_number, []).append(det)
     for spec, event_id in zip(event_specs, event_ids, strict=True):
         kf_paths = _select_keyframes(
             spec.frame_numbers,
@@ -732,10 +739,13 @@ def harvest_job(
             quality_cache=quality_cache,
         )
         faces_per_kf: list[list[list[float]]] = []
+        boxes_per_kf: list[list[dict[str, Any]]] = []
         for i, fn in enumerate(chosen):
             raw = jpeg_cache[fn]
             img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+            kf_boxes: list[dict[str, Any]] = []
             if img is not None:
+                ih, iw = img.shape[:2]
                 boxes = [list(fb) for fb in detect_faces(img)]
                 if boxes:
                     faces_dir.mkdir(parents=True, exist_ok=True)
@@ -757,10 +767,31 @@ def harvest_job(
                                 crop,
                             )
                     faces_total += len(boxes)
+                for det in boxes_by_frame.get(fn, []):
+                    x1 = max(0, det.bbox[0])
+                    y1 = max(0, det.bbox[1])
+                    x2 = min(iw, det.bbox[2])
+                    y2 = min(ih, det.bbox[3])
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+                    kf_boxes.append(
+                        {
+                            "kind": box_kind(det.class_id),
+                            "track_id": det.track_id,
+                            "box": [
+                                x1 / iw,
+                                y1 / ih,
+                                (x2 - x1) / iw,
+                                (y2 - y1) / ih,
+                            ],
+                        }
+                    )
             else:
                 boxes = []
             faces_per_kf.append(boxes)
+            boxes_per_kf.append(kf_boxes)
         db.update_event_faces(conn, event_id, json.dumps(faces_per_kf))
+        db.update_event_boxes(conn, event_id, json.dumps(boxes_per_kf))
 
     if not event_specs:
         db.update_job_status(conn, job.id, "done")
