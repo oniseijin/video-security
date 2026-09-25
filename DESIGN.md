@@ -647,6 +647,7 @@ vs-report <job-id>               generate human-readable report
 vs-list                         list all jobs with status
 vs-serve                        local web console (read-only viewer, 127.0.0.1)
 vs-backfill-media               regenerate plate crops for pre-crop jobs
+vs-event-suppress <id>...       mark events suppressed (--restore undoes)
 ```
 
 ---
@@ -1524,6 +1525,10 @@ in parallel per its own section below).
   override: `vs event suppress <id>` / `--restore`, a thin wrapper over
   `db.update_event_status`. Report rows already render suppressed dimmed
   (`report_theme.py:226`). Also the review lever the R1 follow-up wants.
+  **Implemented 2026-09-25**: `vs event suppress <id>... [--restore]`
+  (multiple ids accepted); `--restore` re-derives the status from stored
+  analysis (`detail`/`tiled` → detailed, `triage` → triaged, else
+  pending) and `llm_result_id` is preserved in both directions.
 - **Orphaned pending events on done jobs** (S). 45 events (mostly
   `suspicious_behavior` 0.5 + `hard_corner` 0.6) on jobs 29-39
   (2026-09-20 batch) never reached triage: `vs run` phases walk jobs by

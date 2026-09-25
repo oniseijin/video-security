@@ -8,6 +8,12 @@ follow semantic versioning.
 
 ### Added
 
+- **`vs event suppress <id>... [--restore]`**: manual review override for
+  confirmed false positives that survive LLM triage — marks events
+  `suppressed` (report rows render dimmed) without touching their stored
+  analysis; `--restore` returns each event to the status implied by its
+  stored triage/detail results.
+
 - **Person-persistence gate** (`[threat] min_person_frames`, default 8):
   short person-class misclassification flickers (night car→person tracks)
   no longer generate intrusion events — a track needs at least N

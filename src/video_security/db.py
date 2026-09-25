@@ -700,6 +700,23 @@ def update_event_status(
     conn.commit()
 
 
+def derived_event_status(
+    conn: sqlite3.Connection,
+    event_id: int,
+) -> str:
+    """Status implied by the event's stored analysis (suppress --restore)."""
+    rows = conn.execute(
+        "SELECT analysis_type FROM analysis_results WHERE event_id = ?",
+        (event_id,),
+    ).fetchall()
+    types = {str(r["analysis_type"]) for r in rows}
+    if types & {"detail", "tiled", "ocr_fallback"}:
+        return "detailed"
+    if "triage" in types:
+        return "triaged"
+    return "pending"
+
+
 def update_event_keyframes(
     conn: sqlite3.Connection,
     event_id: int,

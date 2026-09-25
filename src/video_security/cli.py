@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from video_security.llm import LLMClient
 
 app = typer.Typer()
+event_app = typer.Typer(help="Manual event review overrides")
+app.add_typer(event_app, name="event")
 
 
 def parse_duration(duration_str: str) -> float:
@@ -1020,6 +1022,31 @@ def archive_cmd(
     except EngineError as e:
         print(f"Error: {e}", file=sys.stderr)
         raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
+
+
+@event_app.command(name="suppress")
+def event_suppress_cmd(
+    ctx: typer.Context,
+    event_ids: list[int] = typer.Argument(..., help="Event IDs to suppress or restore"),  # noqa: B008
+    restore: bool = typer.Option(False, "--restore", help="Restore suppressed events to their analysis-implied status"),  # noqa: B008, E501
+) -> None:
+    conn, _cfg = _get_db(ctx)
+    try:
+        for event_id in event_ids:
+            row = conn.execute(
+                "SELECT id, status, llm_result_id FROM events WHERE id = ?",
+                (event_id,),
+            ).fetchone()
+            if row is None:
+                print(f"Error: event {event_id} not found", file=sys.stderr)
+                raise typer.Exit(code=1)
+            new_status = (
+                db.derived_event_status(conn, event_id) if restore else "suppressed"
+            )
+            db.update_event_status(conn, event_id, new_status, row["llm_result_id"])
+            print(f"event {event_id}: {row['status']} -> {new_status}")
     finally:
         conn.close()
 

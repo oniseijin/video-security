@@ -196,6 +196,54 @@ def test_search_date_range(tmp_path: Path) -> None:
     assert "intrusion" not in empty.output
 
 
+def test_event_suppress_and_restore(tmp_path: Path) -> None:
+    import video_security.db as db_module
+
+    db_file = tmp_path / "t.db"
+    conn = db_module.connect(str(db_file))
+    db_module.init_db(conn)
+    j1 = db_module.create_job(conn, "/v/a.mp4", "h1")
+    ev = db_module.insert_event(
+        conn, j1.id, "intrusion", 5.0, 6.0, 0, 72, "[]", 0.9, 0.9
+    )
+    db_module.insert_analysis_result(
+        conn, j1.id, ev, "d1", "1", "detail", '{"description": "x"}', None, 0, None
+    )
+    conn.execute(
+        "UPDATE events SET status = 'detailed', llm_result_id = 1 WHERE id = ?",
+        (ev,),
+    )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(app, ["--db", str(db_file), "event", "suppress", str(ev)])
+    assert result.exit_code == 0
+    assert "suppressed" in result.output
+
+    conn = db_module.connect(str(db_file))
+    row = conn.execute(
+        "SELECT status, llm_result_id FROM events WHERE id = ?", (ev,)
+    ).fetchone()
+    conn.close()
+    assert row["status"] == "suppressed"
+    assert row["llm_result_id"] == 1
+
+    result = runner.invoke(
+        app, ["--db", str(db_file), "event", "suppress", str(ev), "--restore"]
+    )
+    assert result.exit_code == 0
+    conn = db_module.connect(str(db_file))
+    row = conn.execute(
+        "SELECT status, llm_result_id FROM events WHERE id = ?", (ev,)
+    ).fetchone()
+    conn.close()
+    assert row["status"] == "detailed"
+    assert row["llm_result_id"] == 1
+
+    missing = runner.invoke(app, ["--db", str(db_file), "event", "suppress", "9999"])
+    assert missing.exit_code == 1
+
+
 def test_diff_prompt_versions(tmp_path: Path) -> None:
     import video_security.db as db_module
 

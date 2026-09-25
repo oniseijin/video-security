@@ -270,3 +270,28 @@ def test_archived_originals_delete_removes(db_path: str) -> None:
     delete_archived_original(conn, 42)
     assert get_archived_original(conn, 42) is None
     conn.close()
+
+def test_derived_event_status(db_path: str) -> None:
+    from video_security.db import (
+        derived_event_status,
+        insert_analysis_result,
+        insert_event,
+    )
+
+    conn = connect(db_path)
+    init_db(conn)
+    j = create_job(conn, "/v/a.mp4", "h1")
+    ev = insert_event(conn, j.id, "intrusion", 5.0, 6.0, 0, 72, "[]", 0.9, 0.9)
+
+    assert derived_event_status(conn, ev) == "pending"
+
+    insert_analysis_result(
+        conn, j.id, ev, "d1", "1", "triage", "{}", None, 0, None
+    )
+    assert derived_event_status(conn, ev) == "triaged"
+
+    insert_analysis_result(
+        conn, j.id, ev, "d1", "1", "detail", "{}", None, 0, None
+    )
+    assert derived_event_status(conn, ev) == "detailed"
+    conn.close()
