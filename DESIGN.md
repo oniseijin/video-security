@@ -1416,6 +1416,29 @@ new work. Default: 30 days.
 
 Not in scope for current phases; captured so the intent isn't lost.
 
+- **Photos import & removal conveniences (2026-09-25 ideas, none
+  built)**:
+  - `vs job remove --source photos` / `--import-id <id>` — bulk-remove
+    every photos-imported job (reuses the remove machinery per job, so
+    each asset gets a removals row and the whole source becomes
+    hash-gated from re-import). Must ship with a **gate override** —
+    bulk delete is a convenience, not a one-way door: e.g.
+    `vs import --allow-removed` or `vs job removals --forget <hash>`
+    to re-enable a gated source/asset deliberately.
+  - `--dry-run` on import — list/count what would be imported without
+    copying; sanity check before a big first run.
+  - Scheduled incremental photos sync (launchd/cron nightly
+    `vs import <library>` + analyze) — UUID dedupe makes repeats safe;
+    only wanted if automatic pickup is ever desired (today imports are
+    explicit one-shots).
+  - Album allowlist pattern — keep a "security" album in Photos and
+    import only that going forward (`--album` exists today); allowlist
+    beats denylist for personal content.
+  - `[adapter.photos] enabled = false` config kill-switch — hard-block
+    photos imports even when the command runs.
+  - "Forget" mode — delete `photos_imports` UUID rows so a future
+    import re-examines assets (jobs-level hash dedupe still skips
+    present clips); a repair-flow tool, not a removal path.
 - Memory-pressure test: detail falls back to 4B model.
 - Transcript FTS5 index (volume too low to bother yet).
 - Web console writes (e.g. reviewed/resolved event flags) — v1 is
