@@ -498,6 +498,7 @@ def test_persons_endpoints(base_url: str) -> None:
     assert detail["total"] == 2
     s = next(x for x in detail["sightings"] if x["event_id"] == 10)
     assert s["event_id"] == 10
+    assert s["face_id"] == 1
     assert s["crop_url"] == "/media/faces/1/face_10_0_0.jpg"
     status, _b = _status_of(f"{base_url}/api/persons/999")
     assert status == 404

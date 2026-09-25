@@ -484,6 +484,7 @@ export interface PersonTrackContext {
 }
 
 export interface PersonSighting {
+  face_id: number
   job_id: number
   event_id: number
   event_type: string

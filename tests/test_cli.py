@@ -299,6 +299,16 @@ def test_person_commands(tmp_path: Path) -> None:
     assert moved == 1
     conn.close()
 
+    result = runner.invoke(
+        app, ["--db", str(db_file), "person", "new", "Wife"]
+    )
+    assert result.exit_code == 0
+    assert "person 4 created: Wife" in result.output
+    conn = db_module.connect(str(db_file))
+    row = conn.execute("SELECT name FROM persons WHERE id = 4").fetchone()
+    assert row["name"] == "Wife"
+    conn.close()
+
     missing = runner.invoke(app, ["--db", str(db_file), "person", "name", "99", "X"])
     assert missing.exit_code == 1
     bad_merge = runner.invoke(app, ["--db", str(db_file), "person", "merge", "99", "1"])

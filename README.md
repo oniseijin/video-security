@@ -202,7 +202,7 @@ Package lives under `src/video_security/` (src layout).
 ## AI-First Development
 
 This is an AI-first project: built with [opencode](https://opencode.ai),
-assisted by a professional software engineer.
+directed by a professional software engineer.
 
 ## License
 

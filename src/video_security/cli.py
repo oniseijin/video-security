@@ -1075,6 +1075,21 @@ def person_name_cmd(
         conn.close()
 
 
+@person_app.command(name="new")
+def person_new_cmd(
+    ctx: typer.Context,
+    name: str | None = typer.Argument(None, help="Optional name for the new person"),  # noqa: B008
+) -> None:
+    from video_security.identity import create_person
+
+    conn, _cfg = _get_db(ctx)
+    try:
+        pid = create_person(conn, name)
+        print(f"person {pid} created" + (f": {name}" if name else ""))
+    finally:
+        conn.close()
+
+
 @person_app.command(name="merge")
 def person_merge_cmd(
     ctx: typer.Context,

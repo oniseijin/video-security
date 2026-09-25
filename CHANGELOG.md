@@ -15,7 +15,9 @@ follow semantic versioning.
   when the destination is unnamed). Names surface on web person cards,
   person pages, per-job faces groups, and in report event designations.
   Names live in the local DB only; the web console stays read-only (the
-  naming UI remains deliberately out of scope).
+  naming UI remains deliberately out of scope). `vs person new [name]`
+  mints a person for splits; person-page sightings show face IDs;
+  `reconcile_persons` keeps named persons alive with zero faces.
 
 - **Plate crop → source jump**: plate rows persist `crop_src` (saved
   source frame, `frames/<job_id>/track_<tid>_src.jpg`) + `crop_box`

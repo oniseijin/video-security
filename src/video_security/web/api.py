@@ -1368,6 +1368,7 @@ def person_detail(
         ).fetchone() if r["track_id"] is not None else None
         sightings.append(
             {
+                "face_id": int(r["id"]),
                 "job_id": int(r["job_id"]),
                 "event_id": int(r["event_id"]),
                 "event_type": str(r["event_type"]),

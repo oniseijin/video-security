@@ -12,6 +12,7 @@ from video_security.db import connect, init_db
 from video_security.identity import (
     assign_person,
     cosine_distance,
+    create_person,
     merge_persons,
     move_face,
     reconcile_persons,
@@ -314,3 +315,15 @@ def test_move_face_reassigns_cluster(
         move_face(db_conn, 9999, int(p1))
     with pytest.raises(ValueError):
         move_face(db_conn, f2, 9999)
+
+
+def test_create_person_and_reconcile_keeps_named(
+    db_conn: sqlite3.Connection,
+) -> None:
+    named = create_person(db_conn, "Mika")
+    unnamed = create_person(db_conn)
+    assert isinstance(named, int) and isinstance(unnamed, int)
+    reconcile_persons(db_conn)
+    ids = [r[0] for r in db_conn.execute("SELECT id FROM persons")]
+    assert named in ids
+    assert unnamed not in ids

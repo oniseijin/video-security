@@ -43,7 +43,7 @@ export function PersonDetailRoute() {
                   className="designation"
                   style={{ color: toneColor(s.tone) }}
                 >
-                  {s.event_type} // {fmtSec(s.start_sec)}
+                  {s.event_type} // {fmtSec(s.start_sec)} · face {s.face_id}
                 </span>
                 <Link to={`/jobs/${s.job_id}/events/${s.event_id}`}>
                   <img alt="face sighting" loading="lazy" src={s.crop_url} />

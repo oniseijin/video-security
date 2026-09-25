@@ -1643,7 +1643,10 @@ tracking across jobs.
   cluster label, `merge` moves faces + carries the name when the
   destination is unnamed, `move` reassigns one face); names surface on
   web person cards/pages, job faces groups, and report event
-  designations.
+  designations. Also `vs person new [name]` mints a fresh person (split
+  workflow: mint, `move` faces into it), person-page sightings now show
+  face IDs, and `reconcile_persons` keeps named persons alive with zero
+  faces.
 - Propagation is automatic: one name covers every face in the cluster, and
   future index runs assign new faces to the nearest named cluster
   (`assign_person` at index time).

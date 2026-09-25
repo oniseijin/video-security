@@ -107,7 +107,7 @@ def assign_person(
 
 def reconcile_persons(conn: sqlite3.Connection) -> None:
     conn.execute(
-        "DELETE FROM persons WHERE id NOT IN "
+        "DELETE FROM persons WHERE (name IS NULL OR name = '') AND id NOT IN "
         "(SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)"
     )
     conn.execute(
@@ -115,6 +115,16 @@ def reconcile_persons(conn: sqlite3.Connection) -> None:
         "(SELECT COUNT(*) FROM faces WHERE faces.person_id = persons.id)"
     )
     conn.commit()
+
+
+def create_person(conn: sqlite3.Connection, name: str | None = None) -> int:
+    cur = conn.execute(
+        "INSERT INTO persons (name, sightings) VALUES (?, 0)", (name,)
+    )
+    conn.commit()
+    if cur.lastrowid is None:
+        raise RuntimeError("person insert failed")
+    return int(cur.lastrowid)
 
 
 def rename_person(conn: sqlite3.Connection, person_id: int, name: str) -> bool:
