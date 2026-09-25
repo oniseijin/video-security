@@ -286,6 +286,18 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE archived_originals ADD COLUMN proxy_cold_path TEXT",
     ],
+    [
+        """CREATE TABLE removals (
+            id INTEGER PRIMARY KEY,
+            job_id INTEGER NOT NULL,
+            video_hash TEXT NOT NULL,
+            video_path TEXT NOT NULL,
+            cold_path TEXT,
+            reason TEXT,
+            removed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX idx_removals_hash ON removals(video_hash)""",
+    ],
 ]
 
 
@@ -359,6 +371,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.commit()
     if "metadata_json" not in job_cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN metadata_json TEXT")
+        conn.commit()
+    if "flag_note" not in job_cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN flag_note TEXT")
         conn.commit()
     person_cols = [row[1] for row in conn.execute("PRAGMA table_info(persons)").fetchall()]
     if "name" not in person_cols:
@@ -846,6 +861,55 @@ def insert_photos_import(
         (uuid, job_id, video_hash, filename),
     )
     conn.commit()
+
+
+def delete_photos_imports_for_job(conn: sqlite3.Connection, job_id: int) -> None:
+    conn.execute("DELETE FROM photos_imports WHERE job_id = ?", (job_id,))
+    conn.commit()
+
+
+def set_job_flag(conn: sqlite3.Connection, job_id: int, note: str | None) -> bool:
+    cur = conn.execute(
+        "UPDATE jobs SET flag_note = ? WHERE id = ?", (note, job_id)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def insert_removal(
+    conn: sqlite3.Connection,
+    job_id: int,
+    video_hash: str,
+    video_path: str,
+    reason: str,
+    cold_path: str | None = None,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO removals (job_id, video_hash, video_path, cold_path, reason) "
+        "VALUES (?,?,?,?,?) RETURNING id",
+        (job_id, video_hash, video_path, cold_path, reason),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.commit()
+    return int(row[0])
+
+
+def get_removal_by_hash(
+    conn: sqlite3.Connection, video_hash: str
+) -> sqlite3.Row | None:
+    row: sqlite3.Row | None = conn.execute(
+        "SELECT * FROM removals WHERE video_hash = ? "
+        "ORDER BY removed_at DESC, id DESC LIMIT 1",
+        (video_hash,),
+    ).fetchone()
+    return row
+
+
+def list_removals(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM removals ORDER BY removed_at DESC, id DESC"
+    ).fetchall()
 
 
 def get_archived_original(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:

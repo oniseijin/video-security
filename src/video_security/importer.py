@@ -21,6 +21,7 @@ class ImportReport:
     skipped: int = 0
     failed: int = 0
     skipped_cloud: int = 0
+    skipped_removed: int = 0
     jobs: list[int] = dataclasses.field(default_factory=list)
 
 
@@ -267,6 +268,9 @@ def run_import(
             info = None
 
         h = video_hash(clip.path)
+        if db.get_removal_by_hash(conn, h) is not None:
+            report.skipped_removed += 1
+            continue
         if h in seen_hashes or db.get_job_by_hash(conn, h) is not None:
             _record_hash_hit_uuid(conn, clip, h)
             report.skipped += 1
@@ -315,6 +319,9 @@ def run_import(
 
         if clip.pair_path is not None:
             ph = video_hash(clip.pair_path)
+            if db.get_removal_by_hash(conn, ph) is not None:
+                report.skipped_removed += 1
+                continue
             if ph in seen_hashes or db.get_job_by_hash(conn, ph) is not None:
                 report.skipped += 1
                 continue

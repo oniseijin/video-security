@@ -25,6 +25,8 @@ event_app = typer.Typer(help="Manual event review overrides")
 app.add_typer(event_app, name="event")
 person_app = typer.Typer(help="Person cluster management")
 app.add_typer(person_app, name="person")
+job_app = typer.Typer(help="Job review, removal, and removal history")
+app.add_typer(job_app, name="job")
 
 
 def parse_duration(duration_str: str) -> float:
@@ -446,6 +448,8 @@ def import_clips_cmd(
     )
     if report.skipped_cloud:
         print(f"skipped {report.skipped_cloud} cloud-only (iCloud-evicted) assets")
+    if report.skipped_removed:
+        print(f"skipped {report.skipped_removed} previously removed (removal log)")
     conn.close()
 
 
@@ -1041,6 +1045,106 @@ def archive_cmd(
     except EngineError as e:
         print(f"Error: {e}", file=sys.stderr)
         raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
+
+
+@job_app.command(name="flag")
+def job_flag_cmd(
+    ctx: typer.Context,
+    job_id: int = typer.Argument(..., help="Job ID to flag"),  # noqa: B008
+    note: str = typer.Option("", "--note", help="Review note attached to the flag"),  # noqa: B008
+) -> None:
+    conn, _cfg = _get_db(ctx)
+    try:
+        if not db.set_job_flag(conn, job_id, note):
+            print(f"Error: job {job_id} not found", file=sys.stderr)
+            raise typer.Exit(code=1)
+        print(f"job {job_id} flagged" + (f": {note}" if note else ""))
+    finally:
+        conn.close()
+
+
+@job_app.command(name="unflag")
+def job_unflag_cmd(
+    ctx: typer.Context,
+    job_id: int = typer.Argument(..., help="Job ID to unflag"),  # noqa: B008
+) -> None:
+    conn, _cfg = _get_db(ctx)
+    try:
+        if not db.set_job_flag(conn, job_id, None):
+            print(f"Error: job {job_id} not found", file=sys.stderr)
+            raise typer.Exit(code=1)
+        print(f"job {job_id} unflagged")
+    finally:
+        conn.close()
+
+
+@job_app.command(name="remove")
+def job_remove_cmd(
+    ctx: typer.Context,
+    job_id: int = typer.Argument(..., help="Job ID to remove"),  # noqa: B008
+    reason: str = typer.Option("personal", "--reason", help="Reason recorded in the removal log"),  # noqa: B008
+) -> None:
+    conn, cfg = _get_db(ctx)
+    try:
+        job = conn.execute(
+            "SELECT id, video_path, video_hash FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if job is None:
+            print(f"Error: job {job_id} not found", file=sys.stderr)
+            raise typer.Exit(code=1)
+        artifact_dir = Path(cfg.storage.artifact_dir).expanduser()
+        clip_path = Path(str(job["video_path"]))
+        clip_deleted = False
+        if clip_path.is_relative_to(artifact_dir):
+            try:
+                clip_path.unlink(missing_ok=True)
+                clip_deleted = True
+            except OSError:
+                clip_deleted = False
+        archived = db.get_archived_original(conn, job_id)
+        cold_path = str(archived["original_path"]) if archived else None
+        db.delete_job_rows(conn, job_id, cfg.storage.artifact_dir)
+        db.delete_photos_imports_for_job(conn, job_id)
+        conn.execute("DELETE FROM archived_originals WHERE job_id = ?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.commit()
+        report_path = artifact_dir / "reports" / f"job_{job_id}.html"
+        report_path.unlink(missing_ok=True)
+        db.insert_removal(
+            conn,
+            job_id,
+            str(job["video_hash"]),
+            str(job["video_path"]),
+            reason,
+            cold_path=cold_path,
+        )
+        details = ["db rows + artifacts cleared"]
+        details.append("clip deleted" if clip_deleted else "clip file kept (outside artifact dir)")
+        if cold_path:
+            details.append(f"cold original kept: {cold_path}")
+        print(f"removed job {job_id} ({reason}): " + ", ".join(details))
+    finally:
+        conn.close()
+
+
+@job_app.command(name="removals")
+def job_removals_cmd(ctx: typer.Context) -> None:
+    conn, _cfg = _get_db(ctx)
+    try:
+        rows = db.list_removals(conn)
+        if not rows:
+            print("no removals recorded")
+            return
+        for r in rows:
+            line = (
+                f"#{r['id']} job {r['job_id']} · {r['removed_at']} · "
+                f"{r['reason']} · {r['video_path']}"
+            )
+            if r["cold_path"]:
+                line += f" · cold original kept: {r['cold_path']}"
+            print(line)
     finally:
         conn.close()
 
