@@ -17,7 +17,7 @@ VEHICLE_CLASSES: list[int] = [2, 3, 5, 7]
 
 @dataclasses.dataclass
 class Detection:
-    track_id: int
+    track_id: int | None
     class_id: int
     bbox: tuple[int, int, int, int]
     conf: float
@@ -122,6 +122,8 @@ def accumulate_tracks(
     for fd in frame_dets:
         for det in fd.detections:
             tid = det.track_id
+            if tid is None:
+                continue
             if tid not in tracks_raw:
                 tracks_raw[tid] = {
                     "first_frame": fd.frame_number,

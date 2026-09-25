@@ -39,6 +39,22 @@ def _fd(number: int, ts: float, track_ids: list[int]) -> FrameDetections:
     )
 
 
+def _seq(
+    n: int,
+    track_ids: list[int],
+    ts0: float = 0.0,
+    step: float = 0.5,
+    motion: float = 0.05,
+    lighting: str = "day",
+) -> tuple[dict[int, FrameData], list[FrameDetections]]:
+    frames = {
+        i: _frame(i, ts0 + i * step, motion=motion, lighting=lighting)
+        for i in range(n)
+    }
+    fds = [_fd(i, ts0 + i * step, track_ids) for i in range(n)]
+    return frames, fds
+
+
 def test_parse_after_hours() -> None:
     assert parse_after_hours(["22:00-06:00"]) == [(1320, 360)]
     assert parse_after_hours(["09:00-17:00"]) == [(540, 1020)]
@@ -70,20 +86,18 @@ def test_no_person_no_event() -> None:
 
 def test_day_person_suspicious_behavior() -> None:
     config = Config()
-    frames = {0: _frame(0, 0.0, motion=0.05), 5: _frame(5, 2.5, motion=0.05)}
-    fds = [_fd(0, 0.0, [1]), _fd(5, 2.5, [1])]
+    frames, fds = _seq(8, [1], motion=0.05)
     events = detect_threat_events(fds, frames, config)
     assert len(events) == 1
     assert events[0].event_type == "suspicious_behavior"
     assert events[0].priority == 0.5
     assert events[0].track_id == 1
-    assert events[0].frame_numbers == [0, 5]
+    assert events[0].frame_numbers == list(range(8))
 
 
 def test_night_person_intrusion() -> None:
     config = Config()
-    frames = {0: _frame(0, 0.0, motion=0.05, lighting="night")}
-    fds = [_fd(0, 0.0, [1])]
+    frames, fds = _seq(8, [1], motion=0.05, lighting="night")
     events = detect_threat_events(fds, frames, config)
     assert len(events) == 1
     assert events[0].event_type == "intrusion"
@@ -92,8 +106,7 @@ def test_night_person_intrusion() -> None:
 
 def test_after_hours_wall_clock() -> None:
     config = Config()
-    frames = {0: _frame(0, 0.0, motion=0.05)}
-    fds = [_fd(0, 0.0, [1])]
+    frames, fds = _seq(8, [1], motion=0.05)
     events = detect_threat_events(
         fds, frames, config, recording_start_local=datetime(2026, 1, 1, 23, 30, 0)
     )
@@ -103,8 +116,7 @@ def test_after_hours_wall_clock() -> None:
 
 def test_daytime_wall_clock_not_intrusion() -> None:
     config = Config()
-    frames = {0: _frame(0, 0.0, motion=0.05)}
-    fds = [_fd(0, 0.0, [1])]
+    frames, fds = _seq(8, [1], motion=0.05)
     events = detect_threat_events(
         fds, frames, config, recording_start_local=datetime(2026, 1, 1, 12, 0, 0)
     )
@@ -125,20 +137,27 @@ def test_low_motion_no_flag() -> None:
 def test_track_split_on_gap() -> None:
     config = Config()
     config.threat.merge_gap_sec = 5
-    frames = {
-        0: _frame(0, 0.0, motion=0.05),
-        10: _frame(10, 100.0, motion=0.05),
-    }
-    fds = [_fd(0, 0.0, [1]), _fd(10, 100.0, [1])]
-    events = detect_threat_events(fds, frames, config)
+    frames_a, fds_a = _seq(8, [1], ts0=0.0)
+    frames_b, fds_b = _seq(8, [1], ts0=100.0)
+    frames_b = {8 + k: v for k, v in frames_b.items()}
+    fds_b = [
+        FrameDetections(8 + fd.frame_number, fd.timestamp_sec, fd.detections)
+        for fd in fds_b
+    ]
+    events = detect_threat_events(fds_a + fds_b, {**frames_a, **frames_b}, config)
     assert len(events) == 2
 
 
 def test_track_split_on_different_track() -> None:
     config = Config()
-    frames = {0: _frame(0, 0.0, motion=0.05), 1: _frame(1, 0.5, motion=0.05)}
-    fds = [_fd(0, 0.0, [1]), _fd(1, 0.5, [2])]
-    events = detect_threat_events(fds, frames, config)
+    frames_a, fds_a = _seq(8, [1], ts0=0.0)
+    frames_b, fds_b = _seq(8, [2], ts0=4.0)
+    frames_b = {8 + k: v for k, v in frames_b.items()}
+    fds_b = [
+        FrameDetections(8 + fd.frame_number, fd.timestamp_sec, fd.detections)
+        for fd in fds_b
+    ]
+    events = detect_threat_events(fds_a + fds_b, {**frames_a, **frames_b}, config)
     assert len(events) == 2
     assert events[0].track_id == 1
     assert events[1].track_id == 2
@@ -162,10 +181,67 @@ def test_camera_after_hours_override() -> None:
 
     config = Config()
     camera = CameraOverrides(after_hours=["00:00-23:59"])
-    frames = {0: _frame(0, 0.0, motion=0.05)}
-    fds = [_fd(0, 0.0, [1])]
+    frames, fds = _seq(8, [1], motion=0.05)
     events = detect_threat_events(
         fds, frames, config, camera=camera, recording_start_local=datetime(2026, 1, 1, 12, 0, 0)
     )
     assert len(events) == 1
     assert events[0].event_type == "intrusion"
+
+
+def test_flicker_track_below_min_frames_dropped() -> None:
+    config = Config()
+    frames, fds = _seq(5, [1], motion=0.05, lighting="night")
+    assert detect_threat_events(fds, frames, config) == []
+
+
+def test_persistence_boundary_emits_event() -> None:
+    config = Config()
+    n = config.threat.min_person_frames
+    frames, fds = _seq(n, [1], motion=0.05, lighting="night")
+    events = detect_threat_events(fds, frames, config)
+    assert len(events) == 1
+    assert events[0].event_type == "intrusion"
+
+
+def test_min_person_frames_zero_disables_gate() -> None:
+    config = Config()
+    config.threat.min_person_frames = 0
+    frames = {0: _frame(0, 0.0, motion=0.05, lighting="night")}
+    fds = [_fd(0, 0.0, [1])]
+    events = detect_threat_events(fds, frames, config)
+    assert len(events) == 1
+
+
+def test_none_track_bypasses_gate() -> None:
+    config = Config()
+    frames = {0: _frame(0, 0.0, motion=0.05, lighting="night")}
+    fds = [
+        FrameDetections(0, 0.0, [Detection(None, 0, (10, 10, 40, 90), 0.8)])
+    ]
+    events = detect_threat_events(fds, frames, config)
+    assert len(events) == 1
+    assert events[0].track_id is None
+
+
+def test_person_conf_floor_counts_only_high_conf_frames() -> None:
+    config = Config()
+    config.threat.min_person_frames = 6
+    config.threat.person_conf_floor = 0.5
+    frames = {i: _frame(i, i * 0.5, motion=0.05, lighting="night") for i in range(8)}
+    mixed = [
+        FrameDetections(
+            i,
+            i * 0.5,
+            [Detection(1, 0, (10, 10, 40, 90), 0.9 if i % 2 == 0 else 0.2)],
+        )
+        for i in range(8)
+    ]
+    assert detect_threat_events(mixed, frames, config) == []
+
+    high = [
+        FrameDetections(i, i * 0.5, [Detection(1, 0, (10, 10, 40, 90), 0.9)])
+        for i in range(8)
+    ]
+    events = detect_threat_events(high, frames, config)
+    assert len(events) == 1

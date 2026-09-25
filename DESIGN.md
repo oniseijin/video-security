@@ -509,6 +509,8 @@ time_weight = 0.3                                    # after-hours/night boost
 after_hours = ["22:00-06:00"]                       # local-time windows (camera overrides)
 loiter_min_sec = 60                                  # duration for loitering classification
 merge_gap_sec = 5                                   # gap that still merges adjacent flags
+min_person_frames = 8                                # person-track frames required before events (flicker gate)
+person_conf_floor = 0.0                              # best-person conf to count toward persistence (0 = off)
 
 [threat.priority]                                   # event type → priority
 intrusion = 0.9
@@ -1511,7 +1513,11 @@ in parallel per its own section below).
   against — validation is now the next import batch. Scale check: 715
   priority-0.85+ intrusion events across 111 jobs (not just job 420's
   11), all still `detailed`/unsuppressed — the gate plus the suppress
-  CLI are the top two items.
+  CLI are the top two items. **Implemented 2026-09-25**: two-pass gate
+  landed as specced (`min_person_frames = 8`, `person_conf_floor = 0.0`
+  off, None-track bypass; `Detection.track_id` widened to `int | None`).
+  Validation is the next import batch; the 715 stored flicker intrusions
+  still need the suppress CLI.
 - **`vs event suppress` CLI** (S). The only suppress path today is triage
   returning `relevant: false` (`pipeline.py:831`). Confirmed false positives
   that survive triage — job 420's 11 flicker intrusions — need a manual

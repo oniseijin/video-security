@@ -113,6 +113,8 @@ class ThreatConfig:
     )
     loiter_min_sec: int = 60
     merge_gap_sec: int = 5
+    min_person_frames: int = 8
+    person_conf_floor: float = 0.0
     priority: dict[str, float] = dataclasses.field(
         default_factory=lambda: {
             "intrusion": 0.9,

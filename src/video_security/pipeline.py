@@ -198,7 +198,7 @@ def _collect_plate_reads(
     track_bboxes: dict[int, dict[int, tuple[int, int, int, int]]] = {}
     for fd in frame_dets:
         for det in fd.detections:
-            if det.class_id in VEHICLE_CLASSES:
+            if det.class_id in VEHICLE_CLASSES and det.track_id is not None:
                 track_bboxes.setdefault(det.track_id, {})[fd.frame_number] = det.bbox
     reads: dict[int, PlateRead] = {}
     for track_id, bboxes in track_bboxes.items():

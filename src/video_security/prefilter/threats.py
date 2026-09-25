@@ -78,6 +78,22 @@ def _classify(
     return "suspicious_behavior"
 
 
+def _person_frame_counts(
+    frame_dets: list[FrameDetections],
+    conf_floor: float,
+) -> dict[int | None, int]:
+    counts: dict[int | None, int] = {}
+    for fd in frame_dets:
+        persons = [d for d in fd.detections if d.class_id == PERSON_CLASS]
+        if not persons:
+            continue
+        if conf_floor > 0.0 and max(p.conf for p in persons) < conf_floor:
+            continue
+        for p in persons:
+            counts[p.track_id] = counts.get(p.track_id, 0) + 1
+    return counts
+
+
 def detect_threat_events(
     frame_dets: list[FrameDetections],
     frames_by_number: dict[int, FrameData],
@@ -90,7 +106,10 @@ def detect_threat_events(
     after_hours_cfg = camera.after_hours if camera.after_hours else threat.after_hours
     ranges = parse_after_hours(after_hours_cfg)
 
-    flagged: list[tuple[int, float, int, float, bool, bool]] = []
+    counts = _person_frame_counts(frame_dets, threat.person_conf_floor)
+    min_frames = max(0, threat.min_person_frames)
+
+    flagged: list[tuple[int, float, int | None, float, bool, bool]] = []
     for fd in frame_dets:
         frame = frames_by_number.get(fd.frame_number)
         if frame is None:
@@ -108,10 +127,12 @@ def detect_threat_events(
         if score < threat.score_threshold:
             continue
         best = max(persons, key=lambda p: p.conf)
+        if best.track_id is not None and counts.get(best.track_id, 0) < min_frames:
+            continue
         flagged.append((fd.frame_number, frame.timestamp_sec, best.track_id, score, after, night))
 
     events: list[ThreatEvent] = []
-    current: list[tuple[int, float, int, float, bool, bool]] = []
+    current: list[tuple[int, float, int | None, float, bool, bool]] = []
     for item in flagged:
         if not current:
             current = [item]
@@ -130,7 +151,7 @@ def detect_threat_events(
 
 
 def _build_event(
-    items: list[tuple[int, float, int, float, bool, bool]],
+    items: list[tuple[int, float, int | None, float, bool, bool]],
     threat: ThreatConfig,
 ) -> ThreatEvent:
     start = items[0][1]

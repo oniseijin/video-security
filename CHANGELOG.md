@@ -8,6 +8,15 @@ follow semantic versioning.
 
 ### Added
 
+- **Person-persistence gate** (`[threat] min_person_frames`, default 8):
+  short person-class misclassification flickers (night car→person tracks)
+  no longer generate intrusion events — a track needs at least N
+  person-class frames before any of its frames can flag, so flicker tracks
+  emit no events at all. Detections without a track id bypass the gate;
+  optional `[threat] person_conf_floor` (0.0, off) counts only frames
+  whose best person confidence meets the floor. Forward-only — stored
+  events are untouched.
+
 - **AGPL-3.0-only license**: `ultralytics` (YOLO prefilter + weights) is
   AGPL-3.0, so the project license matches — permissive licensing would be
   non-compliant for the combined work. `license`/`license-files` declared in
