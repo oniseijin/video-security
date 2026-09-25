@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-security"
-version = "0.7.0"
+version = "0.8.0"
 description = "Local, resumable security camera footage analysis CLI"
 requires-python = ">=3.12"
 license = "AGPL-3.0-only"
