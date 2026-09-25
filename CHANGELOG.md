@@ -8,6 +8,15 @@ follow semantic versioning.
 
 ### Added
 
+- **Person + animal boxes on keyframes, toggleable**: dog/cat (COCO
+  16/17) join the default YOLO classes; events persist `boxes_json`
+  (`[{kind, track_id, box}]` per keyframe, normalized top-left like
+  faces) recorded at keyframe-pick time. Web console and report render
+  person/animal boxes on filmstrips and lightboxes with Persons/Animals
+  toggles (localStorage `vs-persons`/`vs-animals`, synced into the
+  report iframe). `vs backfill-media --boxes` backfills events that
+  predate the column (idempotent).
+
 - **Face naming & person management (CLI)**: `persons.name` column +
   `vs person name <id> <name>` / `vs person merge <src> <dst>` /
   `vs person move <face-id> <person-id>` — tag a face cluster once and

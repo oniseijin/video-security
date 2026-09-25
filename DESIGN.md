@@ -43,8 +43,8 @@ Source Video
     └──→ Prefilter (shared decode pass, 3 consumers)
           │
           ├── Vehicle pipeline:
-          │   YOLO CoreML (batch 8-16, relevant classes only: person, car,
-          │   truck, bus, motorcycle, bicycle) → ByteTrack (ultralytics built-in,
+  │   YOLO CoreML (batch 8-16, relevant classes only: person, car,
+  │   truck, bus, motorcycle, bicycle, dog, cat) → ByteTrack (ultralytics built-in,
           │   no separate dep) → per-track: plate crop → upscale 2-4× → Vision
           │   OCR → consensus vote across all frames of the track → plates table
           │
@@ -134,7 +134,8 @@ Three consumers fed by shared decode pass. Runs serially (not concurrently).
 
 **Vehicle pipeline**
 - YOLOv8 CoreML (.mlpackage) for ANE acceleration. Batch 8-16.
-- Relevant classes only: person, car, truck, bus, motorcycle, bicycle
+- Relevant classes only: person, car, truck, bus, motorcycle, bicycle,
+  dog, cat
 - ByteTrack via ultralytics built-in (`model.track(tracker="bytetrack.yaml")`)
 - Per-track plate pipeline: vehicle crop → upscale 2-4× → Vision OCR
   (`VNRecognizeTextRequest` via pyobjc-framework-Vision) → per-track consensus
@@ -1505,6 +1506,19 @@ in parallel per its own section below).
   web UI and report iframe. Backfill: `vs backfill-media --boxes` —
   single-frame YOLO inference per stored keyframe (no tracking needed)
   via the existing Detector seam in `backfill.py`.
+  **Implemented 2026-09-26**: COCO 16/17 in `COCO_RELEVANT` +
+  `ANIMAL_CLASSES`/`box_kind` (prefilter/vehicles.py); `events.boxes_json`
+  via the ALTER pattern + `db.update_event_boxes`; the pipeline records
+  per-kf boxes at keyframe-pick time normalized to the decoded keyframe
+  dims. Web: `OverlayToggle` (vs-persons/vs-animals, body classes
+  hide-persons/hide-animals) + `BoxOverlay` rendering `person-box`
+  (amber `--vs-warning`) / `animal-box` (green `--vs-success`) in
+  filmstrip + lightbox; ReportTab syncs the new body classes into the
+  iframe. Report: person/animal box spans, Persons/Animals toggle
+  buttons, `THEME_FACES_JS` generalized to three toggles (localStorage
+  keys shared with the web UI), lightbox clones the new classes.
+  Backfill: `vs backfill-media --boxes` (idempotent via
+  `boxes_json IS NULL`).
 - **Person-flicker false intrusions** (evidence: job 420 track 72 → event
   #2369, priority-0.9 intrusion from a 5-frame night car→person
   misclassification; unanimous track votes, so vote-share gates can't help).
