@@ -1610,10 +1610,12 @@ tracking across jobs.
   in `register_face`, when `face_capture_quality` returns None, fall
   back to a resolution gate — `min(image.shape[:2]) >= 48 px →
   quality = 1.0`, else reject (`FALLBACK_MIN_CROP_PX = 48` constant in
-  identity.py) + a None-quality fallback test in tests/test_identity.py
-  (~4 lines + test; suite verified green with it applied). Keeps the
-  Vision quality path intact for macOS versions where the request
-  works.
+   identity.py) + a None-quality fallback test in tests/test_identity.py
+   (~4 lines + test; suite verified green with it applied). Keeps the
+   Vision quality path intact for macOS versions where the request
+   works. **Applied 2026-09-25**; `vs index-faces` re-run on the archive
+   is pending (run outside night batches — it writes rows while analyze
+   holds the WAL write lock).
 - `persons.name` column (existing ALTER TABLE pattern) + `vs person
   name|merge|move` CLI — the web console stays read-only. **Next version is
   CLI-only**: the web naming UI (click-to-tag on face chips, name editing on

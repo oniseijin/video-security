@@ -42,6 +42,14 @@ follow semantic versioning.
 
 ### Fixed
 
+- **Face index quality gate on this macOS**:
+  `VNDetectFaceCaptureQualityRequest` returns zero results on this
+  machine (verified on all face crops and full keyframes), so
+  `vs index-faces` registered 0 faces. When Vision reports no quality,
+  `register_face` now falls back to a resolution gate
+  (`FALLBACK_MIN_CROP_PX = 48`); the Vision quality path stays intact
+  where the request works.
+
 - **Report Keyframes section never closed**: the generated report HTML
   opened the Keyframes `<section class="panel">` but never closed it, so
   browsers nested the Plates / Watchlist / Transcript / Driving Log panels

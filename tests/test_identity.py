@@ -79,6 +79,29 @@ def test_register_face_quality_gate(
     assert db_conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0
 
 
+def test_register_face_none_quality_fallback(
+    db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "video_security.identity.face_capture_quality", lambda _img: None
+    )
+    monkeypatch.setattr(
+        "video_security.identity.feature_print",
+        lambda _img: np.ones(4, dtype=np.float32) / 2.0,
+    )
+    small = np.zeros((32, 32, 3), dtype=np.uint8)
+    assert register_face(db_conn, _cfg(), 1, 10, 0, 0, "/s.jpg", small) is None
+    assert db_conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0
+
+    big = np.zeros((64, 64, 3), dtype=np.uint8)
+    fid = register_face(db_conn, _cfg(), 1, 11, 0, 0, "/b.jpg", big)
+    assert fid is not None
+    row = db_conn.execute(
+        "SELECT quality FROM faces WHERE id = ?", (fid,)
+    ).fetchone()
+    assert row["quality"] == 1.0
+
+
 def test_register_face_clustering(
     db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:

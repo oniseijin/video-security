@@ -7,6 +7,8 @@ import numpy as np
 
 from video_security.config import Config
 
+FALLBACK_MIN_CROP_PX = 48
+
 
 def _image_to_nsdata(image: np.ndarray) -> Any:
     import cv2
@@ -128,7 +130,11 @@ def register_face(
     if not cfg.identity.enabled:
         return None
     quality = face_capture_quality(image)
-    if quality is None or quality < cfg.identity.min_quality:
+    if quality is None:
+        if min(image.shape[:2]) < FALLBACK_MIN_CROP_PX:
+            return None
+        quality = 1.0
+    if quality < cfg.identity.min_quality:
         return None
     embedding = feature_print(image)
     if embedding is None:
