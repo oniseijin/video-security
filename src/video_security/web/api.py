@@ -391,7 +391,7 @@ def jobs_list(
     )
     rows = conn.execute(
         "SELECT j.id, j.status, j.video_path, j.recording_start_utc, j.created_at, "
-        "j.import_id, "
+        "j.import_id, j.flag_note, "
         "(SELECT COUNT(*) FROM events e WHERE e.job_id = j.id) AS n_events, "
         "(SELECT COUNT(*) FROM plates p WHERE p.job_id = j.id) AS n_plates, "
         "(SELECT COUNT(*) FROM events e2 WHERE e2.job_id = j.id "
@@ -430,6 +430,7 @@ def jobs_list(
                 "recorded_at": _iso(row["recording_start_utc"]),
                 "imported_at": _iso(str(row["created_at"])),
                 "import_id": row["import_id"],
+                "flag_note": row["flag_note"],
                 "archive": archive,
                 "duration_sec": float(duration) if duration is not None else None,
                 "counts": {
@@ -563,6 +564,7 @@ def job_detail(
         "recorded_at": _iso(job["recording_start_utc"]),
         "imported_at": _iso(str(job["created_at"])),
         "import_id": job["import_id"],
+        "flag_note": job["flag_note"],
         "archive": archive,
         "mode": clip_mode(str(job["video_path"])),
         "channel": channel,

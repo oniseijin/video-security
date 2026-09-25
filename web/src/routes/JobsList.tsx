@@ -225,6 +225,14 @@ export function JobsList() {
                   <td>{fmtDate(job.imported_at)}</td>
                   <td>
                     <span className="chip-row">
+                      {job.flag_note !== null ? (
+                        <span
+                          className="chip"
+                          title={job.flag_note || "flagged for review"}
+                        >
+                          ⚑
+                        </span>
+                      ) : null}
                       {job.archive ? <span className="chip">ARCH</span> : null}
                       {job.has_gps ? <span className="chip">GPS</span> : null}
                       {job.has_transcript ? <span className="chip">TR</span> : null}

@@ -55,6 +55,7 @@ export interface JobItem {
   recorded_at: string | null
   imported_at: string | null
   import_id: string | null
+  flag_note: string | null
   archive: boolean
   duration_sec: number | null
   counts: { events: number; plates: number; faces: number }
@@ -95,6 +96,7 @@ export interface JobDetail {
   recorded_at: string | null
   imported_at: string | null
   import_id: string | null
+  flag_note: string | null
   archive: boolean
   mode: string
   channel: string | null

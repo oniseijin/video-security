@@ -82,6 +82,13 @@ function Header({ job }: { job: JobDetailData }) {
             <span className="chip">ARCHIVE</span>
           </Meta>
         ) : null}
+        {job.flag_note !== null ? (
+          <Meta label="review">
+            <span className="chip" title={job.flag_note || "flagged for review"}>
+              ⚑ {job.flag_note || "flagged for review"}
+            </span>
+          </Meta>
+        ) : null}
       </div>
       <p className="path-note">{job.video_path}</p>
       <div className="count-row">

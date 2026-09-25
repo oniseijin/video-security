@@ -469,6 +469,20 @@ def test_faces_gallery(base_url: str) -> None:
     assert filtered["total"] == 0
 
 
+def test_jobs_flag_note(base_url: str, tmp_path: Path) -> None:
+    conn = connect(str(tmp_path / "t.db"))
+    conn.execute("UPDATE jobs SET flag_note = 'review me' WHERE id = 1")
+    conn.commit()
+    conn.close()
+    page = _get_json(f"{base_url}/api/jobs?limit=50")
+    item = next(j for j in page["items"] if j["id"] == 1)
+    assert item["flag_note"] == "review me"
+    other = next(j for j in page["items"] if j["id"] == 2)
+    assert other["flag_note"] is None
+    detail = _get_json(f"{base_url}/api/jobs/1")
+    assert detail["flag_note"] == "review me"
+
+
 def test_animals_gallery(base_url: str) -> None:
     data = _get_json(f"{base_url}/api/animals")
     assert data["total"] == 1
