@@ -147,7 +147,7 @@ def _seed(base: Path) -> None:
         (json.dumps([str(frames / "event_10_0.jpg")]),),
     )
     conn.execute(
-        "INSERT INTO persons (sightings) VALUES (1)"
+        "INSERT INTO persons (name, sightings) VALUES ('Kenji', 1)"
     )
     conn.execute(
         "INSERT INTO faces (job_id, event_id, keyframe_index, face_index, "
@@ -477,6 +477,7 @@ def test_job_faces_grouped(base_url: str) -> None:
     assert {c["crop_url"] for c in group["crops"]} == {
         "/media/faces/1/face_10_0_0.jpg"
     }
+    assert group["crops"][0]["person_name"] == "Kenji"
     empty = _get_json(f"{base_url}/api/jobs/3/faces")
     assert empty["total"] == 0
     assert empty["groups"] == []
@@ -487,11 +488,13 @@ def test_persons_endpoints(base_url: str) -> None:
     assert data["total"] == 1
     p = data["items"][0]
     assert p["person_id"] == 1
+    assert p["name"] == "Kenji"
     assert p["sightings"] == 1
     assert p["representative_crop_url"] == "/media/faces/1/face_10_0_0.jpg"
     assert p["first_seen"] is not None
     detail = _get_json(f"{base_url}/api/persons/1")
     assert detail["person_id"] == 1
+    assert detail["name"] == "Kenji"
     assert detail["total"] == 2
     s = next(x for x in detail["sightings"] if x["event_id"] == 10)
     assert s["event_id"] == 10

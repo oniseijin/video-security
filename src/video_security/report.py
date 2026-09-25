@@ -177,6 +177,18 @@ def render_report_html(
         "SELECT * FROM plates WHERE job_id = ?", (job_id,)
     ).fetchall()
 
+    person_names: dict[int, list[str]] = {}
+    for r in conn.execute(
+        "SELECT f.event_id, p.name FROM faces f "
+        "JOIN persons p ON p.id = f.person_id "
+        "WHERE f.job_id = ? AND p.name IS NOT NULL AND p.name != ''",
+        (job_id,),
+    ):
+        name = str(r["name"])
+        names = person_names.setdefault(int(r["event_id"]), [])
+        if name not in names:
+            names.append(name)
+
     transcript_rows = conn.execute(
         "SELECT * FROM transcript_segments WHERE job_id = ? ORDER BY start_time",
         (job_id,),
@@ -493,6 +505,9 @@ def render_report_html(
         designation = f"{evt['event_type']} // {_mmss(evt['start_sec'])}"
         if face_count:
             designation += f" // {face_count} face" + ("s" if face_count != 1 else "")
+        event_names = person_names.get(int(evt["id"]), [])
+        if event_names:
+            designation += " · " + ", ".join(event_names)
         caption = html.escape(
             f"Event {evt['id']}: {evt['event_type']}"
             + (f" — {description}" if description else "")

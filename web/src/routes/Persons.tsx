@@ -123,8 +123,8 @@ export function Persons() {
             {data.items.map((p) => (
               <figure className="subject face-card" key={p.person_id}>
                 <span className="designation">
-                  PERSON {String(p.person_id).padStart(3, "0")} //{" "}
-                  {p.sightings} sighting{p.sightings === 1 ? "" : "s"}
+                  {p.name ? `${p.name} // ` : ""}PERSON {String(p.person_id).padStart(3, "0")}{" "}
+                  // {p.sightings} sighting{p.sightings === 1 ? "" : "s"}
                 </span>
                 <Link to={`/persons/${p.person_id}`}>
                   {p.representative_crop_url ? (

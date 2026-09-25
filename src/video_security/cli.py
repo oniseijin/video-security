@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 app = typer.Typer()
 event_app = typer.Typer(help="Manual event review overrides")
 app.add_typer(event_app, name="event")
+person_app = typer.Typer(help="Person cluster management")
+app.add_typer(person_app, name="person")
 
 
 def parse_duration(duration_str: str) -> float:
@@ -1050,6 +1052,63 @@ def event_suppress_cmd(
             )
             db.update_event_status(conn, event_id, new_status, row["llm_result_id"])
             print(f"event {event_id}: {row['status']} -> {new_status}")
+    finally:
+        conn.close()
+
+
+@person_app.command(name="name")
+def person_name_cmd(
+    ctx: typer.Context,
+    person_id: int = typer.Argument(..., help="Person ID"),
+    name: str = typer.Argument(..., help="Name for the person cluster"),
+) -> None:
+    from video_security.identity import rename_person
+
+    conn, _cfg = _get_db(ctx)
+    try:
+        if rename_person(conn, person_id, name):
+            print(f"person {person_id}: name set to {name}")
+        else:
+            print(f"Error: person {person_id} not found", file=sys.stderr)
+            raise typer.Exit(code=1)
+    finally:
+        conn.close()
+
+
+@person_app.command(name="merge")
+def person_merge_cmd(
+    ctx: typer.Context,
+    src: int = typer.Argument(..., help="Source person ID (disappears)"),
+    dst: int = typer.Argument(..., help="Destination person ID (absorbs)"),
+) -> None:
+    from video_security.identity import merge_persons
+
+    conn, _cfg = _get_db(ctx)
+    try:
+        moved = merge_persons(conn, src, dst)
+        print(f"merged person {src} into {dst}: {moved} faces moved")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
+
+
+@person_app.command(name="move")
+def person_move_cmd(
+    ctx: typer.Context,
+    face_id: int = typer.Argument(..., help="Face ID to reassign"),
+    person_id: int = typer.Argument(..., help="Destination person ID"),
+) -> None:
+    from video_security.identity import move_face
+
+    conn, _cfg = _get_db(ctx)
+    try:
+        if move_face(conn, face_id, person_id):
+            print(f"face {face_id}: moved to person {person_id}")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
     finally:
         conn.close()
 

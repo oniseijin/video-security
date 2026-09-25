@@ -1287,7 +1287,7 @@ def persons(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
     rows = conn.execute(
-        "SELECT p.id, p.sightings, "
+        "SELECT p.id, p.name, p.sightings, "
         "(SELECT f.crop_path FROM faces f WHERE f.person_id = p.id "
         " ORDER BY f.quality DESC LIMIT 1) AS rep_crop, "
         "(SELECT MIN(j.recording_start_utc) FROM faces f "
@@ -1313,6 +1313,7 @@ def persons(
         items.append(
             {
                 "person_id": int(r["id"]),
+                "name": r["name"],
                 "sightings": int(r["sightings"]),
                 "representative_crop_url": rep_url,
                 "first_seen": _iso(r["first_seen"]),
@@ -1346,6 +1347,10 @@ def person_detail(
         "ORDER BY j.recording_start_utc DESC, f.id DESC",
         (person_id,),
     ).fetchall()
+    name_row = conn.execute(
+        "SELECT name FROM persons WHERE id = ?", (person_id,)
+    ).fetchone()
+    person_name = str(name_row["name"]) if name_row and name_row["name"] else None
     sightings = []
     for r in rows:
         crop = r["crop_path"]
@@ -1385,6 +1390,7 @@ def person_detail(
         )
     return {
         "person_id": person_id,
+        "name": person_name,
         "sightings": sightings,
         "total": len(sightings),
     }
@@ -1396,8 +1402,9 @@ def job_faces(
     job_id = int(params["id"])
     rows = conn.execute(
         "SELECT f.event_id, f.person_id, f.quality, f.crop_path, "
-        "e.event_type, e.start_sec "
+        "e.event_type, e.start_sec, p.name AS person_name "
         "FROM faces f JOIN events e ON e.id = f.event_id "
+        "LEFT JOIN persons p ON p.id = f.person_id "
         "WHERE f.job_id = ? "
         "ORDER BY (f.person_id IS NULL), f.person_id, f.quality DESC, f.id",
         (job_id,),
@@ -1420,6 +1427,7 @@ def job_faces(
                 "start_sec": float(r["start_sec"]),
                 "quality": r["quality"],
                 "person_id": int(r["person_id"]) if r["person_id"] else None,
+                "person_name": r["person_name"] if r["person_name"] else None,
                 "crop_url": url,
             }
         )

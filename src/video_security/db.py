@@ -356,6 +356,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "metadata_json" not in job_cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN metadata_json TEXT")
         conn.commit()
+    person_cols = [row[1] for row in conn.execute("PRAGMA table_info(persons)").fetchall()]
+    if "name" not in person_cols:
+        conn.execute("ALTER TABLE persons ADD COLUMN name TEXT")
+        conn.commit()
 
 
 def create_job(conn: sqlite3.Connection, video_path: str, video_hash: str) -> JobRow:

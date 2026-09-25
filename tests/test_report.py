@@ -49,6 +49,14 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
         json.dumps([str(kf1), str(kf2)]), 0.85, 0.9,
         faces_json="[[[0.1, 0.2, 0.3, 0.4]], []]",
     )
+    conn.execute(
+        "INSERT INTO persons (id, name, sightings) VALUES (1, 'Mika', 1)"
+    )
+    conn.execute(
+        "INSERT INTO faces (job_id, event_id, keyframe_index, face_index, "
+        "crop_path, quality, person_id) VALUES "
+        f"({job.id}, {evt1_id}, 0, 0, '/faces/x.jpg', 0.9, 1)"
+    )
     ar_id = insert_analysis_result(
         conn, job.id, evt1_id, "md5", "v1", "detail",
         json.dumps({"relevant": True, "description": "suspicious person detected"}), 0.9, 0, None,
@@ -114,6 +122,7 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert "plate-box" in content
     assert "Chiba" in content
     assert "suspicious person detected" in content
+    assert "Mika" in content
     assert content.count("<table") >= 4
     assert content.count("<img") == 4
     assert 'data-theme="machine"' in content

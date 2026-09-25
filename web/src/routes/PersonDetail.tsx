@@ -17,7 +17,10 @@ export function PersonDetailRoute() {
 
   return (
     <section className="panel">
-      <h2>Person {String(personId).padStart(3, "0")}</h2>
+      <h2>
+        {data?.name ? `${data.name} · ` : ""}Person{" "}
+        {String(personId).padStart(3, "0")}
+      </h2>
       {isPending ? (
         <TerminalNote>querying /api/persons/{personId} ...</TerminalNote>
       ) : isError ? (

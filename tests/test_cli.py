@@ -244,6 +244,67 @@ def test_event_suppress_and_restore(tmp_path: Path) -> None:
     assert missing.exit_code == 1
 
 
+def test_person_commands(tmp_path: Path) -> None:
+    import video_security.db as db_module
+
+    db_file = tmp_path / "t.db"
+    conn = db_module.connect(str(db_file))
+    db_module.init_db(conn)
+    j1 = db_module.create_job(conn, "/v/a.mp4", "h1")
+    conn.execute(
+        "INSERT INTO persons (id, sightings) VALUES (1, 2), (2, 1), (3, 1)"
+    )
+    for eid, pid in ((10, 1), (11, 1), (12, 2), (13, 3)):
+        conn.execute(
+            "INSERT INTO events (id, job_id, event_type, start_sec, end_sec, "
+            "clip_id, detector_score, priority, status) VALUES "
+            f"({eid}, {j1.id}, 'intrusion', 5.0, 6.0, 0, 0.9, 0.9, 'detailed')"
+        )
+        conn.execute(
+            "INSERT INTO faces (job_id, event_id, keyframe_index, face_index, "
+            "crop_path, person_id) VALUES "
+            f"({j1.id}, {eid}, 0, 0, '/x.jpg', {pid})"
+        )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(app, ["--db", str(db_file), "person", "name", "1", "Mika"])
+    assert result.exit_code == 0
+    conn = db_module.connect(str(db_file))
+    assert conn.execute("SELECT name FROM persons WHERE id = 1").fetchone()["name"] == "Mika"
+    face3 = conn.execute(
+        "SELECT id FROM faces WHERE person_id = 3"
+    ).fetchone()["id"]
+    conn.close()
+
+    result = runner.invoke(app, ["--db", str(db_file), "person", "merge", "2", "1"])
+    assert result.exit_code == 0
+    assert "1 face moved" in result.output or "1 faces moved" in result.output
+    conn = db_module.connect(str(db_file))
+    rows = conn.execute("SELECT id, name, sightings FROM persons").fetchall()
+    assert len(rows) == 2
+    merged = next(r for r in rows if r["id"] == 1)
+    assert merged["name"] == "Mika"
+    assert merged["sightings"] == 3
+    conn.close()
+
+    result = runner.invoke(
+        app, ["--db", str(db_file), "person", "move", str(face3), "1"]
+    )
+    assert result.exit_code == 0
+    conn = db_module.connect(str(db_file))
+    moved = conn.execute(
+        "SELECT person_id FROM faces WHERE id = ?", (face3,)
+    ).fetchone()["person_id"]
+    assert moved == 1
+    conn.close()
+
+    missing = runner.invoke(app, ["--db", str(db_file), "person", "name", "99", "X"])
+    assert missing.exit_code == 1
+    bad_merge = runner.invoke(app, ["--db", str(db_file), "person", "merge", "99", "1"])
+    assert bad_merge.exit_code == 1
+
+
 def test_diff_prompt_versions(tmp_path: Path) -> None:
     import video_security.db as db_module
 

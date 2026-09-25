@@ -462,6 +462,7 @@ export function fetchFaces(params: URLSearchParams): Promise<FacesPage> {
 
 export interface PersonSummary {
   person_id: number
+  name: string | null
   sightings: number
   representative_crop_url: string | null
   first_seen: string | null
@@ -496,6 +497,7 @@ export interface PersonSighting {
 
 export interface PersonDetail {
   person_id: number
+  name: string | null
   sightings: PersonSighting[]
   total: number
 }
@@ -515,6 +517,7 @@ export interface JobFaceCrop {
   start_sec: number
   quality: number | null
   person_id: number | null
+  person_name: string | null
   crop_url: string
 }
 

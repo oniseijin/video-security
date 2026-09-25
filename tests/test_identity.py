@@ -12,8 +12,11 @@ from video_security.db import connect, init_db
 from video_security.identity import (
     assign_person,
     cosine_distance,
+    merge_persons,
+    move_face,
     reconcile_persons,
     register_face,
+    rename_person,
 )
 
 
@@ -213,3 +216,101 @@ def test_index_existing_faces(
     n2 = index_existing_faces(db_conn, cfg)
     assert n2 == 0
     _ = json
+
+
+def test_rename_person(db_conn: sqlite3.Connection) -> None:
+    v = np.array([1.0, 0.0], dtype=np.float32)
+    p1 = assign_person(db_conn, v, 0.4)
+    assert rename_person(db_conn, p1, "Kenji") is True
+    row = db_conn.execute(
+        "SELECT name FROM persons WHERE id = ?", (p1,)
+    ).fetchone()
+    assert row["name"] == "Kenji"
+    assert rename_person(db_conn, 9999, "Nobody") is False
+
+
+def test_merge_persons_moves_faces_and_carries_name(
+    db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "video_security.identity.face_capture_quality", lambda _img: 0.9
+    )
+    monkeypatch.setattr(
+        "video_security.identity.feature_print",
+        lambda img: (np.ones(4, dtype=np.float32) / 2.0)
+        if img[0, 0, 0] < 128
+        else np.array([0, 0, 0, 1], dtype=np.float32),
+    )
+    img_a = _img(1)
+    img_a[0, 0, 0] = 10
+    img_b = _img(3)
+    img_b[0, 0, 0] = 200
+    f1 = register_face(db_conn, _cfg(), 1, 10, 0, 0, "/a.jpg", img_a)
+    f2 = register_face(db_conn, _cfg(), 1, 11, 0, 0, "/a2.jpg", img_a)
+    f3 = register_face(db_conn, _cfg(), 1, 12, 0, 0, "/b.jpg", img_b)
+    assert f1 is not None and f2 is not None and f3 is not None
+
+    def person_of(face_id: int) -> int:
+        return int(
+            db_conn.execute(
+                "SELECT person_id FROM faces WHERE id = ?", (face_id,)
+            ).fetchone()["person_id"]
+        )
+
+    p_a, p_b = person_of(f1), person_of(f3)
+    assert p_a != p_b
+    assert rename_person(db_conn, p_b, "Mika") is True
+
+    moved = merge_persons(db_conn, p_b, p_a)
+    assert moved == 1
+    ids = [r[0] for r in db_conn.execute("SELECT id FROM persons")]
+    assert p_b not in ids and p_a in ids
+    row = db_conn.execute(
+        "SELECT name, sightings FROM persons WHERE id = ?", (p_a,)
+    ).fetchone()
+    assert row["sightings"] == 3
+    assert row["name"] == "Mika"
+
+    with pytest.raises(ValueError):
+        merge_persons(db_conn, p_a, p_a)
+    with pytest.raises(ValueError):
+        merge_persons(db_conn, 9999, p_a)
+
+
+def test_move_face_reassigns_cluster(
+    db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "video_security.identity.face_capture_quality", lambda _img: 0.9
+    )
+    monkeypatch.setattr(
+        "video_security.identity.feature_print",
+        lambda img: (np.ones(4, dtype=np.float32) / 2.0)
+        if img[0, 0, 0] < 128
+        else np.array([0, 0, 0, 1], dtype=np.float32),
+    )
+    img_a = _img(1)
+    img_a[0, 0, 0] = 10
+    img_b = _img(3)
+    img_b[0, 0, 0] = 200
+    f1 = register_face(db_conn, _cfg(), 1, 10, 0, 0, "/a.jpg", img_a)
+    f2 = register_face(db_conn, _cfg(), 1, 11, 0, 0, "/b.jpg", img_b)
+    assert f1 is not None and f2 is not None
+    p1 = db_conn.execute(
+        "SELECT person_id FROM faces WHERE id = ?", (f1,)
+    ).fetchone()["person_id"]
+    p2 = db_conn.execute(
+        "SELECT person_id FROM faces WHERE id = ?", (f2,)
+    ).fetchone()["person_id"]
+    assert p1 != p2
+
+    assert move_face(db_conn, f2, int(p1)) is True
+    new_p2 = db_conn.execute(
+        "SELECT person_id FROM faces WHERE id = ?", (f2,)
+    ).fetchone()["person_id"]
+    assert new_p2 == p1
+
+    with pytest.raises(ValueError):
+        move_face(db_conn, 9999, int(p1))
+    with pytest.raises(ValueError):
+        move_face(db_conn, f2, 9999)

@@ -12,7 +12,8 @@ function Group({ jobId, group }: { jobId: number; group: JobFaceGroup }) {
       {group.person_id != null ? (
         <h3>
           <Link to={`/persons/${group.person_id}`}>
-            PERSON {String(group.person_id).padStart(3, "0")}
+            {group.crops.find((c) => c.person_name)?.person_name ??
+              `PERSON ${String(group.person_id).padStart(3, "0")}`}
           </Link>{" "}
           <span className="note">
             · {group.count} capture{group.count === 1 ? "" : "s"} in this job

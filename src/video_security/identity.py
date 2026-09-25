@@ -117,6 +117,61 @@ def reconcile_persons(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def rename_person(conn: sqlite3.Connection, person_id: int, name: str) -> bool:
+    cur = conn.execute(
+        "UPDATE persons SET name = ? WHERE id = ?", (name, person_id)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def merge_persons(conn: sqlite3.Connection, src_id: int, dst_id: int) -> int:
+    if src_id == dst_id:
+        raise ValueError("cannot merge a person into itself")
+    src = conn.execute(
+        "SELECT name FROM persons WHERE id = ?", (src_id,)
+    ).fetchone()
+    dst = conn.execute(
+        "SELECT name FROM persons WHERE id = ?", (dst_id,)
+    ).fetchone()
+    if src is None:
+        raise ValueError(f"person {src_id} not found")
+    if dst is None:
+        raise ValueError(f"person {dst_id} not found")
+    cur = conn.execute(
+        "UPDATE faces SET person_id = ? WHERE person_id = ?", (dst_id, src_id)
+    )
+    moved = int(cur.rowcount)
+    if dst["name"] is None or str(dst["name"]) == "":
+        if src["name"] is not None and str(src["name"]) != "":
+            conn.execute(
+                "UPDATE persons SET name = ? WHERE id = ?", (src["name"], dst_id)
+            )
+    conn.execute("DELETE FROM persons WHERE id = ?", (src_id,))
+    reconcile_persons(conn)
+    return moved
+
+
+def move_face(
+    conn: sqlite3.Connection, face_id: int, person_id: int
+) -> bool:
+    face = conn.execute(
+        "SELECT id FROM faces WHERE id = ?", (face_id,)
+    ).fetchone()
+    person = conn.execute(
+        "SELECT id FROM persons WHERE id = ?", (person_id,)
+    ).fetchone()
+    if face is None:
+        raise ValueError(f"face {face_id} not found")
+    if person is None:
+        raise ValueError(f"person {person_id} not found")
+    conn.execute(
+        "UPDATE faces SET person_id = ? WHERE id = ?", (person_id, face_id)
+    )
+    reconcile_persons(conn)
+    return True
+
+
 def register_face(
     conn: sqlite3.Connection,
     cfg: Config,

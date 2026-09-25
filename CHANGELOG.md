@@ -8,6 +8,15 @@ follow semantic versioning.
 
 ### Added
 
+- **Face naming & person management (CLI)**: `persons.name` column +
+  `vs person name <id> <name>` / `vs person merge <src> <dst>` /
+  `vs person move <face-id> <person-id>` — tag a face cluster once and
+  the name propagates to every sighting (merge carries the name over
+  when the destination is unnamed). Names surface on web person cards,
+  person pages, per-job faces groups, and in report event designations.
+  Names live in the local DB only; the web console stays read-only (the
+  naming UI remains deliberately out of scope).
+
 - **Plate crop → source jump**: plate rows persist `crop_src` (saved
   source frame, `frames/<job_id>/track_<tid>_src.jpg`) + `crop_box`
   (normalized top-left rect on it). Clicking a plate crop in the web
