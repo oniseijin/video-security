@@ -271,7 +271,7 @@ def _phase_sweeps(
                 if isinstance(e, IngestError):
                     from video_security.repair import auto_repair_job
 
-                    if auto_repair_job(conn, job.id):
+                    if auto_repair_job(conn, job.id, cfg):
                         print(
                             f"job {job.id}: corrupt video repaired via untrunc — "
                             "requeued"
@@ -908,7 +908,7 @@ def _watch_and_run(
                 if isinstance(e, IngestError):
                     from video_security.repair import auto_repair_job
 
-                    if auto_repair_job(conn, claimed.id):
+                    if auto_repair_job(conn, claimed.id, cfg):
                         print(
                             f"job {claimed.id}: corrupt video repaired via untrunc — requeued"
                         )
@@ -1062,7 +1062,7 @@ def repair_cmd(
 
     conn, cfg = _get_db(ctx)
     try:
-        report = run_repair(conn, job if job else [], reference=reference)
+        report = run_repair(conn, job if job else [], reference=reference, config=cfg)
         print(
             f"repaired {report.repaired} jobs, "
             f"skipped {report.skipped}, failed {report.failed}"

@@ -527,6 +527,9 @@ carto_api_key = null                                # optional CARTO basemap key
 host = "127.0.0.1"                                  # vs serve binding (loopback only)
 port = 8377
 
+[repair]
+untrunc_path = null                                 # absolute untrunc path; default: PATH, then ~/.local/bin/untrunc
+
 [audio]
 rms_window_ms = 100                                # RMS analysis window
 rms_sustain_ms = 500                               # min sustained duration for loud events
@@ -1575,6 +1578,11 @@ in parallel per its own section below).
   skip message; config-path override bypasses PATH entirely. Not
   exercised by the 2026-09-24 sweeps (no corrupt imports; the 421/422
   recovery was manual) — fix stays warranted but unvalidated in-run.
+  **Implemented 2026-09-25**: loud bail + `[repair] untrunc_path` landed
+  as specced (config-path → PATH → `~/.local/bin/untrunc` fallback;
+  missing binary prints `auto-repair skipped: untrunc not on PATH — set
+  [repair] untrunc_path` to stderr instead of returning silently). The
+  wrapper-PATH append is a machine-local file change, still optional.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 

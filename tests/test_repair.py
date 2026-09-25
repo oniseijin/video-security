@@ -44,7 +44,9 @@ def _broken_clip(tmp_path: Path, name: str) -> Path:
     return broken
 
 
-def test_repair_recovers_and_requeues(db_conn: sqlite3.Connection, tmp_path: Path) -> None:
+def test_repair_recovers_and_requeues(
+    db_conn: sqlite3.Connection, tmp_path: Path, cfg: Config
+) -> None:
     broken = _broken_clip(tmp_path, "broken.mp4")
     j = db.create_job(db_conn, str(broken), "brokenhash")
     conn = db_conn
@@ -53,7 +55,7 @@ def test_repair_recovers_and_requeues(db_conn: sqlite3.Connection, tmp_path: Pat
     )
     conn.commit()
 
-    report = run_repair(db_conn, [j.id])
+    report = run_repair(db_conn, [j.id], config=cfg)
     assert report.repaired == 1
     assert report.failed == 0
 
@@ -70,13 +72,15 @@ def test_repair_recovers_and_requeues(db_conn: sqlite3.Connection, tmp_path: Pat
     probe_video(repaired)
 
 
-def test_repair_skips_healthy(db_conn: sqlite3.Connection, tmp_path: Path) -> None:
+def test_repair_skips_healthy(
+    db_conn: sqlite3.Connection, tmp_path: Path, cfg: Config
+) -> None:
     clips = tmp_path / "artifacts" / "clips" / "20250929" / "NORMAL" / "front"
     clips.mkdir(parents=True)
     good = golden_clip(clips / "fine.mp4")
     j = db.create_job(db_conn, str(good), "finehash")
 
-    report = run_repair(db_conn, [j.id])
+    report = run_repair(db_conn, [j.id], config=cfg)
     assert report.repaired == 0
     assert report.skipped == 1
 
@@ -97,6 +101,7 @@ def _noop_conn() -> sqlite3.Connection:
 def test_repair_missing_binary(
     db_conn: sqlite3.Connection,
     tmp_path: Path,
+    cfg: Config,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from video_security.engine import EngineError
@@ -104,13 +109,16 @@ def test_repair_missing_binary(
     broken = _broken_clip(tmp_path, "nobin.mp4")
     db.create_job(db_conn, str(broken), "nobinhash")
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        "video_security.repair._LOCAL_UNTRUNC", tmp_path / "missing-untrunc"
+    )
 
     with pytest.raises(EngineError, match="untrunc not found"):
-        run_repair(db_conn, [1])
+        run_repair(db_conn, [1], config=cfg)
 
 
 def test_auto_repair_repairs_and_requeues(
-    db_conn: sqlite3.Connection, tmp_path: Path
+    db_conn: sqlite3.Connection, tmp_path: Path, cfg: Config
 ) -> None:
     from video_security.repair import auto_repair_job
 
@@ -121,20 +129,20 @@ def test_auto_repair_repairs_and_requeues(
     )
     db_conn.commit()
 
-    assert auto_repair_job(db_conn, j.id) is True
+    assert auto_repair_job(db_conn, j.id, cfg) is True
     row = db.get_job_by_id(db_conn, j.id)
     assert row is not None
     assert row.status == "pending"
 
 
 def test_auto_repair_skips_already_repaired(
-    db_conn: sqlite3.Connection, tmp_path: Path
+    db_conn: sqlite3.Connection, tmp_path: Path, cfg: Config
 ) -> None:
     from video_security.repair import auto_repair_job
 
     broken = _broken_clip(tmp_path, "auto2.mp4")
     j = db.create_job(db_conn, str(broken), "auto2hash")
-    assert auto_repair_job(db_conn, j.id) is True
+    assert auto_repair_job(db_conn, j.id, cfg) is True
 
     row = db.get_job_by_id(db_conn, j.id)
     assert row is not None
@@ -144,14 +152,14 @@ def test_auto_repair_skips_already_repaired(
     )
     db_conn.commit()
 
-    assert auto_repair_job(db_conn, j.id) is False
+    assert auto_repair_job(db_conn, j.id, cfg) is False
     row = db.get_job_by_id(db_conn, j.id)
     assert row is not None
     assert row.status == "failed"
 
 
 def test_auto_repair_skips_healthy(
-    db_conn: sqlite3.Connection, tmp_path: Path
+    db_conn: sqlite3.Connection, tmp_path: Path, cfg: Config
 ) -> None:
     from video_security.repair import auto_repair_job
 
@@ -160,4 +168,4 @@ def test_auto_repair_skips_healthy(
     good = golden_clip(clips / "healthy.mp4")
     j = db.create_job(db_conn, str(good), "healthyhash")
 
-    assert auto_repair_job(db_conn, j.id) is False
+    assert auto_repair_job(db_conn, j.id, cfg) is False

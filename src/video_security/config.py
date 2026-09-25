@@ -238,6 +238,11 @@ class WatchlistConfig:
 
 
 @dataclasses.dataclass
+class RepairConfig:
+    untrunc_path: str | None = None
+
+
+@dataclasses.dataclass
 class ArchiveConfig:
     cold_dir: str | None = None
     cold_dirs: list[str] = dataclasses.field(default_factory=list)
@@ -280,6 +285,7 @@ class Config:
     web: WebConfig = dataclasses.field(default_factory=WebConfig)
     identity: IdentityConfig = dataclasses.field(default_factory=IdentityConfig)
     watchlist: WatchlistConfig = dataclasses.field(default_factory=WatchlistConfig)
+    repair: RepairConfig = dataclasses.field(default_factory=RepairConfig)
 
 
 def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:

@@ -8,6 +8,13 @@ follow semantic versioning.
 
 ### Added
 
+- **`[repair] untrunc_path` + loud auto-repair bail**: analyze-sweep
+  auto-repair no longer skips corrupt clips silently when untrunc is
+  missing from the launcher PATH (cron wrappers don't include
+  `~/.local/bin`) — it prints a stderr line naming the config key, and
+  the binary resolves config-path first with a `~/.local/bin/untrunc`
+  fallback so repair works regardless of launcher environment.
+
 - **`vs event suppress <id>... [--restore]`**: manual review override for
   confirmed false positives that survive LLM triage — marks events
   `suppressed` (report rows render dimmed) without touching their stored
