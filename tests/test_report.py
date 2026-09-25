@@ -50,6 +50,18 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
         faces_json="[[[0.1, 0.2, 0.3, 0.4]], []]",
     )
     conn.execute(
+        "UPDATE events SET boxes_json = ? WHERE id = ?",
+        (
+            json.dumps(
+                [[
+                    {"kind": "person", "track_id": 7, "box": [0.4, 0.1, 0.2, 0.5]},
+                    {"kind": "animal", "track_id": 9, "box": [0.7, 0.5, 0.2, 0.2]},
+                ], []]
+            ),
+            evt1_id,
+        ),
+    )
+    conn.execute(
         "INSERT INTO persons (id, name, sightings) VALUES (1, 'Mika', 1)"
     )
     conn.execute(
@@ -138,6 +150,13 @@ def test_generate_report(db_and_job: tuple[sqlite3.Connection, JobRow, Path]) ->
     assert 'id="face-toggle"' in content
     assert "Faces On" in content
     assert "face-box" in content
+    assert 'id="person-toggle"' in content
+    assert "Persons On" in content
+    assert 'id="animal-toggle"' in content
+    assert "Animals On" in content
+    assert "person-box" in content
+    assert "animal-box" in content
+    assert "left: 40.0%" in content
     assert f'href="#event-{evt1_id}"' in content
     assert 'id="event-' in content
     assert "RECORDED" not in content

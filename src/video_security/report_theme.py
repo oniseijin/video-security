@@ -168,6 +168,8 @@ body::after {
 .face-toggle.off { color: var(--vs-ink-faint); border-style: dashed; }
 
 body.hide-faces .face-box { display: none; }
+body.hide-persons .person-box { display: none; }
+body.hide-animals .animal-box { display: none; }
 
 
 .flag {
@@ -319,6 +321,36 @@ body.hide-faces .face-box { display: none; }
   pointer-events: none;
 }
 .plate-box::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--vs-accent);
+  border-left: 2px solid var(--vs-accent);
+}
+.person-box {
+  position: absolute;
+  border: 2px solid var(--vs-warning);
+  pointer-events: none;
+}
+.person-box::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--vs-accent);
+  border-left: 2px solid var(--vs-accent);
+}
+.animal-box {
+  position: absolute;
+  border: 2px solid var(--vs-success);
+  pointer-events: none;
+}
+.animal-box::after {
   content: '';
   position: absolute;
   top: -2px;
@@ -601,22 +633,32 @@ THEME_MAP_JS = """
 
 THEME_FACES_JS = """
 (function () {
-  var btn = document.getElementById('face-toggle');
-  if (!btn) return;
-  var hidden = false;
-  try { hidden = localStorage.getItem('vs-faces') === 'off'; } catch (e) {}
-  function apply() {
-    document.body.classList.toggle('hide-faces', hidden);
-    btn.classList.toggle('off', hidden);
-    btn.textContent = hidden ? 'Faces Off' : 'Faces On';
-    btn.setAttribute('aria-pressed', hidden ? 'false' : 'true');
-  }
-  btn.addEventListener('click', function () {
-    hidden = !hidden;
-    try { localStorage.setItem('vs-faces', hidden ? 'off' : 'on'); } catch (e) {}
+  var toggles = [
+    { btn: 'face-toggle', key: 'vs-faces', cls: 'hide-faces',
+      on: 'Faces On', off: 'Faces Off' },
+    { btn: 'person-toggle', key: 'vs-persons', cls: 'hide-persons',
+      on: 'Persons On', off: 'Persons Off' },
+    { btn: 'animal-toggle', key: 'vs-animals', cls: 'hide-animals',
+      on: 'Animals On', off: 'Animals Off' }
+  ];
+  toggles.forEach(function (t) {
+    var btn = document.getElementById(t.btn);
+    if (!btn) return;
+    var hidden = false;
+    try { hidden = localStorage.getItem(t.key) === 'off'; } catch (e) {}
+    function apply() {
+      document.body.classList.toggle(t.cls, hidden);
+      btn.classList.toggle('off', hidden);
+      btn.textContent = hidden ? t.off : t.on;
+      btn.setAttribute('aria-pressed', hidden ? 'false' : 'true');
+    }
+    btn.addEventListener('click', function () {
+      hidden = !hidden;
+      try { localStorage.setItem(t.key, hidden ? 'off' : 'on'); } catch (e) {}
+      apply();
+    });
     apply();
   });
-  apply();
 })();
 """
 
@@ -661,7 +703,9 @@ THEME_LIGHTBOX_JS = """
     if (!src) return;
     var full = src.getAttribute('data-full');
     img.src = full || src.src;
-    Array.prototype.slice.call(zoomEl.querySelectorAll('.face-box')).forEach(
+    Array.prototype.slice.call(
+      zoomEl.querySelectorAll('.face-box, .person-box, .animal-box')
+    ).forEach(
       function (el) { el.remove(); }
     );
     Array.prototype.slice.call(zoomEl.querySelectorAll('.plate-box')).forEach(
@@ -669,7 +713,9 @@ THEME_LIGHTBOX_JS = """
     );
     var wrap = src.closest('.kf-wrap');
     if (wrap) {
-      Array.prototype.slice.call(wrap.querySelectorAll('.face-box')).forEach(
+      Array.prototype.slice.call(
+        wrap.querySelectorAll('.face-box, .person-box, .animal-box')
+      ).forEach(
         function (el) { zoomEl.appendChild(el.cloneNode(true)); }
       );
     }

@@ -7,6 +7,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from video_security import db, geo
 from video_security.enrich import (
@@ -70,6 +71,37 @@ def _event_faces(evt: sqlite3.Row) -> list[list[list[float]]]:
     if not isinstance(parsed, list):
         return []
     return parsed
+
+
+def _event_boxes(evt: sqlite3.Row) -> list[list[dict[str, Any]]]:
+    if not evt["boxes_json"]:
+        return []
+    try:
+        parsed = json.loads(evt["boxes_json"])
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[list[dict[str, Any]]] = []
+    for group in parsed:
+        entries: list[dict[str, Any]] = []
+        if isinstance(group, list):
+            for item in group:
+                if not isinstance(item, dict):
+                    continue
+                kind = item.get("kind")
+                box = item.get("box")
+                if kind not in ("person", "animal"):
+                    continue
+                if not isinstance(box, list) or len(box) != 4:
+                    continue
+                try:
+                    norm = [float(v) for v in box]
+                except (TypeError, ValueError):
+                    continue
+                entries.append({"kind": str(kind), "box": norm})
+        out.append(entries)
+    return out
 
 
 def _gps_svg(
@@ -214,6 +246,16 @@ def render_report_html(
             'aria-pressed="true">Faces On</button>'
         )
 
+    has_boxes = any(any(b for b in _event_boxes(evt)) for evt in events)
+    box_buttons = ""
+    if has_boxes and not embed:
+        box_buttons = (
+            '<button id="person-toggle" class="face-toggle" type="button" '
+            'aria-pressed="true">Persons On</button>'
+            '<button id="animal-toggle" class="face-toggle" type="button" '
+            'aria-pressed="true">Animals On</button>'
+        )
+
     recorded_dt = _parse_utc(job_row["recording_start_utc"])
     imported_dt = _parse_utc(str(job_row["created_at"]))
     meta_bits = [html.escape(job_row["status"])]
@@ -275,6 +317,7 @@ def render_report_html(
         f'<span class="masthead-meta">{meta_line}</span>',
         theme_toggle_button,
         face_button,
+        box_buttons,
         "</header>",
         archive_flag,
         device_line,
@@ -501,6 +544,7 @@ def render_report_html(
         )
         tone = event_tone(evt["event_type"])
         faces = _event_faces(evt)
+        kboxes = _event_boxes(evt)
         face_count = sum(len(f) for f in faces)
         designation = f"{evt['event_type']} // {_mmss(evt['start_sec'])}"
         if face_count:
@@ -528,7 +572,8 @@ def render_report_html(
             else:
                 src = _keyframe_src(p, out_dir)
             boxes = faces[i] if i < len(faces) else []
-            if boxes:
+            kbox_i = kboxes[i] if i < len(kboxes) else []
+            if boxes or kbox_i:
                 parts.append('<div class="kf-wrap">')
                 parts.append(
                     f"<img src=\"{html.escape(src, quote=False)}\" alt=\"{caption}\">"
@@ -542,6 +587,19 @@ def render_report_html(
                     )
                     parts.append(
                         '<span class="face-box" style="'
+                        f"left: {x * 100:.1f}%; top: {y * 100:.1f}%; "
+                        f"width: {w * 100:.1f}%; height: {h * 100:.1f}%;"
+                        '"></span>'
+                    )
+                for entry in kbox_i:
+                    x, y, w, h = (
+                        entry["box"][0],
+                        entry["box"][1],
+                        entry["box"][2],
+                        entry["box"][3],
+                    )
+                    parts.append(
+                        f'<span class="{entry["kind"]}-box" style="'
                         f"left: {x * 100:.1f}%; top: {y * 100:.1f}%; "
                         f"width: {w * 100:.1f}%; height: {h * 100:.1f}%;"
                         '"></span>'
@@ -765,7 +823,7 @@ def render_report_html(
     )
     if not embed:
         parts.append(f"<script>{THEME_TOGGLE_JS}</script>")
-        if has_faces:
+        if has_faces or has_boxes:
             parts.append(f"<script>{THEME_FACES_JS}</script>")
     parts.append(
         '<div id="lightbox" class="lightbox" aria-hidden="true">'

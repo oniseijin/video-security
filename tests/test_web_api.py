@@ -147,6 +147,17 @@ def _seed(base: Path) -> None:
         (json.dumps([str(frames / "event_10_0.jpg")]),),
     )
     conn.execute(
+        "UPDATE events SET boxes_json = ? WHERE id = 10",
+        (
+            json.dumps(
+                [[
+                    {"kind": "person", "track_id": 7, "box": [0.2, 0.1, 0.3, 0.5]},
+                    {"kind": "animal", "track_id": 9, "box": [0.6, 0.4, 0.2, 0.2]},
+                ]]
+            ),
+        ),
+    )
+    conn.execute(
         "INSERT INTO persons (name, sightings) VALUES ('Kenji', 1)"
     )
     conn.execute(
@@ -312,6 +323,10 @@ def test_event_detail(base_url: str) -> None:
     assert data["keyframes"][0]["raw_url"] == "/media/frames/1/event_10_0_raw.jpg"
     assert data["keyframes"][0]["faces"] == [[0.1, 0.2, 0.3, 0.4]]
     assert data["keyframes"][0]["face_crops"] == ["/media/faces/1/face_10_0_0.jpg"]
+    assert data["keyframes"][0]["boxes"] == [
+        {"kind": "person", "track_id": 7, "box": [0.2, 0.1, 0.3, 0.5]},
+        {"kind": "animal", "track_id": 9, "box": [0.6, 0.4, 0.2, 0.2]},
+    ]
     assert data["plates"][0]["norm_text"] == "習志野5001"
     assert data["plates"][0]["ken"] == "千葉県"
     assert data["plates"][0]["crop_url"] == "/media/plates/1/track_7.jpg"

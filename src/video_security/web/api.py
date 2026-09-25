@@ -262,6 +262,40 @@ def _plates_by_track(conn: sqlite3.Connection, job_id: int) -> dict[int, list[sq
     return out
 
 
+def _boxes_list(evt: sqlite3.Row) -> list[list[dict[str, Any]]]:
+    raw = evt["boxes_json"]
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[list[dict[str, Any]]] = []
+    for group in parsed:
+        entries: list[dict[str, Any]] = []
+        if isinstance(group, list):
+            for item in group:
+                if not isinstance(item, dict):
+                    continue
+                kind = item.get("kind")
+                box = item.get("box")
+                if kind not in ("person", "animal"):
+                    continue
+                if not isinstance(box, list) or len(box) != 4:
+                    continue
+                try:
+                    norm = [float(v) for v in box]
+                except (TypeError, ValueError):
+                    continue
+                entries.append(
+                    {"kind": kind, "track_id": item.get("track_id"), "box": norm}
+                )
+        out.append(entries)
+    return out
+
+
 def _event_summary(
     conn: sqlite3.Connection,
     evt: sqlite3.Row,
@@ -655,6 +689,7 @@ def event_detail(
     summary = _event_summary(conn, evt, job, track, plates_by_track)
     fps = vsdb.clip_fps(conn, job_id)
     faces = _faces_list(evt)
+    boxes_data = _boxes_list(evt)
     try:
         kf_paths = json.loads(evt["keyframes_json"]) if evt["keyframes_json"] else []
     except (json.JSONDecodeError, TypeError):
@@ -671,6 +706,7 @@ def event_detail(
             "raw_url": None,
             "faces": boxes,
             "face_crops": [],
+            "boxes": boxes_data[i] if i < len(boxes_data) else [],
         }
         raw = p.with_name(p.stem + "_raw.jpg")
         if raw.is_file():
