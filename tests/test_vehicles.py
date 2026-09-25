@@ -196,6 +196,23 @@ def test_camera_class_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["verbose"] is False
 
 
+def test_detector_persist_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_model = Mock()
+    result_mock = Mock()
+    boxes_mock = Mock()
+    boxes_mock.id = None
+    result_mock.boxes = boxes_mock
+    mock_model.track.return_value = [result_mock]
+    monkeypatch.setattr(
+        "video_security.prefilter.vehicles.YOLO", Mock(return_value=mock_model)
+    )
+
+    detector = load_detector(Config(), persist=False)
+    detector(np.zeros((100, 100, 3), dtype=np.uint8))
+    _, kwargs = mock_model.track.call_args
+    assert kwargs["persist"] is False
+
+
 def test_real_yolo_golden(tmp_path: Path) -> None:
     from tests.golden import golden_clip
     from video_security.ingest.frames import iter_frames

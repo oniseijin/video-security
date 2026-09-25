@@ -327,7 +327,7 @@ def backfill_event_boxes(
     from video_security import db as vsdb
 
     if detector is None:
-        detector = load_detector(config)
+        detector = load_detector(config, persist=False)
     rows = conn.execute(
         "SELECT e.id, e.job_id, e.keyframes_json FROM events e "
         "WHERE e.keyframes_json != '[]' AND e.boxes_json IS NULL "

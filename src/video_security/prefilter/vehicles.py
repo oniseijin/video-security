@@ -53,7 +53,7 @@ class VehicleTrack:
 
 
 def load_detector(
-    config: Config, camera: CameraOverrides | None = None
+    config: Config, camera: CameraOverrides | None = None, persist: bool = True
 ) -> Callable[[np.ndarray], list[Detection]]:
     if config.prefilter.yolo_coreml_path and Path(config.prefilter.yolo_coreml_path).exists():
         model_path = config.prefilter.yolo_coreml_path
@@ -69,7 +69,7 @@ def load_detector(
     def detect(image: np.ndarray) -> list[Detection]:
         result = model.track(
             image,
-            persist=True,
+            persist=persist,
             tracker="bytetrack.yaml",
             classes=classes,
             conf=config.prefilter.yolo_conf,
