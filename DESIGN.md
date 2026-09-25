@@ -1615,6 +1615,29 @@ in parallel per its own section below).
   [repair] untrunc_path` to stderr instead of returning silently). The
   wrapper-PATH append is a machine-local file change, still optional.
 
+### Privacy review & removal (2026-09-25)
+
+Photos-library imports (R9/R10) bring mixed personal content alongside
+security footage; mixed-type assets get classified (device probe →
+`device_kind` feeds LLM triage context), but nothing could flag or
+remove a personal clip with an audit trail. Shipped:
+
+- `vs job flag <id> [--note]` / `vs job unflag <id>` — `jobs.flag_note`
+  column; ⚑ badge in web jobs list (tooltip = note) + job detail meta
+  grid. Console stays read-only, like face naming.
+- `vs job remove <id> [--reason personal]` — deletes child rows + the
+  jobs row, `photos_imports` mapping, `archived_originals` tracking,
+  frames/plates/faces artifact dirs, the rendered report, and the
+  imported clip copy (only if it lives inside the artifact dir —
+  originals in the Photos library are never touched). Cold-storage
+  originals are kept (decision 2026-09-25) but their path is recorded
+  in the removal row. Appends to an append-only `removals` table
+  (job_id, video_hash, video_path, cold_path, reason, removed_at).
+- `vs job removals` — lists the audit history.
+- Import gate: `run_import` skips any asset whose content hash matches
+  a removal (`skipped_removed` counter in the report + CLI output), so
+  sweeps never resurrect deleted personal videos.
+
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 
 Face identity clustering is built but unused: `vs index-faces` computes

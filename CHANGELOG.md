@@ -4,6 +4,20 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Job review & removal (privacy workflow)**: `vs job flag <id>
+  [--note]` / `vs job unflag <id>` mark personal clips for review (⚑
+  badge in the web console jobs list + job detail); `vs job remove
+  <id> [--reason personal]` deletes the job's DB rows, artifacts,
+  report, and imported clip copy (cold-storage originals are kept but
+  their location is recorded) and appends to an append-only `removals`
+  audit table; `vs job removals` lists the history. Imports skip any
+  asset whose content hash matches a removal, so nightly sweeps never
+  resurrect deleted personal videos.
+
 ## [0.7.0] - 2026-09-25
 
 ### Added
