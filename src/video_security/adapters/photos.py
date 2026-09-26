@@ -43,6 +43,19 @@ class PhotosAdapter:
             return self._discover_from_seam(json.loads(test_env))
         return self._discover_from_library(source)
 
+    def _album_matches(self, photo_albums: list[Any]) -> bool:
+        if self.album is None:
+            return True
+        for a in photo_albums:
+            if isinstance(a, str):
+                if a == self.album:
+                    return True
+                continue
+            t = self._get(a, "title")
+            if isinstance(t, str) and t == self.album:
+                return True
+        return False
+
     def _discover_from_seam(self, rows: list[list[Any]]) -> list[ClipInfo]:
         clips: list[ClipInfo] = []
         self.skipped_cloud_only = 0
@@ -56,7 +69,7 @@ class PhotosAdapter:
             if hidden:
                 continue
 
-            if self.album is not None and self.album not in albums:
+            if not self._album_matches(albums):
                 continue
 
             date: datetime | None = None
@@ -109,15 +122,8 @@ class PhotosAdapter:
             hidden = self._get(photo, "hidden", False)
             if hidden:
                 continue
-            if self.album is not None:
-                photo_albums = self._get(photo, "albums", [])
-                album_titles = []
-                for a in photo_albums:
-                    t = self._get(a, "title")
-                    if t:
-                        album_titles.append(t)
-                if self.album not in album_titles:
-                    continue
+            if not self._album_matches(self._get(photo, "albums", [])):
+                continue
             original_path = self._get(photo, "original_path") or self._get(
                 photo, "path"
             )

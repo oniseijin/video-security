@@ -252,6 +252,20 @@ def test_discover_album_filter(
     assert [c.source_uuid for c in clips] == ["uuid-1", "uuid-3"]
 
 
+def test_album_matches_object_titles_and_str_method_trap(cfg: Config) -> None:
+    class _Album:
+        def __init__(self, title: str) -> None:
+            self.title = title
+
+    adapter = PhotosAdapter(cfg, album="Security")
+    assert adapter._album_matches(["Security", "House"])
+    assert adapter._album_matches([_Album("Security")])
+    assert not adapter._album_matches([_Album("House")])
+    assert not adapter._album_matches(["Security".title])
+    no_filter = PhotosAdapter(cfg)
+    assert no_filter._album_matches([])
+
+
 def test_run_import_album_filter(
     db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
