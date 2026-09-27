@@ -125,6 +125,41 @@ def test_run_import_incremental_dedup(
     assert len(db.list_jobs(db_conn)) == 4
 
 
+def test_run_import_dry_run_makes_no_changes(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path
+) -> None:
+    card = tmp_path / "card"
+    _make_card(card)
+    sources = [
+        card / "EVENT" / "250807121252.MP4",
+        card / "REAR" / "EVENT" / "250807121252.MP4",
+        card / "NORMAL" / "250921170102.MP4",
+        card / "NORMAL" / "250921170300.MP4",
+    ]
+
+    report = run_import(card, cfg, db_conn, dry_run=True)
+    assert report.would_import == 4
+    assert report.would_import_bytes == sum(p.stat().st_size for p in sources)
+    assert report.skipped == 1
+    assert report.skipped_removed == 0
+    assert report.failed == 0
+    assert report.jobs == []
+    assert len(db.list_jobs(db_conn)) == 0
+    for table in ("clips", "sessions", "photos_imports"):
+        assert db_conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    artifacts = Path(cfg.storage.artifact_dir)
+    assert artifacts.exists()
+    assert not list(artifacts.rglob("*"))
+
+    first = run_import(card, cfg, db_conn)
+    assert first.imported == 4
+
+    second = run_import(card, cfg, db_conn, dry_run=True)
+    assert second.would_import == 0
+    assert second.skipped == 4
+    assert len(db.list_jobs(db_conn)) == 4
+
+
 def test_run_import_bad_verify_fails(
     db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

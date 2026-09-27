@@ -1416,17 +1416,9 @@ new work. Default: 30 days.
 
 Not in scope for current phases; captured so the intent isn't lost.
 
-- **Photos import & removal conveniences (2026-09-25 ideas, none
-  built)**:
-  - `vs job remove --source photos` / `--import-id <id>` — bulk-remove
-    every photos-imported job (reuses the remove machinery per job, so
-    each asset gets a removals row and the whole source becomes
-    hash-gated from re-import). Must ship with a **gate override** —
-    bulk delete is a convenience, not a one-way door: e.g.
-    `vs import --allow-removed` or `vs job removals --forget <hash>`
-    to re-enable a gated source/asset deliberately.
-  - `--dry-run` on import — list/count what would be imported without
-    copying; sanity check before a big first run.
+- **Photos import & removal conveniences (2026-09-25 ideas; bulk
+  remove, gate override, and import `--dry-run` shipped 2026-09-27 —
+  see Privacy review & removal)**:
   - Scheduled incremental photos sync (launchd/cron nightly
     `vs import <library>` + analyze) — UUID dedupe makes repeats safe;
     only wanted if automatic pickup is ever desired (today imports are
@@ -1656,10 +1648,26 @@ remove a personal clip with an audit trail. Shipped:
   originals are kept (decision 2026-09-25) but their path is recorded
   in the removal row. Appends to an append-only `removals` table
   (job_id, video_hash, video_path, cold_path, reason, removed_at).
-- `vs job removals` — lists the audit history.
+- `vs job removals` — lists the audit history (each line ends with the
+  asset's `video_hash`).
 - Import gate: `run_import` skips any asset whose content hash matches
   a removal (`skipped_removed` counter in the report + CLI output), so
   sweeps never resurrect deleted personal videos.
+- **Bulk removal (2026-09-27)**: `vs job remove --source photos` /
+  `vs job remove --import-id <id>` — removes every selected job through
+  the regular per-job removal machinery (removals row, artifact + clip
+  cleanup per job) and prints a `removed N jobs (…)` summary; exactly
+  one of job id / `--source` / `--import-id` must be given.
+- **Gate overrides (2026-09-27)** — the removal gate is a two-way door
+  when used deliberately: `vs job removals --forget <hash>` deletes the
+  removal-log entries for a hash, and `vs import --allow-removed`
+  bypasses the gate for one run (gated assets still go through normal
+  hash dedupe).
+- **Import dry run (2026-09-27)**: `vs import --dry-run` runs discovery
+  and the read-only gates (already-imported, removal, hash dedupe) and
+  prints a `would import N clips (~X GB), skipped M (already imported),
+  skipped R previously removed` summary — no copies, no Spotlight
+  flags, no DB rows.
 
 ### Face naming & person management (R1 follow-up, 2026-09-23)
 

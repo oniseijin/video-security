@@ -23,6 +23,8 @@ class ImportReport:
     skipped_cloud: int = 0
     skipped_removed: int = 0
     jobs: list[int] = dataclasses.field(default_factory=list)
+    would_import: int = 0
+    would_import_bytes: int = 0
 
 
 def _copy_atomic(src: Path, dst: Path) -> None:
@@ -211,6 +213,8 @@ def run_import(
     adapter_name: str = "auto",
     since: datetime | None = None,
     album: str | None = None,
+    allow_removed: bool = False,
+    dry_run: bool = False,
 ) -> ImportReport:
     if not source.exists():
         raise EngineError(f"source not found: {source}")
@@ -244,8 +248,9 @@ def run_import(
     report.skipped_cloud = getattr(adapter, "skipped_cloud_only", 0)
     seen_hashes: set[str] = set()
     clips_root = artifact_dir / "clips" / import_date
-    spotlight_ignore(clips_root)
-    spotlight_ignore(artifact_dir)
+    if not dry_run:
+        spotlight_ignore(clips_root)
+        spotlight_ignore(artifact_dir)
 
     for clip in clips:
         if clip.source_uuid is not None:
@@ -268,12 +273,29 @@ def run_import(
             info = None
 
         h = video_hash(clip.path)
-        if db.get_removal_by_hash(conn, h) is not None:
+        if not allow_removed and db.get_removal_by_hash(conn, h) is not None:
             report.skipped_removed += 1
             continue
         if h in seen_hashes or db.get_job_by_hash(conn, h) is not None:
-            _record_hash_hit_uuid(conn, clip, h)
+            if not dry_run:
+                _record_hash_hit_uuid(conn, clip, h)
             report.skipped += 1
+            continue
+
+        if dry_run:
+            report.would_import += 1
+            report.would_import_bytes += clip.path.stat().st_size
+            seen_hashes.add(h)
+            if clip.pair_path is not None:
+                ph = video_hash(clip.pair_path)
+                if not allow_removed and db.get_removal_by_hash(conn, ph) is not None:
+                    report.skipped_removed += 1
+                elif ph in seen_hashes or db.get_job_by_hash(conn, ph) is not None:
+                    report.skipped += 1
+                else:
+                    report.would_import += 1
+                    report.would_import_bytes += clip.pair_path.stat().st_size
+                    seen_hashes.add(ph)
             continue
 
         channel_dir = "rear" if clip.channel == "rear" else "front"
@@ -319,7 +341,7 @@ def run_import(
 
         if clip.pair_path is not None:
             ph = video_hash(clip.pair_path)
-            if db.get_removal_by_hash(conn, ph) is not None:
+            if not allow_removed and db.get_removal_by_hash(conn, ph) is not None:
                 report.skipped_removed += 1
                 continue
             if ph in seen_hashes or db.get_job_by_hash(conn, ph) is not None:

@@ -912,6 +912,12 @@ def list_removals(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def forget_removals_by_hash(conn: sqlite3.Connection, video_hash: str) -> int:
+    cur = conn.execute("DELETE FROM removals WHERE video_hash = ?", (video_hash,))
+    conn.commit()
+    return cur.rowcount
+
+
 def get_archived_original(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
     row: sqlite3.Row | None = conn.execute(
         "SELECT * FROM archived_originals WHERE job_id = ?", (job_id,)

@@ -420,6 +420,8 @@ def import_clips_cmd(
     adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|photos|generic)"),  # noqa: B008, E501
     since: str | None = typer.Option(None, "--since", help="Only import assets recorded on/after date (YYYY-MM-DD)"),  # noqa: B008, E501
     album: str | None = typer.Option(None, "--album", help="Only import assets in a specific Photos album"),  # noqa: B008, E501
+    allow_removed: bool = typer.Option(False, "--allow-removed", help="Import assets whose hash matches a removal-log entry"),  # noqa: B008, E501
+    dry_run: bool = typer.Option(False, "--dry-run", help="Count what would be imported without copying or writing anything"),  # noqa: B008, E501
 ) -> None:
     from video_security.engine import EngineError
     from video_security.importer import run_import
@@ -436,19 +438,36 @@ def import_clips_cmd(
             conn.close()
             raise typer.Exit(code=1) from None
     try:
-        report = run_import(source, cfg, conn, adapter, since=since_dt, album=album)
+        report = run_import(
+            source,
+            cfg,
+            conn,
+            adapter,
+            since=since_dt,
+            album=album,
+            allow_removed=allow_removed,
+            dry_run=dry_run,
+        )
     except (EngineError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         conn.close()
         raise typer.Exit(code=1) from e
-    print(
-        f"imported {report.imported} new clips, "
-        f"skipped {report.skipped} (already imported), "
-        f"failed {report.failed}"
-    )
+    if dry_run:
+        gb = report.would_import_bytes / 1024**3
+        print(
+            f"would import {report.would_import} clips (~{gb:.1f} GB), "
+            f"skipped {report.skipped} (already imported), "
+            f"skipped {report.skipped_removed} previously removed"
+        )
+    else:
+        print(
+            f"imported {report.imported} new clips, "
+            f"skipped {report.skipped} (already imported), "
+            f"failed {report.failed}"
+        )
     if report.skipped_cloud:
         print(f"skipped {report.skipped_cloud} cloud-only (iCloud-evicted) assets")
-    if report.skipped_removed:
+    if report.skipped_removed and not dry_run:
         print(f"skipped {report.skipped_removed} previously removed (removal log)")
     conn.close()
 
@@ -1083,56 +1102,85 @@ def job_unflag_cmd(
 @job_app.command(name="remove")
 def job_remove_cmd(
     ctx: typer.Context,
-    job_id: int = typer.Argument(..., help="Job ID to remove"),  # noqa: B008
+    job_id: int | None = typer.Argument(None, help="Job ID to remove"),  # noqa: B008
     reason: str = typer.Option("personal", "--reason", help="Reason recorded in the removal log"),  # noqa: B008
+    source: str | None = typer.Option(None, "--source", help="Bulk-remove every job from a source (photos)"),  # noqa: B008, E501
+    import_id: str | None = typer.Option(None, "--import-id", help="Bulk-remove every job from an import ID"),  # noqa: B008, E501
 ) -> None:
+    from video_security.removal import remove_job
+
     conn, cfg = _get_db(ctx)
+
+    def run_bulk(label: str, ids: list[int]) -> None:
+        removed = 0
+        for jid in ids:
+            found, line = remove_job(conn, cfg, jid, reason)
+            if not found:
+                print(line, file=sys.stderr)
+                continue
+            print(line)
+            removed += 1
+        print(f"removed {removed} jobs ({label})")
+
     try:
-        job = conn.execute(
-            "SELECT id, video_path, video_hash FROM jobs WHERE id = ?", (job_id,)
-        ).fetchone()
-        if job is None:
-            print(f"Error: job {job_id} not found", file=sys.stderr)
+        given = [v for v in (job_id, source, import_id) if v is not None]
+        if len(given) != 1:
+            print(
+                "Error: specify exactly one of <job-id>, --source photos, --import-id <id>",
+                file=sys.stderr,
+            )
             raise typer.Exit(code=1)
-        artifact_dir = Path(cfg.storage.artifact_dir).expanduser()
-        clip_path = Path(str(job["video_path"]))
-        clip_deleted = False
-        if clip_path.is_relative_to(artifact_dir):
-            try:
-                clip_path.unlink(missing_ok=True)
-                clip_deleted = True
-            except OSError:
-                clip_deleted = False
-        archived = db.get_archived_original(conn, job_id)
-        cold_path = str(archived["original_path"]) if archived else None
-        db.delete_job_rows(conn, job_id, cfg.storage.artifact_dir)
-        db.delete_photos_imports_for_job(conn, job_id)
-        conn.execute("DELETE FROM archived_originals WHERE job_id = ?", (job_id,))
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-        conn.commit()
-        report_path = artifact_dir / "reports" / f"job_{job_id}.html"
-        report_path.unlink(missing_ok=True)
-        db.insert_removal(
-            conn,
-            job_id,
-            str(job["video_hash"]),
-            str(job["video_path"]),
-            reason,
-            cold_path=cold_path,
-        )
-        details = ["db rows + artifacts cleared"]
-        details.append("clip deleted" if clip_deleted else "clip file kept (outside artifact dir)")
-        if cold_path:
-            details.append(f"cold original kept: {cold_path}")
-        print(f"removed job {job_id} ({reason}): " + ", ".join(details))
+        if job_id is not None:
+            found, line = remove_job(conn, cfg, job_id, reason)
+            if not found:
+                print(line, file=sys.stderr)
+                raise typer.Exit(code=1)
+            print(line)
+            return
+        if source is not None:
+            if source != "photos":
+                print(f"Error: unknown source '{source}' (photos)", file=sys.stderr)
+                raise typer.Exit(code=1)
+            ids = [
+                int(r["job_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT job_id FROM photos_imports ORDER BY job_id"
+                ).fetchall()
+            ]
+            if not ids:
+                print("no photos-imported jobs found")
+                return
+            run_bulk("--source photos", ids)
+            return
+        if import_id is not None:
+            ids = [
+                int(r["id"])
+                for r in conn.execute(
+                    "SELECT id FROM jobs WHERE import_id = ? ORDER BY id", (import_id,)
+                ).fetchall()
+            ]
+            if not ids:
+                print(f"no jobs with import-id {import_id}")
+                return
+            run_bulk(f"--import-id {import_id}", ids)
     finally:
         conn.close()
 
 
 @job_app.command(name="removals")
-def job_removals_cmd(ctx: typer.Context) -> None:
+def job_removals_cmd(
+    ctx: typer.Context,
+    forget: str | None = typer.Option(None, "--forget", help="Delete removal-log entries for a video hash, un-gating re-import"),  # noqa: B008, E501
+) -> None:
     conn, _cfg = _get_db(ctx)
     try:
+        if forget is not None:
+            n = db.forget_removals_by_hash(conn, forget)
+            if n == 0:
+                print(f"Error: no removals for hash {forget}", file=sys.stderr)
+                raise typer.Exit(code=1)
+            print(f"forgot {n} removal(s) for hash {forget}")
+            return
         rows = db.list_removals(conn)
         if not rows:
             print("no removals recorded")
@@ -1144,6 +1192,7 @@ def job_removals_cmd(ctx: typer.Context) -> None:
             )
             if r["cold_path"]:
                 line += f" · cold original kept: {r['cold_path']}"
+            line += f" · {r['video_hash']}"
             print(line)
     finally:
         conn.close()
