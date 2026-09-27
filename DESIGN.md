@@ -1750,7 +1750,37 @@ Not in scope for current phases; captured so the intent isn't lost.
   - LLM/VLM eval harness — a labeled fixture set of night/day clips
     with expected triage/detail verdicts, scored on any model or
     prompt change (DeepCamera's benchmark-suite pattern); protects the
-    cheap-first pipeline against silent regressions.
+    cheap-first pipeline against silent regressions. **Design note
+    2026-09-27 (cost-aware, cloud-comparison role)**: cases are small
+    enough that scoring one extra backend is cheap — the harness
+    should accept any OpenAI-compatible endpoint, so a cloud model can
+    be scored against the local 12B on the same labeled set (with a
+    per-run cost estimate before it runs: images × price, dry-run
+    default; results labeled by model). That makes the harness the
+    instrument that *measures* whether a cloud escalation tier (below)
+    is worth building — data over vibes. Local-only scoring stays the
+    default and the CI path.
+- **Cloud escalation tier (proposal 2026-09-27 — conditionally
+  revisits the rejected "cloud APIs" idea; not built, decision
+  pending eval data)**: local stays the pipeline; a cloud VLM is an
+  opt-in second opinion for the rare high-value cases where the 12B
+  visibly struggles. Valuable cases identified: (a) detail-pass
+  escalation for low-confidence/night-hard events only (a few per
+  night, not the volume path — triage stays local always); (b) crash
+  candidate adjudication once `[crash]` is enabled (rare, high
+  stakes, one call each); (c) one-off bulk second opinions, e.g. a
+  flash-tier pre-review of the 789 stored intrusion candidates to
+  prioritize the manual queue (~789 image calls ≈ a few dollars,
+  once); (d) text-only touches (report prose) with zero image
+  egress. Hard conditions if built: `[cloud]` config with key from
+  env only (CARTO precedent), `monthly_budget_usd` cap enforced by a
+  call ledger, redact-before-send for frames (plate/face boxes
+  already detected — blur before upload) or text-only mode, an audit
+  row per call (what left, why, cost — removals-style), and no
+  mandatory path ever touches it. Cost math: selective escalation
+  ~2-5 calls/night ≈ $1-3/month; making detail default-cloud ≈
+  $15-45/month — the cap exists so the second number can't happen by
+  accident.
 - Crash/impact detection (2026-09-27 idea, none built) — flag collision
   or hard-impact moments in dashcam footage as a dedicated event type
   feeding the existing triage; candidate signals are abrupt inter-frame
