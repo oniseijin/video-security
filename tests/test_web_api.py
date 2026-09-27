@@ -696,3 +696,93 @@ def test_job_tracks_includes_person_tracks(client: TestClient) -> None:
     assert by_id[7]["class_id"] != 0
     assert 99 in by_id
     assert by_id[99]["class_id"] == 0
+
+
+def test_event_provenance(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    conn = connect(str(tmp_path / "t.db"))
+    conn.execute(
+        "INSERT INTO analysis_results (id, job_id, event_id, model_digest, "
+        "prompt_version, analysis_type, raw_response, confidence, retry_count) VALUES "
+        "(3, 1, 10, 'gemma3:4b', 'v1', 'triage', "
+        "'{\"relevant\": true, \"confidence\": \"high\", "
+        "\"description\": \"car present\"}', NULL, 0)"
+    )
+    conn.execute(
+        "UPDATE jobs SET evidence_json = ? WHERE id = 1",
+        (json.dumps({"kept_frames": 12, "tracks": 2}),),
+    )
+    conn.commit()
+    conn.close()
+    cfg = Config()
+    cfg.storage.db_path = str(tmp_path / "t.db")
+    cfg.storage.artifact_dir = str(tmp_path / "artifacts")
+    client = TestClient(create_app(cfg))
+
+    data = _get_json(client, "/api/events/10/provenance")
+    assert data["event_id"] == 10
+    assert data["job_id"] == 1
+    assert data["status"] == "detailed"
+    assert data["llm_result_id"] == 1
+    assert data["recorded_at"].endswith("02:57:32+00:00")
+    assert data["detector"]["event_type"] == "plate_capture"
+    assert data["detector"]["detector_score"] == 1.0
+    assert data["detector"]["priority"] == 0.6
+    assert data["detector"]["track_id"] == 7
+    assert data["config"]["yolo_model"] == "yolov8n"
+    assert data["config"]["score_threshold"] == 0.5
+    assert data["prefilter"] == {"kept_frames": 12, "tracks": 2}
+    triage = data["triage"][0]
+    assert triage["result_id"] == 3
+    assert triage["relevant"] is True
+    assert triage["confidence"] == "high"
+    assert triage["model"] == "gemma3:4b"
+    assert triage["created_at"] is not None
+    detail = data["detail"][0]
+    assert detail["result_id"] == 1
+    assert detail["analysis_type"] == "detail"
+    assert detail["description"] == "blue car captured on plate"
+    assert "blue car" in detail["raw"]
+
+    pending = _get_json(client, "/api/events/11/provenance")
+    assert pending["status"] == "pending"
+    assert pending["triage"] == []
+    assert pending["detail"] == []
+    assert pending["llm_result_id"] is None
+
+    status, body = _status_of(client, "/api/events/999/provenance")
+    assert status == 404
+    assert json.loads(body)["error"] == "event not found"
+
+
+def test_analytics_storage_endpoint(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    conn = connect(str(tmp_path / "t.db"))
+    conn.execute(
+        "INSERT INTO archived_originals (job_id, original_path, original_bytes, "
+        "proxy_bytes, location) VALUES (3, '/cold/b.mp4', 500, 100, 'cold')"
+    )
+    conn.commit()
+    conn.close()
+    cfg = Config()
+    cfg.storage.db_path = str(tmp_path / "t.db")
+    cfg.storage.artifact_dir = str(tmp_path / "artifacts")
+    client = TestClient(create_app(cfg))
+
+    data = _get_json(client, "/api/analytics/storage")
+    assert data["hot"]["path"] == str(tmp_path / "artifacts")
+    assert data["hot"]["free_bytes"] is not None and data["hot"]["free_bytes"] > 0
+    assert data["hot"]["total_bytes"] is not None
+    assert data["cold"]["jobs"] == 1
+    assert data["cold"]["original_bytes"] == 500
+    assert data["cold"]["proxy_bytes"] == 100
+    assert data["cold"]["by_location"] == [
+        {"location": "cold", "jobs": 1, "original_bytes": 500, "proxy_bytes": 100}
+    ]
+    assert data["months"] == [
+        {"month": "2025-08", "jobs": 2},
+        {"month": "2025-09", "jobs": 2},
+    ]
+    assert data["archive"]["archived"] == 1
+    assert data["archive"]["eligible"] >= 0
+    assert data["archive"]["days"] == cfg.archive.days

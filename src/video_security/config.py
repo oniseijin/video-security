@@ -222,6 +222,7 @@ class SoundConfig:
 
 @dataclasses.dataclass
 class AdapterPhotosConfig:
+    enabled: bool = True
     priority: float = 0.7
     device_priorities: dict[str, float] = dataclasses.field(
         default_factory=lambda: {"meta_glasses": 0.8, "iphone": 0.7}
@@ -433,6 +434,12 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
             if "photos" in values and isinstance(values["photos"], dict):
                 photos = values["photos"]
                 photos_kwargs: dict[str, Any] = {}
+                if "enabled" in photos:
+                    photos_kwargs["enabled"] = _merge_value(
+                        config.adapter_photos.enabled,
+                        photos["enabled"],
+                        "adapter.photos.enabled",
+                    )
                 if "priority" in photos:
                     photos_kwargs["priority"] = _merge_value(
                         config.adapter_photos.priority,

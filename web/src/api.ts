@@ -178,6 +178,48 @@ export interface EventSummary {
   plate_norm: string | null
 }
 
+export interface ProvenanceVerdict {
+  result_id: number
+  analysis_type: string
+  model: string
+  prompt_version: string
+  created_at: string | null
+  retry_count: number
+  raw: string
+  tiled?: boolean
+  relevant?: boolean
+  confidence?: string | null
+  event_type?: string
+  description?: string
+  evidence_rationale?: string
+  recommended_action?: string
+}
+
+export interface EventProvenance {
+  event_id: number
+  job_id: number
+  status: string
+  llm_result_id: number | null
+  recorded_at: string | null
+  detector: {
+    event_type: string
+    detector_score: number
+    priority: number
+    track_id: number | null
+    start_sec: number
+    end_sec: number
+  }
+  config: {
+    yolo_model: string
+    yolo_conf: number
+    score_threshold: number
+    priority_for_type: number | null
+  }
+  prefilter: Record<string, unknown> | null
+  triage: ProvenanceVerdict[]
+  detail: ProvenanceVerdict[]
+}
+
 export interface EventKeyframeBox {
   kind: "person" | "animal"
   track_id: number | null
@@ -319,6 +361,10 @@ export function fetchJobEvents(id: number): Promise<JobEventsPage> {
 
 export function fetchEventDetail(id: number): Promise<EventDetail> {
   return fetchJson<EventDetail>(`/api/events/${id}`)
+}
+
+export function fetchEventProvenance(id: number): Promise<EventProvenance> {
+  return fetchJson<EventProvenance>(`/api/events/${id}/provenance`)
 }
 
 export function fetchEventsPage(params: URLSearchParams): Promise<EventsPage> {
@@ -747,6 +793,34 @@ export interface RepeatPlatesResponse {
 
 export function fetchAnalyticsPlates(): Promise<RepeatPlatesResponse> {
   return fetchJson<RepeatPlatesResponse>("/api/analytics/plates")
+}
+
+export interface StorageLocationBucket {
+  location: string
+  jobs: number
+  original_bytes: number
+  proxy_bytes: number
+}
+
+export interface StorageAnalytics {
+  hot: {
+    path: string
+    used_bytes: number | null
+    total_bytes: number | null
+    free_bytes: number | null
+  }
+  cold: {
+    jobs: number
+    original_bytes: number
+    proxy_bytes: number
+    by_location: StorageLocationBucket[]
+  }
+  months: { month: string; jobs: number }[]
+  archive: { days: number; eligible: number; archived: number }
+}
+
+export function fetchAnalyticsStorage(): Promise<StorageAnalytics> {
+  return fetchJson<StorageAnalytics>("/api/analytics/storage")
 }
 
 export interface MutationOk {

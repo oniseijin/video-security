@@ -1557,33 +1557,60 @@ new work. Default: 30 days.
 Not in scope for current phases; captured so the intent isn't lost.
 
 - **Photos import & removal conveniences (2026-09-25 ideas; bulk
-  remove, gate override, and import `--dry-run` shipped 2026-09-27 —
-  see Privacy review & removal)**:
+  remove, gate override, import `--dry-run`, the config kill-switch,
+  and forget mode shipped 2026-09-27 — see Privacy review & removal)**:
   - Scheduled incremental photos sync (launchd/cron nightly
     `vs import <library>` + analyze) — UUID dedupe makes repeats safe;
     only wanted if automatic pickup is ever desired (today imports are
-    explicit one-shots).
+    explicit one-shots). **Closed 2026-09-27: won't do** while imports
+    stay deliberate one-shots; reopen only if automatic pickup is ever
+    actually wanted.
   - Album allowlist pattern — keep a "security" album in Photos and
     import only that going forward (`--album` exists today); allowlist
-    beats denylist for personal content.
+    beats denylist for personal content. **Closed 2026-09-27: adopted
+    as practice, not code** — the recommended personal-content
+    workflow is `vs import <library> --album security`; nothing to
+    build.
   - `[adapter.photos] enabled = false` config kill-switch — hard-block
-    photos imports even when the command runs.
+    photos imports even when the command runs. **Shipped 2026-09-27**:
+    `run_import` refuses with an error when the resolved adapter is
+    photos (explicit `--adapter photos` or auto-detected
+    `.photoslibrary`), default `true`.
   - "Forget" mode — delete `photos_imports` UUID rows so a future
     import re-examines assets (jobs-level hash dedupe still skips
     present clips); a repair-flow tool, not a removal path.
-- **External-research ideas (2026-09-27, none built — sourced from
-  Frigate 0.14/0.15, Double Take/CompreFace, DeepCamera, and smaller
-  ALPR/LLM-browser projects)**:
+    **Shipped 2026-09-27**: `vs import --forget-uuid <UUID>`
+    (repeatable), `db.delete_photos_imports_by_uuid`; a re-import
+    re-links the UUID through the hash-hit path or re-imports fresh if
+    the job is gone.
+- **External-research ideas (2026-09-27; saved searches, storage/tier
+  metrics, and the event provenance view shipped 2026-09-27 — sourced
+  from Frigate 0.14/0.15, Double Take/CompreFace, DeepCamera, and
+  smaller ALPR/LLM-browser projects)**:
   - Saved searches / filter presets in the web console (Events,
     Plates, Search) — localStorage first, so no write path needed;
     every comparable UI has this and it is the cheapest UX win here.
+    **Shipped 2026-09-27**: `web/src/savedSearches.ts` +
+    `SavedSearches` component on all three views; presets persist the
+    views' URL filter params (offset/limit stripped), localStorage
+    only.
   - Storage/tier metrics pane — hot vs cold bytes, per-month job
     counts, archive backlog behind an `/api/analytics/storage`
     endpoint; read-only, fits the existing analytics family.
+    **Shipped 2026-09-27**: endpoint (`hot` disk usage, `cold`
+    `archived_originals` byte totals by location, `months` job counts,
+    `archive` backlog reusing `archive.select_jobs` eligibility) + a
+    tier summary in the Dashboard Storage panel.
   - Event provenance view ("why did this fire") — per event: prefilter
     verdicts, detector scores, LLM triage and detail verdicts side by
     side in EventDetail; false-positive tuning aid, directly useful
     for working through the stored flicker-intrusion backlog.
+    **Shipped 2026-09-27**: `/api/events/{id}/provenance` (detector
+    fields + current thresholds, job prefilter evidence, triage/detail
+    `analysis_results` rows with model, prompt version, timestamp) and
+    a Provenance panel in EventDetail; per-frame prefilter verdicts and
+    run-time thresholds are not persisted, so the panel shows the job
+    evidence summary instead.
   - Keyframe image-similarity search (Frigate Explore-style: CLIP-family
     embeddings over keyframes, text query + find-similar, pure
     SQLite/numpy scan) — adjacent to the rejected vector-DB idea;
@@ -1600,7 +1627,13 @@ Not in scope for current phases; captured so the intent isn't lost.
   sidecar; worth building only if LLM passes prove unreliable at
   catching these on their own.
 - Memory-pressure test: detail falls back to 4B model.
-- Transcript FTS5 index (volume too low to bother yet).
+  **Shipped 2026-09-27**: `test_detail_memory_gate_fallback_sticky_across_sweep`
+  (tests/test_llm_passes.py) drives the mock mlx-serve KV gate through a
+  3-event detail sweep and asserts the fallback to the triage model is
+  sticky — the 12B model is attempted only on the first event.
+- Transcript FTS5 index (volume too low to bother yet). **Decision
+  2026-09-27: stays deferred** until transcript volume makes plain
+  LIKE search measurably slow; not backlog work.
 - Web console writes (e.g. reviewed/resolved event flags) — v1 is
   read-only by design; any write path is a deliberate later decision
   (see Web Console → v2 thoughts). **First candidate: the face/person
@@ -1737,7 +1770,15 @@ in parallel per its own section below).
   landed as specced (`min_person_frames = 8`, `person_conf_floor = 0.0`
   off, None-track bypass; `Detection.track_id` widened to `int | None`).
   Validation is the next import batch; the 715 stored flicker intrusions
-  still need the suppress CLI.
+  still need the suppress CLI. **Note 2026-09-27: no bulk suppression —
+  this is a per-event review task.** Count is now 789 unsuppressed
+  priority-0.9 intrusions (717 detailed across 112 jobs, 72 pending on
+  harvested jobs created 2026-09-26 — those post-date the gate, so they
+  survived the 8-frame persistence check and may be genuine
+  detections). Only job 420's 11 were ever individually observed; the
+  rest were characterized by extension. Review each via the web
+  provenance view + per-event suppress button before suppressing
+  anything; `--restore` exists if a call is later regretted.
 - **`vs event suppress` CLI** (S). The only suppress path today is triage
   returning `relevant: false` (`pipeline.py:831`). Confirmed false positives
   that survive triage — job 420's 11 flicker intrusions — need a manual

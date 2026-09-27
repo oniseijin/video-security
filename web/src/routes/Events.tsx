@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { fetchCategories, fetchDays, fetchEventsPage } from "../api"
 import type { CategoriesPayload, DaysResponse, EventsPage } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
+import { SavedSearches } from "../components/SavedSearches"
 import { fmtDate } from "../format"
 import { toneColor } from "../theme"
 import type { Tone } from "../theme"
@@ -185,6 +186,7 @@ export function Events() {
             </select>
           </label>
         </div>
+        <SavedSearches scope="events" />
         {isPending ? (
           <TerminalNote>querying /api/events ...</TerminalNote>
         ) : isError ? (

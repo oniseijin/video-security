@@ -804,6 +804,109 @@ def event_detail(
     return summary
 
 
+def _analysis_verdicts(
+    conn: sqlite3.Connection, event_id: int, analysis_types: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    placeholders = ",".join("?" * len(analysis_types))
+    rows = conn.execute(
+        "SELECT id, model_digest, prompt_version, analysis_type, raw_response, "
+        "retry_count, tiled_results, created_at FROM analysis_results "
+        f"WHERE event_id = ? AND analysis_type IN ({placeholders}) ORDER BY id",
+        (event_id, *analysis_types),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        raw = str(r["raw_response"] or "")
+        try:
+            parsed: Any = json.loads(raw) if raw else None
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        verdict: dict[str, Any] = {
+            "result_id": int(r["id"]),
+            "analysis_type": str(r["analysis_type"]),
+            "model": str(r["model_digest"] or ""),
+            "prompt_version": str(r["prompt_version"] or ""),
+            "created_at": _iso(str(r["created_at"])) if r["created_at"] else None,
+            "retry_count": int(r["retry_count"] or 0),
+            "raw": raw,
+        }
+        tiled_raw = r["tiled_results"]
+        if tiled_raw:
+            try:
+                verdict["tiled"] = bool(json.loads(tiled_raw).get("tiled"))
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
+        if isinstance(parsed, dict):
+            verdict["relevant"] = bool(parsed.get("relevant", False))
+            verdict["confidence"] = (
+                str(parsed["confidence"]) if parsed.get("confidence") else None
+            )
+            if parsed.get("event_type"):
+                verdict["event_type"] = str(parsed["event_type"])
+            if parsed.get("description"):
+                verdict["description"] = str(parsed["description"])
+            if parsed.get("evidence_rationale"):
+                verdict["evidence_rationale"] = str(parsed["evidence_rationale"])
+            if parsed.get("recommended_action"):
+                verdict["recommended_action"] = str(parsed["recommended_action"])
+        out.append(verdict)
+    return out
+
+
+def event_provenance(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    event_id = int(params["id"])
+    evt = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+    if evt is None:
+        raise ApiError(404, "event not found")
+    job_id = int(evt["job_id"])
+    job = conn.execute(
+        "SELECT recording_start_utc FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    recorded_at = None
+    if job is not None:
+        recorded = _parse_utc(job["recording_start_utc"])
+        if recorded is not None:
+            recorded_at = (
+                recorded + timedelta(seconds=float(evt["start_sec"]))
+            ).isoformat()
+    event_type = str(evt["event_type"])
+    priority_by_type = {
+        k: float(v) for k, v in cfg.threat.priority.items()
+    }
+    return {
+        "event_id": event_id,
+        "job_id": job_id,
+        "status": str(evt["status"]),
+        "llm_result_id": (
+            int(evt["llm_result_id"]) if evt["llm_result_id"] is not None else None
+        ),
+        "recorded_at": recorded_at,
+        "detector": {
+            "event_type": event_type,
+            "detector_score": float(evt["detector_score"]),
+            "priority": float(evt["priority"]),
+            "track_id": (
+                int(evt["track_id"]) if evt["track_id"] is not None else None
+            ),
+            "start_sec": float(evt["start_sec"]),
+            "end_sec": float(evt["end_sec"]),
+        },
+        "config": {
+            "yolo_model": cfg.prefilter.yolo_model,
+            "yolo_conf": cfg.prefilter.yolo_conf,
+            "score_threshold": cfg.threat.score_threshold,
+            "priority_for_type": priority_by_type.get(event_type),
+        },
+        "prefilter": vsdb.get_job_evidence(conn, job_id),
+        "triage": _analysis_verdicts(conn, event_id, ("triage",)),
+        "detail": _analysis_verdicts(
+            conn, event_id, ("detail", "tiled", "ocr_fallback")
+        ),
+    }
+
+
 def categories(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1823,6 +1926,70 @@ def analytics_locations(
     return {"locations": [{"name": n, "count": c} for n, c in top]}
 
 
+def analytics_storage(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    from shutil import disk_usage
+
+    from video_security.archive import select_jobs
+
+    artifact = _artifact_dir(cfg)
+    hot: dict[str, Any] = {
+        "path": str(artifact),
+        "used_bytes": None,
+        "total_bytes": None,
+        "free_bytes": None,
+    }
+    if artifact.exists():
+        usage = disk_usage(artifact)
+        hot = {
+            "path": str(artifact),
+            "used_bytes": int(usage.used),
+            "total_bytes": int(usage.total),
+            "free_bytes": int(usage.free),
+        }
+    totals = conn.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(original_bytes), 0) AS orig, "
+        "COALESCE(SUM(proxy_bytes), 0) AS proxy FROM archived_originals"
+    ).fetchone()
+    by_location = [
+        {
+            "location": str(r["location"]),
+            "jobs": int(r["n"]),
+            "original_bytes": int(r["orig"]),
+            "proxy_bytes": int(r["proxy"]),
+        }
+        for r in conn.execute(
+            "SELECT location, COUNT(*) AS n, COALESCE(SUM(original_bytes), 0) AS orig, "
+            "COALESCE(SUM(proxy_bytes), 0) AS proxy "
+            "FROM archived_originals GROUP BY location ORDER BY location"
+        )
+    ]
+    months = [
+        {"month": str(r["month"]), "jobs": int(r["n"])}
+        for r in conn.execute(
+            "SELECT strftime('%Y-%m', recording_start_utc) AS month, COUNT(*) AS n "
+            "FROM jobs WHERE recording_start_utc IS NOT NULL "
+            "GROUP BY month ORDER BY month"
+        )
+    ]
+    return {
+        "hot": hot,
+        "cold": {
+            "jobs": int(totals["n"]),
+            "original_bytes": int(totals["orig"]),
+            "proxy_bytes": int(totals["proxy"]),
+            "by_location": by_location,
+        },
+        "months": months,
+        "archive": {
+            "days": cfg.archive.days,
+            "eligible": len(select_jobs(conn, cfg.archive.days)),
+            "archived": int(totals["n"]),
+        },
+    }
+
+
 def api_routes() -> list[Route]:
     return [
         ("GET", "/api/health", health),
@@ -1839,6 +2006,7 @@ def api_routes() -> list[Route]:
         ("GET", "/api/jobs/{id:int}/report.html", report_html),
         ("GET", "/api/events", events_list),
         ("GET", "/api/events/{id:int}", event_detail),
+        ("GET", "/api/events/{id:int}/provenance", event_provenance),
         ("GET", "/api/categories", categories),
         ("GET", "/api/plates", plates_gallery),
         ("GET", "/api/plates/{norm_text}", plate_detail),
@@ -1856,4 +2024,5 @@ def api_routes() -> list[Route]:
         ("GET", "/api/analytics/hours", analytics_hours),
         ("GET", "/api/analytics/locations", analytics_locations),
         ("GET", "/api/analytics/plates", analytics_plates),
+        ("GET", "/api/analytics/storage", analytics_storage),
     ]

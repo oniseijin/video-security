@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { fetchSearch } from "../api"
 import type { SearchResults } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
+import { SavedSearches } from "../components/SavedSearches"
 import { fmtSec } from "../format"
 import { platePath } from "./Plates"
 
@@ -55,6 +56,7 @@ export function Search() {
             />
           </label>
         </form>
+        <SavedSearches scope="search" />
         {trimmed === "" ? (
           <TerminalNote>
             enter a search query — plates, scene text, transcripts, event types

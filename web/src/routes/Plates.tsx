@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { fetchPlatesGallery } from "../api"
 import type { PlatesGalleryPage } from "../api"
 import { PlateCrop } from "../components/PlateCrop"
+import { SavedSearches } from "../components/SavedSearches"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate } from "../format"
 
@@ -72,6 +73,7 @@ export function Plates() {
           />
         </label>
       </form>
+      <SavedSearches scope="plates" />
       {isPending ? (
         <TerminalNote>querying /api/plates ...</TerminalNote>
       ) : isError ? (

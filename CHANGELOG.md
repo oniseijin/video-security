@@ -4,6 +4,35 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Event provenance view**: `GET /api/events/{id}/provenance` returns
+  the verdict chain as recorded — detector fields (event type, detector
+  score, priority) with the current config thresholds, the job's
+  prefilter evidence summary, and the stored triage/detail
+  `analysis_results` rows (model, prompt version, timestamp, parsed
+  verdict). EventDetail renders it as a compact Provenance panel.
+- **Saved searches / filter presets**: Events, Plates, and Search gain
+  a save/apply/delete control for the current filter state (stored as
+  labeled URL-param presets in localStorage — names never leave the
+  browser).
+- **Storage/tier metrics**: `GET /api/analytics/storage` reports hot
+  artifact-disk usage, cold bytes recorded in `archived_originals`
+  (by location), per-month job counts, and the archive backlog
+  (eligible-but-not-archived using the archive command's eligibility
+  rule); the Dashboard Storage panel shows the tier summary.
+- **Photos import kill-switch**: `[adapter.photos] enabled = false`
+  makes `vs import` refuse photos imports with an error, both for
+  explicit `--adapter photos` and auto-detected `.photoslibrary`
+  sources (default `true`, so existing workflows are unchanged).
+- **Photos import forget mode**: `vs import --forget-uuid <UUID>`
+  (repeatable; no source argument needed) deletes `photos_imports`
+  rows so a future import re-examines those assets — jobs-level hash
+  dedupe still skips clips already present; a repair-flow tool, not a
+  removal path.
+
 ## [0.10.0] - 2026-09-27
 
 ### Added

@@ -4,6 +4,7 @@ import {
   fetchAnalyticsHours,
   fetchAnalyticsLocations,
   fetchAnalyticsPlates,
+  fetchAnalyticsStorage,
   fetchMapRecent,
   fetchStats,
   fetchWatchlistHits,
@@ -17,6 +18,7 @@ import type {
   MapRecent,
   RepeatPlatesResponse,
   Stats,
+  StorageAnalytics,
   WatchlistHitsPage,
 } from "../api"
 import { HeatMap } from "../components/HeatMap"
@@ -331,6 +333,38 @@ function Analytics() {
   )
 }
 
+function StorageTiers() {
+  const { data, isPending, isError } = useQuery<StorageAnalytics, Error>({
+    queryKey: ["analytics-storage"],
+    queryFn: fetchAnalyticsStorage,
+  })
+  if (isPending || isError || !data) {
+    return null
+  }
+  const cold: string[] = [
+    `cold ${fmtBytes(data.cold.original_bytes)} · ${data.cold.jobs} jobs archived`,
+  ]
+  if (data.cold.proxy_bytes > 0) {
+    cold.push(`proxies ${fmtBytes(data.cold.proxy_bytes)}`)
+  }
+  for (const loc of data.cold.by_location) {
+    cold.push(`${loc.location}: ${loc.jobs} · ${fmtBytes(loc.original_bytes)}`)
+  }
+  const months = data.months
+    .map((m) => `${m.month} ${m.jobs}`)
+    .join(" · ")
+  return (
+    <>
+      <p className="note">{cold.join(" — ")}</p>
+      <p className="note">
+        archive backlog: {data.archive.eligible} eligible ·{" "}
+        {data.archive.archived} archived · {data.archive.days}d window
+      </p>
+      {months ? <p className="note">jobs by month: {months}</p> : null}
+    </>
+  )
+}
+
 export function Dashboard() {
   const { active: liveJobs, live } = useProgressStream()
   const { data, isPending, isError, error } = useQuery<Stats, Error>({
@@ -464,6 +498,7 @@ export function Dashboard() {
             artifact dir offline — db {fmtBytes(storage.db_bytes)}
           </p>
         )}
+        <StorageTiers />
       </section>
       <RecentEvents />
       <Analytics />

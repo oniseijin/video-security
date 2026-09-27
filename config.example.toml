@@ -20,6 +20,11 @@ hard_brake_g = 0.35
 hard_corner_g = 0.30
 impact_g = 0.80
 
+[adapter.photos]
+# Set enabled = false to hard-block photos imports (vs import refuses
+# with an error, both for --adapter photos and auto-detected libraries).
+enabled = true
+
 [engine]
 heartbeat_sec = 30
 max_llm_events = 100

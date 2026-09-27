@@ -415,3 +415,42 @@ def test_detail_no_fallback_when_models_equal() -> None:
         client = MlxServeClient(m.base_url, timeout_s=5, max_attempts=1)
         results = detail_events([_fallback_triaged(1)], [event], cfg, client)
         assert results == []
+
+
+def test_detail_memory_gate_fallback_sticky_across_sweep() -> None:
+    mock = MockMlxServe(
+        response_text=(
+            '{"relevant": true, "event_type": "intrusion", '
+            '"description": "x", "evidence_rationale": "y", '
+            '"recommended_action": "log_only", "confidence": "medium"}'
+        ),
+        gate_model="mlx-community/gemma-4-12b-it-4bit",
+    )
+    with mock.start() as m:
+        cfg = Config()
+        cfg.llm_triage.model = "mlx-community/gemma-4-e4b-it-4bit"
+        cfg.llm_detail.model = "mlx-community/gemma-4-12b-it-4bit"
+        events = [_make_event(1, 0.9, 0.8), _make_event(2, 0.9, 0.8),
+                  _make_event(3, 0.9, 0.8)]
+        client = MlxServeClient(m.base_url, timeout_s=5, max_attempts=2)
+        triaged = [_fallback_triaged(e.id) for e in events]
+        results = detail_events(triaged, events, cfg, client)
+
+        assert len(results) == 3
+        assert all(
+            r.model_digest == "mlx-community/gemma-4-e4b-it-4bit"
+            for r in results
+        )
+        assert all(r.relevant for r in results)
+        chats = [
+            r["body"]["model"]
+            for r in m.requests
+            if r["path"] == "/v1/chat/completions"
+        ]
+        assert chats == [
+            "mlx-community/gemma-4-12b-it-4bit",
+            "mlx-community/gemma-4-12b-it-4bit",
+            "mlx-community/gemma-4-e4b-it-4bit",
+            "mlx-community/gemma-4-e4b-it-4bit",
+            "mlx-community/gemma-4-e4b-it-4bit",
+        ]

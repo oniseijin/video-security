@@ -231,6 +231,11 @@ def run_import(
     name = adapter_name
     if name == "auto":
         name = detect_adapter(source)
+    if name == "photos" and not config.adapter_photos.enabled:
+        raise EngineError(
+            "photos imports are disabled by the config kill-switch "
+            "([adapter.photos] enabled = false)"
+        )
     adapter = get_adapter(name, config)
     if name == "photos":
         from video_security.adapters.photos import PhotosAdapter

@@ -951,3 +951,68 @@ a.count-chip:hover {
 .person-controls {
   margin-bottom: 0.75rem;
 }
+
+.saved-searches {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.saved-search-input {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  color: var(--vs-ink);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+  padding: 0.2rem 0.4rem;
+  width: 8rem;
+}
+
+.saved-search-input:focus {
+  outline: none;
+  border-color: var(--vs-accent);
+}
+
+.saved-search-chip {
+  display: inline-flex;
+  align-items: stretch;
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: var(--vs-tracking);
+  color: var(--vs-ink-dim);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+}
+
+.saved-search-chip:hover {
+  color: var(--vs-accent);
+  border-color: var(--vs-accent);
+}
+
+.saved-search-apply {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.saved-search-delete {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--vs-line);
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+}
+
+.saved-search-delete:hover {
+  color: var(--vs-threat);
+}

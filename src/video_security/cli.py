@@ -416,12 +416,21 @@ def run_cmd(
 @app.command(name="import")
 def import_clips_cmd(
     ctx: typer.Context,
-    source: Path = typer.Argument(..., help="Source path (card mount or archive)"),  # noqa: B008
+    source: Path | None = typer.Argument(None, help="Source path (card mount or archive)"),  # noqa: B008
     adapter: str = typer.Option("auto", "--adapter", help="Source adapter (auto|mazda_cx8|gopro|photos|generic)"),  # noqa: B008, E501
     since: str | None = typer.Option(None, "--since", help="Only import assets recorded on/after date (YYYY-MM-DD)"),  # noqa: B008, E501
     album: str | None = typer.Option(None, "--album", help="Only import assets in a specific Photos album"),  # noqa: B008, E501
     allow_removed: bool = typer.Option(False, "--allow-removed", help="Import assets whose hash matches a removal-log entry"),  # noqa: B008, E501
     dry_run: bool = typer.Option(False, "--dry-run", help="Count what would be imported without copying or writing anything"),  # noqa: B008, E501
+    forget_uuid: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--forget-uuid",
+        help=(
+            "Delete a Photos asset UUID from the import map so a future "
+            "import re-examines it (repeatable). Jobs-level hash dedupe "
+            "still skips clips already present."
+        ),
+    ),
 ) -> None:
     from video_security.engine import EngineError
     from video_security.importer import run_import
@@ -429,6 +438,32 @@ def import_clips_cmd(
     cfg: Config = ctx.obj["config"]
     conn = connect(cfg.storage.db_path)
     init_db(conn)
+    if forget_uuid:
+        if source is not None:
+            print(
+                "Error: --forget-uuid does not take a source path",
+                file=sys.stderr,
+            )
+            conn.close()
+            raise typer.Exit(code=1)
+        forgotten = 0
+        for uuid in forget_uuid:
+            forgotten += db.delete_photos_imports_by_uuid(conn, uuid)
+        if forgotten == 0:
+            print(
+                f"Error: no photo imports for "
+                f"{', '.join(forget_uuid)}",
+                file=sys.stderr,
+            )
+            conn.close()
+            raise typer.Exit(code=1)
+        print(f"forgot {forgotten} photo import(s)")
+        conn.close()
+        return
+    if source is None:
+        print("Error: missing source path (or --forget-uuid)", file=sys.stderr)
+        conn.close()
+        raise typer.Exit(code=1)
     since_dt: datetime | None = None
     if since is not None:
         try:

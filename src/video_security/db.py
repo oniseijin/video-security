@@ -868,6 +868,12 @@ def delete_photos_imports_for_job(conn: sqlite3.Connection, job_id: int) -> None
     conn.commit()
 
 
+def delete_photos_imports_by_uuid(conn: sqlite3.Connection, uuid: str) -> int:
+    cur = conn.execute("DELETE FROM photos_imports WHERE uuid = ?", (uuid,))
+    conn.commit()
+    return cur.rowcount
+
+
 def set_job_flag(conn: sqlite3.Connection, job_id: int, note: str | None) -> bool:
     cur = conn.execute(
         "UPDATE jobs SET flag_note = ? WHERE id = ?", (note, job_id)

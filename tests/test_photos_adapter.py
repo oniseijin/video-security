@@ -314,3 +314,180 @@ def test_run_import_gps_stored(
     assert gps_rows[0]["lat"] == pytest.approx(35.6895)
     assert gps_rows[0]["lon"] == pytest.approx(139.6917)
     assert gps_rows[0]["time_sec"] == pytest.approx(0.0)
+
+
+def test_kill_switch_blocks_photos_import(
+    db_conn: sqlite3.Connection,
+    cfg: Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from video_security.engine import EngineError
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_KILL.MOV")
+    _seam_env(monkeypatch, [["uuid-kill", v, "2026-09-01T10:00:00", False]])
+
+    cfg.adapter_photos.enabled = False
+    with pytest.raises(EngineError, match="kill-switch"):
+        run_import(lib, cfg, db_conn)
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.raises(EngineError, match="kill-switch"):
+        run_import(plain, cfg, db_conn, "photos")
+
+    assert db_conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_kill_switch_cli_blocks_import(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from video_security.cli import app
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    db_file = tmp_path / "t.db"
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"[storage]\n"
+        f"db_path = {str(db_file)!r}\n"
+        f"artifact_dir = {str(artifacts)!r}\n"
+        f"[import]\n"
+        f"preflight_gb = 0\n"
+        f"[adapter.photos]\n"
+        f"enabled = false\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app, ["--db", str(db_file), "--config", str(config_path), "import", str(lib)]
+    )
+    assert result.exit_code == 1
+    assert "kill-switch" in result.output
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "--db", str(db_file),
+            "--config", str(config_path),
+            "import", str(plain), "--adapter", "photos",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "kill-switch" in result.output
+
+
+def test_import_enabled_by_default(
+    db_conn: sqlite3.Connection, cfg: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_OK.MOV")
+    _seam_env(monkeypatch, [["uuid-ok", v, "2026-09-01T10:00:00", False]])
+    assert cfg.adapter_photos.enabled is True
+    report = run_import(lib, cfg, db_conn)
+    assert report.imported == 1
+
+
+def test_forget_uuid_reexamines_asset(
+    db_conn: sqlite3.Connection,
+    cfg: Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from typer.testing import CliRunner
+
+    from video_security.cli import app
+
+    runner = CliRunner()
+    cfg.storage.db_path = str(tmp_path / "t.db")
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_F.MOV", b"forget-me")
+    _seam_env(monkeypatch, [["uuid-f", v, "2026-09-01T10:00:00", False]])
+
+    report = run_import(lib, cfg, db_conn)
+    assert report.imported == 1
+    job_id = report.jobs[0]
+
+    second = run_import(lib, cfg, db_conn)
+    assert second.imported == 0
+    assert second.skipped == 1
+
+    result = runner.invoke(
+        app, ["--db", cfg.storage.db_path, "import", "--forget-uuid", "uuid-f"]
+    )
+    assert result.exit_code == 0
+    assert "forgot 1 photo import(s)" in result.stdout
+    assert db.get_photos_import(db_conn, "uuid-f") is None
+
+    result = runner.invoke(
+        app, ["--db", cfg.storage.db_path, "import", "--forget-uuid", "uuid-none"]
+    )
+    assert result.exit_code == 1
+    assert "no photo imports" in result.output
+
+    third = run_import(lib, cfg, db_conn)
+    assert third.imported == 0
+    assert third.skipped == 1
+    relinked = db.get_photos_import(db_conn, "uuid-f")
+    assert relinked is not None
+    assert int(relinked["job_id"]) == job_id
+
+
+def test_forget_uuid_reimport_after_job_gone(
+    db_conn: sqlite3.Connection,
+    cfg: Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from video_security.db import delete_job_rows
+
+    lib = tmp_path / "lib.photoslibrary"
+    lib.mkdir()
+    v = _video(tmp_path, "IMG_G.MOV", b"forget-repair")
+    _seam_env(monkeypatch, [["uuid-g", v, "2026-09-01T10:00:00", False]])
+
+    report = run_import(lib, cfg, db_conn)
+    assert report.imported == 1
+    job_id = report.jobs[0]
+
+    delete_job_rows(db_conn, job_id)
+    db_conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    db_conn.execute("DELETE FROM photos_imports WHERE uuid = 'uuid-g'")
+    db_conn.commit()
+
+    again = run_import(lib, cfg, db_conn)
+    assert again.imported == 1
+    row = db.get_photos_import(db_conn, "uuid-g")
+    assert row is not None
+    assert int(row["job_id"]) == again.jobs[0]
+    assert db.get_job_by_id(db_conn, again.jobs[0]) is not None
+
+
+def test_forget_uuid_rejects_source(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from video_security.cli import app
+
+    db_file = tmp_path / "t.db"
+    conn = connect(str(db_file))
+    init_db(conn)
+    conn.close()
+    result = CliRunner().invoke(
+        app,
+        [
+            "--db", str(db_file),
+            "import", str(tmp_path), "--forget-uuid", "uuid-x",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "does not take a source" in result.output

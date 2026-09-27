@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
-import { fetchEventDetail, restoreEvent, suppressEvent } from "../api"
-import type { EventDetail } from "../api"
+import {
+  fetchEventDetail,
+  fetchEventProvenance,
+  restoreEvent,
+  suppressEvent,
+} from "../api"
+import type { EventDetail, EventProvenance, ProvenanceVerdict } from "../api"
 import { Filmstrip } from "../components/Filmstrip"
 import type { FilmFrame } from "../components/Filmstrip"
 import { PlateCrop } from "../components/PlateCrop"
@@ -36,6 +41,129 @@ function SuppressionControl({ event }: { event: EventDetail }) {
         <span className="assign-error">{mutation.error.message}</span>
       ) : null}
     </div>
+  )
+}
+
+function verdictLine(stage: string, v: ProvenanceVerdict) {
+  const bits: string[] = []
+  if (v.relevant !== undefined) {
+    bits.push(`relevant=${v.relevant}`)
+  }
+  if (v.confidence) {
+    bits.push(`conf=${v.confidence}`)
+  }
+  if (v.event_type) {
+    bits.push(v.event_type)
+  }
+  if (v.description) {
+    bits.push(v.description)
+  }
+  if (v.recommended_action) {
+    bits.push(`action=${v.recommended_action}`)
+  }
+  if (v.tiled) {
+    bits.push("tiled")
+  }
+  bits.push(v.model || "model unknown")
+  bits.push(`pv ${v.prompt_version || "?"}`)
+  if (v.created_at) {
+    bits.push(v.created_at.replace("T", " ").slice(0, 19))
+  }
+  return (
+    <p key={v.result_id}>
+      <span className="ts">[{stage}]</span> {bits.join(" · ")}
+    </p>
+  )
+}
+
+function Provenance({ eventId }: { eventId: number }) {
+  const { data, isPending, isError } = useQuery<EventProvenance, Error>({
+    queryKey: ["event-provenance", eventId],
+    queryFn: () => fetchEventProvenance(eventId),
+  })
+  if (isPending) {
+    return (
+      <section className="panel">
+        <h2>Provenance</h2>
+        <TerminalNote>querying /api/events/{eventId}/provenance ...</TerminalNote>
+      </section>
+    )
+  }
+  if (isError || !data) {
+    return null
+  }
+  const ev = data.prefilter as {
+    frames_kept?: number
+    vehicle_tracks?: unknown[]
+    plates?: unknown[]
+    faces?: number
+    gps_samples?: number
+  } | null
+  const prefilterBits: string[] = []
+  if (ev) {
+    if (typeof ev.frames_kept === "number") {
+      prefilterBits.push(`frames ${ev.frames_kept}`)
+    }
+    if (Array.isArray(ev.vehicle_tracks)) {
+      prefilterBits.push(`tracks ${ev.vehicle_tracks.length}`)
+    }
+    if (Array.isArray(ev.plates)) {
+      prefilterBits.push(`plates ${ev.plates.length}`)
+    }
+    if (typeof ev.faces === "number") {
+      prefilterBits.push(`faces ${ev.faces}`)
+    }
+    if (typeof ev.gps_samples === "number") {
+      prefilterBits.push(`gps ${ev.gps_samples}`)
+    }
+  }
+  const d = data.detector
+  const c = data.config
+  return (
+    <section className="panel">
+      <h2>Provenance</h2>
+      <div className="terminal">
+        <p>
+          <span className="ts">[detector]</span> {d.event_type} · score{" "}
+          {d.detector_score.toFixed(2)} · priority {d.priority.toFixed(2)}
+          {" · "}
+          {c.yolo_model}@{c.yolo_conf} · threshold {c.score_threshold}
+          {c.priority_for_type !== null
+            ? ` · priority weight ${c.priority_for_type}`
+            : ""}
+        </p>
+        <p>
+          <span className="ts">[prefilter]</span>{" "}
+          {prefilterBits.length > 0
+            ? prefilterBits.join(" · ")
+            : "no job prefilter evidence recorded"}
+        </p>
+        {data.triage.length === 0
+          ? verdictMissing("triage")
+          : data.triage.map((v) => verdictLine("triage", v))}
+        {data.detail.length === 0
+          ? verdictMissing("detail")
+          : data.detail.map((v) => verdictLine("detail", v))}
+        <p>
+          <span className="ts">[status]</span> {data.status}
+          {data.llm_result_id !== null
+            ? ` · result #${data.llm_result_id}`
+            : ""}
+        </p>
+      </div>
+      <TerminalNote>
+        verdict chain as recorded — detector thresholds shown are current
+        config, not per-run values
+      </TerminalNote>
+    </section>
+  )
+}
+
+function verdictMissing(stage: string) {
+  return (
+    <p>
+      <span className="ts">[{stage}]</span> no {stage} result recorded
+    </p>
   )
 }
 
@@ -131,6 +259,8 @@ export function EventDetailRoute() {
         <p className="desc-full">{data.description}</p>
         <SuppressionControl event={data} />
       </section>
+
+      <Provenance eventId={data.event_id} />
 
       {frames.length > 0 ? (
         <section className="panel">
