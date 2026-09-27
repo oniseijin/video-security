@@ -1539,6 +1539,64 @@ a half-written file is the classic footgun.
 for jobs (cascades to frames/events/plates/transcript). Runs at startup before
 new work. Default: 30 days.
 
+### Crash detection (proposed 2026-09-27 — design review pending, NOT built)
+
+Flag collision / hard-impact moments as a first-class event type fed
+through the existing triage/detail chain. Four signals, all already
+available at analysis time:
+
+- **G — G-sensor trigger (primary candidate generator).** The CX-8
+  dashcam's own impact sensor locks clips into the `EVENT` folder vs
+  `NORMAL` (`ClipInfo.mode`); the car already detects impacts at
+  record time. An `EVENT`-mode clip is a crash *candidate*, not a
+  crash — the sensor also fires on hard braking, potholes, and door
+  slams while parked.
+- **J — camera jolt.** Consecutive-frame global displacement via
+  `cv2.phaseCorrelate` on the existing 480p grayscale motion path
+  (sampled, e.g. every 5th frame). Impulsive = single-sample spike
+  several × the clip's own displacement baseline, decaying
+  immediately — distinguishes a jolt from rumble strips and handheld
+  wobble.
+- **A — audio transient.** Short-window peak ≥ N σ above the local
+  RMS baseline (machinery exists: `rms_loud_regions` baseline/
+  threshold); one-off bang vs sustained road/engine noise.
+- **S — speed discontinuity.** `clip_gps_data.speed_kmh` drop >
+  threshold within ≤ 2 s, or bearing snap — hard braking or impact.
+
+**Fusion rule (proposal):** emit `event_type = 'crash'` (priority
+0.95) when G + at least one of {J, A, S} confirm inside the clip, or
+at least two of {J, A, S} without G (cheap insurance; the G-sensor
+can miss low-speed contacts). Single signals alone never fire.
+Keyframes around the fused instant + transcript/audio context go to
+LLM detail with a crash-focused prompt — the LLM verdict stays the
+final arbiter, consistent with the pipeline's philosophy.
+
+**Shape:** new `[crash]` config block (`enabled` default **false**
+until validated, `jolt_sigma`, `audio_sigma`, `speed_drop_kmh`,
+`window_sec`, `min_signals`); detector lives beside `threats.py`
+(prefilter stage, before event merge); signal values recorded so the
+provenance panel shows *why* it fired (extends the 2026-09-27
+provenance endpoint naturally). No new dependencies (cv2/numpy
+only). No schema change — `events.event_type = 'crash'`.
+
+**Testing:** synthetic fixtures per signal (frame sequence with
+planted displacement spike; PCM buffer with transient; GPS track with
+speed cliff) + fusion-gate tests (one signal → nothing; G+1 → event;
+2-of-3 → event) + a golden-clip end-to-end assert.
+
+**Validation plan (two-step, mirrors the flicker lesson):** step 1 —
+`--crash-scan` style backfill over the existing archive (622 jobs)
+with results written as *suppressed* candidates or a dry report
+only; step 2 — human review of every candidate via the provenance
+view, threshold tuning, then flip `enabled = true` for nightly.
+Never default-on before that review.
+
+**Open questions for review:** (1) should parked/ignition-off
+door-slam candidates be excluded via G+S co-requirement? (2) is
+0.95 priority right, or above intrusion? (3) confirm-only mode for
+rear-channel clips (jolt signal noisier there)? (4) event merge:
+keep crash events unmerged even if `merge_gap_sec` would join them?
+
 ---
 
 ## Testing Strategy
@@ -1625,7 +1683,9 @@ Not in scope for current phases; captured so the intent isn't lost.
   motion discontinuity (camera jolt), impact-like audio spikes (we
   already run VAD + loudness), and a GPS speed drop from the NMEA
   sidecar; worth building only if LLM passes prove unreliable at
-  catching these on their own.
+  catching these on their own. **Design proposed 2026-09-27 — see
+  "Crash detection" under Implementation Specifications; pending
+  review before implementation.**
 - Memory-pressure test: detail falls back to 4B model.
   **Shipped 2026-09-27**: `test_detail_memory_gate_fallback_sticky_across_sweep`
   (tests/test_llm_passes.py) drives the mock mlx-serve KV gate through a
