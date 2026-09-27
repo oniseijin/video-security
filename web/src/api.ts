@@ -195,6 +195,26 @@ export interface ProvenanceVerdict {
   recommended_action?: string
 }
 
+export interface CrashSignalHit {
+  rule?: string
+  time_sec?: number
+  start_sec?: number
+  end_sec?: number
+  spike_px?: number
+  baseline_px?: number
+  drop_kmh?: number
+}
+
+export interface CrashSignalProvenance {
+  start_sec: number
+  end_sec: number
+  signals: string[]
+  rule: string
+  detector_score: number
+  thresholds: Record<string, number>
+  hits: Record<string, CrashSignalHit[]>
+}
+
 export interface EventProvenance {
   event_id: number
   job_id: number
@@ -216,6 +236,7 @@ export interface EventProvenance {
     priority_for_type: number | null
   }
   prefilter: Record<string, unknown> | null
+  crash: CrashSignalProvenance | null
   triage: ProvenanceVerdict[]
   detail: ProvenanceVerdict[]
 }

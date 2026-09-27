@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -44,6 +44,9 @@ from video_security.prefilter.vehicles import (
     crop_vehicle,
     load_detector,
 )
+
+if TYPE_CHECKING:
+    from video_security.adapters.mazda_cx8 import GpsSample
 
 TRANSCRIPT_WINDOW_SEC = 30.0
 JPEG_CACHE_LIMIT = 1000
@@ -660,6 +663,7 @@ def harvest_job(
         )
 
     gps_samples = 0
+    gps_sample_rows: list[GpsSample] = []
     nmea_sidecar = _find_nmea_sidecar(path)
     if nmea_sidecar is not None:
         from video_security.adapters.mazda_cx8 import (
@@ -676,6 +680,7 @@ def harvest_job(
                 clip_start = None
         samples = parse_nmea(nmea_sidecar, clip_start)
         gps_samples = len(samples)
+        gps_sample_rows = samples
         for gs in samples:
             db.insert_gps_row(
                 conn, job.id, 0, gs.time_sec, gs.lat, gs.lon,
@@ -692,6 +697,39 @@ def harvest_job(
                     ge.peak_g,
                     GFORCE_EVENT_PRIORITY.get(ge.event_type, 0.7),
                     _frames_in_window(frames_meta, ge.start_sec, ge.end_sec),
+                )
+            )
+
+    crash_events: list[CrashEvent] = []
+    if config.crash.enabled:
+        from video_security.prefilter.crash import (
+            CRASH_EVENT_TYPE,
+            CrashEvent,
+            GpsPoint,
+            detect_crash_events,
+        )
+
+        crash_events = detect_crash_events(
+            conn,
+            job.id,
+            job.video_path,
+            config.crash,
+            audio_result.transients if audio_result is not None else [],
+            [
+                GpsPoint(s.time_sec, s.speed_kmh, s.bearing)
+                for s in gps_sample_rows
+            ],
+        )
+        for ce in crash_events:
+            event_specs.append(
+                EventSpec(
+                    CRASH_EVENT_TYPE,
+                    ce.start_sec,
+                    ce.end_sec,
+                    None,
+                    ce.detector_score,
+                    ce.priority,
+                    _frames_in_window(frames_meta, ce.start_sec, ce.end_sec),
                 )
             )
 
@@ -825,6 +863,8 @@ def harvest_job(
                     evidence["device_context"] = hint
         except (json.JSONDecodeError, TypeError):
             pass
+    if crash_events:
+        evidence["crash"] = [ce.evidence for ce in crash_events]
     db.update_job_evidence(conn, job.id, json.dumps(evidence))
     from video_security.watchlist import evaluate_job
 

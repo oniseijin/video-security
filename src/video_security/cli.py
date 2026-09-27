@@ -1355,6 +1355,21 @@ def repair_cmd(
     conn.close()
 
 
+@app.command(name="crash-scan")
+def crash_scan_cmd(
+    ctx: typer.Context,
+    job: list[int] = typer.Option([], "--job", help="Scan only this job ID (repeatable)"),  # noqa: B008, E501
+    limit: int | None = typer.Option(None, "--limit", help="Cap number of jobs scanned"),  # noqa: B008, E501
+) -> None:
+    from video_security.crashscan import run_crash_scan
+
+    conn, cfg = _get_db(ctx)
+    try:
+        print(run_crash_scan(conn, cfg, job_id=job[0] if job else None, limit=limit))
+    finally:
+        conn.close()
+
+
 @app.command(name="config")
 def config_cmd(ctx: typer.Context) -> None:
     cfg: Config = ctx.obj["config"]

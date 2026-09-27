@@ -106,6 +106,16 @@ class AudioConfig:
 
 
 @dataclasses.dataclass
+class CrashConfig:
+    enabled: bool = False
+    jolt_sigma: float = 6.0
+    audio_sigma: float = 5.0
+    speed_drop_kmh: float = 25.0
+    window_sec: float = 3.0
+    min_signals: int = 2
+
+
+@dataclasses.dataclass
 class ThreatConfig:
     score_threshold: float = 0.5
     person_weight: float = 0.4
@@ -284,6 +294,7 @@ class Config:
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
     sound: SoundConfig = dataclasses.field(default_factory=SoundConfig)
     threat: ThreatConfig = dataclasses.field(default_factory=ThreatConfig)
+    crash: CrashConfig = dataclasses.field(default_factory=CrashConfig)
     report: ReportConfig = dataclasses.field(default_factory=ReportConfig)
     map: MapConfig = dataclasses.field(default_factory=MapConfig)
     web: WebConfig = dataclasses.field(default_factory=WebConfig)
@@ -499,6 +510,8 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                 )
             else:
                 kwargs["threat"] = _merge_dataclass(config.threat, values, "threat")
+        elif section == "crash":
+            kwargs["crash"] = _merge_dataclass(config.crash, values, "crash")
         elif section == "prefilter":
             kwargs["prefilter"] = _merge_dataclass(config.prefilter, values, "prefilter")
         elif section == "map":

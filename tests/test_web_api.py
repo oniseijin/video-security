@@ -755,6 +755,65 @@ def test_event_provenance(tmp_path: Path) -> None:
     assert json.loads(body)["error"] == "event not found"
 
 
+def test_event_provenance_crash_signals(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    crash_evidence = {
+        "frames_kept": 100,
+        "crash": [
+            {
+                "start_sec": 12.1,
+                "end_sec": 14.1,
+                "signals": ["G", "J", "S"],
+                "rule": "G+J+S",
+                "detector_score": 3.0,
+                "thresholds": {
+                    "jolt_sigma": 6.0,
+                    "audio_sigma": 5.0,
+                    "speed_drop_kmh": 25.0,
+                    "window_sec": 3.0,
+                    "min_signals": 2,
+                },
+                "hits": {
+                    "G": [{"rule": "event_mode_clip"}],
+                    "J": [
+                        {"time_sec": 13.1, "spike_px": 34.2, "baseline_px": 1.8}
+                    ],
+                    "A": [],
+                    "S": [
+                        {"time_sec": 13.4, "drop_kmh": 41.2, "rule": "speed_drop"}
+                    ],
+                },
+            }
+        ],
+    }
+    conn = connect(str(tmp_path / "t.db"))
+    conn.execute(
+        "INSERT INTO events (id, job_id, event_type, start_sec, end_sec, clip_id, "
+        "track_id, keyframes_json, detector_score, priority, status) "
+        "VALUES (20, 1, 'crash', 12.5, 13.8, 0, NULL, '[]', 3.0, 0.95, 'pending')"
+    )
+    conn.execute(
+        "UPDATE jobs SET evidence_json = ? WHERE id = 1",
+        (json.dumps(crash_evidence),),
+    )
+    conn.commit()
+    conn.close()
+    cfg = Config()
+    cfg.storage.db_path = str(tmp_path / "t.db")
+    cfg.storage.artifact_dir = str(tmp_path / "artifacts")
+    client = TestClient(create_app(cfg))
+
+    data = _get_json(client, "/api/events/20/provenance")
+    assert data["crash"] is not None
+    assert data["crash"]["rule"] == "G+J+S"
+    assert data["crash"]["signals"] == ["G", "J", "S"]
+    assert data["crash"]["hits"]["J"][0]["spike_px"] == 34.2
+    assert data["crash"]["thresholds"]["speed_drop_kmh"] == 25.0
+
+    pending = _get_json(client, "/api/events/11/provenance")
+    assert pending["crash"] is None
+
+
 def test_analytics_storage_endpoint(tmp_path: Path) -> None:
     _seed(tmp_path)
     conn = connect(str(tmp_path / "t.db"))

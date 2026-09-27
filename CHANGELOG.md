@@ -4,6 +4,27 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Crash detection (behind `[crash] enabled = false`)**: fusion of four
+  signals — G-sensor EVENT-mode clip, front-channel camera jolt
+  (`cv2.phaseCorrelate` displacement spike), audio transient
+  (local-RMS sigma gate), and GPS speed drop / bearing snap — emits
+  `event_type='crash'` events (priority 0.95) that flow through the
+  standard triage/detail chain. Crash events are exempt from
+  `merge_gap_sec` merging; per-signal values that fired are stored in
+  `jobs.evidence_json` (no schema change) and shown in the EventDetail
+  Provenance panel via `/api/events/{id}/provenance`. Stays off until
+  candidates from the new `vs crash-scan` validation tool have been
+  human-reviewed.
+- **`vs crash-scan`**: dry-run backfill over done EVENT-mode jobs
+  (`--job ID`, `--limit N`) that decodes each clip (proxies resolved
+  through archive cold locations), computes jolt/audio/GPS signals,
+  and prints a per-candidate report with signal values and
+  would-fire / insufficient verdicts. Writes nothing to the DB.
+
 ## [0.11.0] - 2026-09-27
 
 ### Added

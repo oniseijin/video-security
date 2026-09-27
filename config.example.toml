@@ -106,6 +106,17 @@ intrusion = 0.9
 loitering = 0.6
 suspicious_behavior = 0.5
 
+[crash]
+# Crash/impact detection (G-sensor + jolt + audio transient + GPS speed drop).
+# Keep enabled = false until candidates from `vs crash-scan` have been
+# human-reviewed via the provenance panel.
+enabled = false
+jolt_sigma = 6.0
+audio_sigma = 5.0
+speed_drop_kmh = 25.0
+window_sec = 3.0
+min_signals = 2
+
 [map]
 # carto_api_key = "cb1_..."  (optional — unlocks CARTO basemap features/higher tile limits; local config only)
 

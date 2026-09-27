@@ -31,6 +31,11 @@ class AudioResult:
     loud_regions: list[tuple[float, float]]
     keyword_hits: list[tuple[float, float, str]]
     sound_events: list[SoundEvent] = field(default_factory=list)
+    transients: list[tuple[float, float]] = field(default_factory=list)
+
+
+AUDIO_TRANSIENT_NEIGHBORHOOD_WINDOWS = 30
+AUDIO_TRANSIENT_MAX_SEC = 1.0
 
 
 def extract_pcm(path: Path, sample_rate: int = 16000) -> np.ndarray:
@@ -84,6 +89,41 @@ def rms_loud_regions(
             regions.append((start_sec, end_sec))
         i = j
     return regions
+
+
+def audio_transients(
+    pcm: np.ndarray,
+    sample_rate: int,
+    sigma_multiple: float,
+    floor: float,
+    window_ms: int = 100,
+) -> list[tuple[float, float]]:
+    window = int(sample_rate * window_ms / 1000)
+    n_windows = len(pcm) // window
+    if n_windows < 3:
+        return []
+    truncated = pcm[: n_windows * window]
+    frames = truncated.reshape(n_windows, window)
+    rms = np.sqrt(np.mean(frames**2, axis=1))
+    span = AUDIO_TRANSIENT_NEIGHBORHOOD_WINDOWS
+    hits: list[tuple[float, float]] = []
+    for i in range(n_windows):
+        lo = max(0, i - span)
+        hi = min(n_windows, i + span + 1)
+        neighborhood = np.concatenate([rms[lo:i], rms[i + 1 : hi]])
+        base = float(np.median(neighborhood))
+        dev = float(np.median(np.abs(neighborhood - base)))
+        sigma = max(1.4826 * dev, floor)
+        if float(rms[i]) < base + sigma_multiple * sigma:
+            continue
+        hits.append((i * window_ms / 1000.0, (i + 1) * window_ms / 1000.0))
+    regions: list[list[float]] = []
+    for start, end in hits:
+        if regions and start <= regions[-1][1] + 1e-9:
+            regions[-1][1] = max(regions[-1][1], end)
+        else:
+            regions.append([start, end])
+    return [(s, e) for s, e in regions if e - s <= AUDIO_TRANSIENT_MAX_SEC]
 
 
 _vad_model: Any | None = None
@@ -195,10 +235,16 @@ def analyze_audio(path: Path, config: Config) -> AudioResult:
     l_regions = rms_loud_regions(pcm, sr, config.audio)
     hits = distress_keyword_hits(segs, config.audio)
     sevents = classify_sounds(path, config)
+    transients: list[tuple[float, float]] = []
+    if config.crash.enabled:
+        transients = audio_transients(
+            pcm, sr, config.crash.audio_sigma, config.audio.rms_floor
+        )
     return AudioResult(
         speech_regions=sp_regions,
         segments=segs,
         loud_regions=l_regions,
         keyword_hits=hits,
         sound_events=sevents,
+        transients=transients,
     )

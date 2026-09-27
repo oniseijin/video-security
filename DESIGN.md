@@ -1539,7 +1539,7 @@ a half-written file is the classic footgun.
 for jobs (cascades to frames/events/plates/transcript). Runs at startup before
 new work. Default: 30 days.
 
-### Crash detection (proposed 2026-09-27 — design review pending, NOT built)
+### Crash detection (implemented 2026-09-27)
 
 Flag collision / hard-impact moments as a first-class event type fed
 through the existing triage/detail chain. Four signals, all already
@@ -1550,52 +1550,73 @@ available at analysis time:
   `NORMAL` (`ClipInfo.mode`); the car already detects impacts at
   record time. An `EVENT`-mode clip is a crash *candidate*, not a
   crash — the sensor also fires on hard braking, potholes, and door
-  slams while parked.
-- **J — camera jolt.** Consecutive-frame global displacement via
-  `cv2.phaseCorrelate` on the existing 480p grayscale motion path
-  (sampled, e.g. every 5th frame). Impulsive = single-sample spike
-  several × the clip's own displacement baseline, decaying
-  immediately — distinguishes a jolt from rumble strips and handheld
-  wobble.
-- **A — audio transient.** Short-window peak ≥ N σ above the local
-  RMS baseline (machinery exists: `rms_loud_regions` baseline/
-  threshold); one-off bang vs sustained road/engine noise.
-- **S — speed discontinuity.** `clip_gps_data.speed_kmh` drop >
-  threshold within ≤ 2 s, or bearing snap — hard braking or impact.
+  slams while parked. Recovered at analysis time from the importer's
+  path convention (`clips_root/<mode>/<channel>/<YYYYMMDDhhmmss>.MP4`)
+  via `enrich.clip_mode` — the same source the web console and reports
+  already use; `mode` is not a DB column.
+- **J — camera jolt.** Consecutive-sample global displacement via
+  `cv2.phaseCorrelate` (Hanning-windowed) on a 640x480 grayscale
+  decode, sampled every 5th frame. Impulsive = single-sample spike
+  ≥ max(baseline + `jolt_sigma`·robust-σ, 2 px floor) and
+  ≥ `jolt_sigma`× the clip's own displacement baseline, with the next
+  sample decaying to ≤ half the spike — distinguishes a jolt from
+  rumble strips and handheld wobble. Computed on FRONT-channel
+  G-positive (EVENT) clips only — rear-channel jolt is too noisy, and
+  piping every long NORMAL clip through a second full decode would
+  blow the nightly budget, so the no-G insurance path is A+S (rear
+  EVENT clips still get G/A/S).
+- **A — audio transient.** 100 ms RMS windows scored against a local
+  baseline (±3 s neighborhood, median + `audio_sigma`·robust-σ with
+  the `rms_floor` σ floor); merged regions must stay ≤ 1 s so one-off
+  bangs fire but sustained road/engine noise does not. Machinery
+  lives in `ingest/audio.py::audio_transients`.
+- **S — speed discontinuity.** `clip_gps_data.speed_kmh` drop
+  ≥ `speed_drop_kmh` within ≤ 2 s, or a ≥ 90° bearing snap while
+  moving (≥ 10 km/h).
 
-**Fusion rule (proposal):** emit `event_type = 'crash'` (priority
-0.95) when G + at least one of {J, A, S} confirm inside the clip, or
-at least two of {J, A, S} without G (cheap insurance; the G-sensor
-can miss low-speed contacts). Single signals alone never fire.
-Keyframes around the fused instant + transcript/audio context go to
-LLM detail with a crash-focused prompt — the LLM verdict stays the
-final arbiter, consistent with the pipeline's philosophy.
+**Fusion rule (shipped):** emit `event_type = 'crash'` (priority
+0.95) when G + at least one of {J, A, S} confirm inside
+`window_sec`, or at least two of {J, A, S} without G. Single signals
+never fire. `min_signals` (default 2, clamped to ≥ 2) sets the
+required distinct-signal count with G counting as one. Per design
+review 2026-09-27 the open questions were settled as: (1) parked
+door-slam candidates are NOT specially excluded — fusion stays
+G + ≥1 of {J,A,S} and the LLM detail pass arbitrates; (2) priority is
+0.95; (3) J is computed on front-channel clips only; (4) crash events
+are exempt from `merge_gap_sec` merging — each fused cluster is its
+own event and adjacent crash events are never joined. Crash events go
+through the standard triage/detail verdict chain like any event (no
+crash-specific prompt in this pass — the LLM stays the arbiter via
+the normal prompts).
 
-**Shape:** new `[crash]` config block (`enabled` default **false**
-until validated, `jolt_sigma`, `audio_sigma`, `speed_drop_kmh`,
-`window_sec`, `min_signals`); detector lives beside `threats.py`
-(prefilter stage, before event merge); signal values recorded so the
-provenance panel shows *why* it fired (extends the 2026-09-27
-provenance endpoint naturally). No new dependencies (cv2/numpy
-only). No schema change — `events.event_type = 'crash'`.
+**Shape (shipped):** `[crash]` config block (`enabled` default
+**false** until validated, `jolt_sigma` = 6.0, `audio_sigma` = 5.0,
+`speed_drop_kmh` = 25.0, `window_sec` = 3.0, `min_signals` = 2);
+detector lives beside `threats.py` (`prefilter/crash.py`) and runs in
+the prefilter stage before event insert; signal values (per-signal hit
+times, spike px vs baseline, drop km/h, rule matched, thresholds) are
+recorded under a `crash` key in the existing `jobs.evidence_json` (no
+schema change) and surfaced by `/api/events/{id}/provenance` for
+crash events and the EventDetail Provenance panel. No new
+dependencies (cv2/numpy only). **Step-1 validation tool:**
+`vs crash-scan [--job ID] [--limit N]` re-scans done EVENT-mode jobs
+(mazda-derived `clips/<date>/EVENT/<channel>/` layout only, proxies
+resolved through the archive cold locations) and prints a DRY
+per-candidate report — signals hit with values and would-fire /
+insufficient verdicts — writing nothing to the DB.
 
-**Testing:** synthetic fixtures per signal (frame sequence with
-planted displacement spike; PCM buffer with transient; GPS track with
-speed cliff) + fusion-gate tests (one signal → nothing; G+1 → event;
-2-of-3 → event) + a golden-clip end-to-end assert.
+**Testing (shipped):** synthetic fixtures per signal (frame sequence
+with planted displacement spike; PCM buffer with transient; GPS track
+with speed cliff) + fusion-gate tests (one signal → nothing; G+1 →
+event; 2-of-3 → event; rear J excluded; min_signals respected) +
+merge-exemption and enabled=false gates + a crash-scan dry report on
+a fixture DB.
 
 **Validation plan (two-step, mirrors the flicker lesson):** step 1 —
-`--crash-scan` style backfill over the existing archive (622 jobs)
-with results written as *suppressed* candidates or a dry report
-only; step 2 — human review of every candidate via the provenance
-view, threshold tuning, then flip `enabled = true` for nightly.
-Never default-on before that review.
-
-**Open questions for review:** (1) should parked/ignition-off
-door-slam candidates be excluded via G+S co-requirement? (2) is
-0.95 priority right, or above intrusion? (3) confirm-only mode for
-rear-channel clips (jolt signal noisier there)? (4) event merge:
-keep crash events unmerged even if `merge_gap_sec` would join them?
+`vs crash-scan` backfill over the existing archive (622 jobs)
+producing a dry report only; step 2 — human review of every candidate
+via the provenance view, threshold tuning, then flip `enabled = true`
+for nightly. Never default-on before that review.
 
 ---
 
@@ -1683,9 +1704,10 @@ Not in scope for current phases; captured so the intent isn't lost.
   motion discontinuity (camera jolt), impact-like audio spikes (we
   already run VAD + loudness), and a GPS speed drop from the NMEA
   sidecar; worth building only if LLM passes prove unreliable at
-  catching these on their own. **Design proposed 2026-09-27 — see
-  "Crash detection" under Implementation Specifications; pending
-  review before implementation.**
+  catching these on their own. **Shipped 2026-09-27 behind
+  `[crash] enabled = false` — see "Crash detection" under
+  Implementation Specifications; `vs crash-scan` is the step-1
+  validation tool.**
 - Memory-pressure test: detail falls back to 4B model.
   **Shipped 2026-09-27**: `test_detail_memory_gate_fallback_sticky_across_sweep`
   (tests/test_llm_passes.py) drives the mock mlx-serve KV gate through a

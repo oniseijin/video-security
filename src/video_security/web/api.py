@@ -875,6 +875,23 @@ def event_provenance(
     priority_by_type = {
         k: float(v) for k, v in cfg.threat.priority.items()
     }
+    crash_signal: dict[str, Any] | None = None
+    if event_type == "crash":
+        evidence = vsdb.get_job_evidence(conn, job_id) or {}
+        for entry in evidence.get("crash") or []:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                e_start = float(entry["start_sec"])
+                e_end = float(entry["end_sec"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                e_start <= float(evt["end_sec"])
+                and e_end >= float(evt["start_sec"])
+            ):
+                crash_signal = entry
+                break
     return {
         "event_id": event_id,
         "job_id": job_id,
@@ -900,6 +917,7 @@ def event_provenance(
             "priority_for_type": priority_by_type.get(event_type),
         },
         "prefilter": vsdb.get_job_evidence(conn, job_id),
+        "crash": crash_signal,
         "triage": _analysis_verdicts(conn, event_id, ("triage",)),
         "detail": _analysis_verdicts(
             conn, event_id, ("detail", "tiled", "ocr_fallback")

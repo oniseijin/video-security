@@ -166,6 +166,8 @@ Core complete. Source adapters: `mazda_cx8` (filename timestamps, front/rear pai
 
 Mazda CX-8 G-sensor events (`hard_brake`, `hard_corner`, `impact`) are detected from NMEA sidecars at zero vision cost and flow through LLM triage/detail like visual events.
 
+Crash/impact detection fuses the G-sensor EVENT mode with a camera-jolt signal, an audio transient, and a GPS speed drop into `crash` events (shown with their signal values in the Provenance panel). It ships disabled (`[crash] enabled = false`) until candidates from `vs crash-scan` — a dry-run backfill report over the archive — have been reviewed.
+
 **Archive lifecycle**: `vs archive` (needs `[archive] cold_dirs` — a priority-ordered list; the first entry receives new archives, and restore tries the recorded location first, then each configured location) replaces done-job videos with a 720p H.264 proxy in place (playback keeps working, ~6x smaller) and moves the original bytes to the primary cold dir, tracked in `archived_originals` for future cloud-tiering/purge. `--dry-run` previews, `--days N`/`--job ID` select, `--restore --job ID` brings an original back. `--relocate FROM --relocate-to TO` moves archived data between cold locations and updates tracking. If you relocate cold storage behind the scenes (rename/move it without telling the tool), restore and `--deep` discover the new location by a bounded, size-verified search and self-heal the tracked paths. Evidence (keyframes, plates, faces, search, reports) is unaffected either way.
 
 **Repair**: clips whose MP4 index was never written (truncated by card-full or

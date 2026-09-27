@@ -6,7 +6,7 @@ import {
   restoreEvent,
   suppressEvent,
 } from "../api"
-import type { EventDetail, EventProvenance, ProvenanceVerdict } from "../api"
+import type { CrashSignalProvenance, EventDetail, EventProvenance, ProvenanceVerdict } from "../api"
 import { Filmstrip } from "../components/Filmstrip"
 import type { FilmFrame } from "../components/Filmstrip"
 import { PlateCrop } from "../components/PlateCrop"
@@ -76,6 +76,33 @@ function verdictLine(stage: string, v: ProvenanceVerdict) {
   )
 }
 
+function crashSignalLine(sig: string, hits: CrashSignalProvenance["hits"], thr: Record<string, number>) {
+  const items = hits[sig] || []
+  if (items.length === 0) {
+    return `${sig}: no hit`
+  }
+  const details = items
+    .map((h) => {
+      if (sig === "J" && h.spike_px !== undefined) {
+        return `spike ${h.spike_px}px vs baseline ${h.baseline_px}px @${h.time_sec}s`
+      }
+      if (sig === "A" && h.start_sec !== undefined) {
+        return `transient ${h.start_sec}\u2013${h.end_sec}s`
+      }
+      if (sig === "S" && h.drop_kmh !== undefined && h.drop_kmh > 0) {
+        return `-${h.drop_kmh} km/h @${h.time_sec}s (${h.rule})`
+      }
+      if (sig === "S") {
+        return `bearing snap @${h.time_sec}s`
+      }
+      return h.rule || sig
+    })
+    .join(" · ")
+  const sigma =
+    sig === "J" ? ` (σ ${thr.jolt_sigma ?? "?"}×)` : sig === "A" ? ` (σ ${thr.audio_sigma ?? "?"}×)` : ""
+  return `${sig}: ${details}${sigma}`
+}
+
 function Provenance({ eventId }: { eventId: number }) {
   const { data, isPending, isError } = useQuery<EventProvenance, Error>({
     queryKey: ["event-provenance", eventId],
@@ -138,6 +165,20 @@ function Provenance({ eventId }: { eventId: number }) {
             ? prefilterBits.join(" · ")
             : "no job prefilter evidence recorded"}
         </p>
+        {data.crash ? (
+          <>
+            <p>
+              <span className="ts">[crash]</span> rule {data.crash.rule} ·{" "}
+              {data.crash.start_sec.toFixed(1)}–{data.crash.end_sec.toFixed(1)}s
+            </p>
+            {data.crash.signals.map((sig) => (
+              <p key={sig}>
+                <span className="ts">[crash]</span>{" "}
+                {crashSignalLine(sig, data.crash!.hits, data.crash!.thresholds)}
+              </p>
+            ))}
+          </>
+        ) : null}
         {data.triage.length === 0
           ? verdictMissing("triage")
           : data.triage.map((v) => verdictLine("triage", v))}
