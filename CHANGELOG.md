@@ -4,6 +4,28 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [0.9.0] - 2026-09-27
+
+### Added
+
+- **Bulk removal + import gate overrides**: `vs job remove --source
+  photos` / `--import-id <id>` remove every matching job through the
+  regular per-job removal machinery (audit row, artifacts, clip copy)
+  with a `removed N jobs` summary; the removal gate is deliberately
+  two-way — `vs job removals --forget <hash>` (hash now shown in the
+  removals listing) deletes gate entries and `vs import --allow-removed`
+  bypasses the gate for one run. `vs import --dry-run` counts what
+  would be imported (clip count, approximate size, skip reasons)
+  without copying anything or writing to the DB.
+
+### Fixed
+
+- **Photos album filter never matched**: osxphotos 0.77 returns album
+  names as plain strings, and the old lookup grabbed the bound
+  `str.title` method (truthy, never equal to the album name), so
+  `--album` imports matched nothing; a shared matcher now handles both
+  string names and album objects.
+
 ## [0.8.0] - 2026-09-25
 
 ### Added
