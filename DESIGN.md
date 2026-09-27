@@ -1657,6 +1657,20 @@ rates, and a suggested-thresholds line (noise sigma p99/peak vs the
 current `audio_sigma`/`audio_confirm_sigma`). Read-only: writes
 nothing to the DB.
 
+**Re-validation 2026-09-27 (tuned gate, real archive):** EVENT re-scan
+— **14 would-fire / 6 insufficient of 20** (was 20/20): G+J ×7,
+G+A-confirm ×4, G+S ×2, and 6 candidates now correctly fall below the
+gate. Calibration over 45 sampled NORMAL clips (1.37 clip-hours) —
+**A+S no-G co-occurrence: 0** (the no-G insurance path never
+falsely fires on this sample); A-base noise 24.8/clip-hour (why A
+was demoted), A-confirm 8.7/clip-hour (p50 0, p90 0), S 5.8/clip-hour;
+one ordinary clip reached 15.6 σ audio — A alone is not bulletproof
+even at confirm sigma, which is exactly why the co-occurrence
+requirement carries the discrimination. The sample is small; a
+full-archive pass (`--calibrate --limit 0`) can firm the floor
+overnight. Enabling `[crash] enabled = true` is now a
+data-supported decision pending owner sign-off.
+
 ---
 
 ## Testing Strategy
