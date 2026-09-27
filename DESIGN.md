@@ -1289,6 +1289,36 @@ live analyze dispatch from the UI (web becomes a writer — must
 coordinate with the single-writer rule), raw/enhanced toggle in
 `vs report` export, multi-day trip views, notification digests.
 
+**v2 reconsideration (2026-09-27).** External scan (Frigate 0.14/0.15
+UI rebuild + Face Library, Double Take, DeepCamera, htmx-vs-React
+discussions) plus the pull toward GUI edits converge on a staged v2:
+
+1. **Stage 1 — FastAPI swap + first writes.** The documented swap
+   trigger is met: the first write feature is face/person naming,
+   modeled on Frigate's Face Library / Double Take "Train tab"
+   pattern (recent low-confidence faces listed with assign-to-person,
+   rename, merge; reuses the `vs person` verbs as pure functions).
+   Alongside it, thin writes that mirror existing CLI verbs only
+   (event suppress/restore, job flag/unflag). Port `api.py` behind
+   FastAPI routers (mechanical by design); pydantic-validated
+   mutations, TestClient tests; one RW connection behind a write lock
+   with `busy_timeout`, short transactions only, never during an
+   analyze batch. Still loopback, still no auth. React SPA unchanged
+   apart from react-query invalidations.
+2. **Stage 2 — SSE live progress** (tail a running analyze) once
+   FastAPI is in; replaces 5 s polling only where it matters.
+3. **Stage 3 — deliberate extras, each its own decision**: dispatch
+   analyze from the UI (coordinate the single-writer rule),
+   watchlist management UI (write-path candidate #2), token auth
+   (only when LAN exposure is ever wanted; never hand-rolled).
+
+The native-report composition above is read-only and stays an
+independent track — it neither blocks nor requires the write path.
+htmx/server-rendered rewrite: considered and rejected — htmx wins are
+greenfield server-rendered CRUD; this console is an existing 7k-line
+React SPA with a theme-token pipeline, and the resolved decision was
+incremental React migration, not a rewrite.
+
 ---
 
 ## Throughput Budget (per 8h clip, serialized)
@@ -1431,6 +1461,34 @@ Not in scope for current phases; captured so the intent isn't lost.
   - "Forget" mode — delete `photos_imports` UUID rows so a future
     import re-examines assets (jobs-level hash dedupe still skips
     present clips); a repair-flow tool, not a removal path.
+- **External-research ideas (2026-09-27, none built — sourced from
+  Frigate 0.14/0.15, Double Take/CompreFace, DeepCamera, and smaller
+  ALPR/LLM-browser projects)**:
+  - Saved searches / filter presets in the web console (Events,
+    Plates, Search) — localStorage first, so no write path needed;
+    every comparable UI has this and it is the cheapest UX win here.
+  - Storage/tier metrics pane — hot vs cold bytes, per-month job
+    counts, archive backlog behind an `/api/analytics/storage`
+    endpoint; read-only, fits the existing analytics family.
+  - Event provenance view ("why did this fire") — per event: prefilter
+    verdicts, detector scores, LLM triage and detail verdicts side by
+    side in EventDetail; false-positive tuning aid, directly useful
+    for working through the stored flicker-intrusion backlog.
+  - Keyframe image-similarity search (Frigate Explore-style: CLIP-family
+    embeddings over keyframes, text query + find-similar, pure
+    SQLite/numpy scan) — adjacent to the rejected vector-DB idea;
+    revisit only if FTS/plate search misses become a real gap.
+  - LLM/VLM eval harness — a labeled fixture set of night/day clips
+    with expected triage/detail verdicts, scored on any model or
+    prompt change (DeepCamera's benchmark-suite pattern); protects the
+    cheap-first pipeline against silent regressions.
+- Crash/impact detection (2026-09-27 idea, none built) — flag collision
+  or hard-impact moments in dashcam footage as a dedicated event type
+  feeding the existing triage; candidate signals are abrupt inter-frame
+  motion discontinuity (camera jolt), impact-like audio spikes (we
+  already run VAD + loudness), and a GPS speed drop from the NMEA
+  sidecar; worth building only if LLM passes prove unreliable at
+  catching these on their own.
 - Memory-pressure test: detail falls back to 4B model.
 - Transcript FTS5 index (volume too low to bother yet).
 - Web console writes (e.g. reviewed/resolved event flags) — v1 is
