@@ -25,13 +25,20 @@ class TranscriptSegment:
 
 
 @dataclass
+class AudioHit:
+    start_sec: float
+    end_sec: float
+    sigma_multiple: float
+
+
+@dataclass
 class AudioResult:
     speech_regions: list[tuple[float, float]]
     segments: list[TranscriptSegment]
     loud_regions: list[tuple[float, float]]
     keyword_hits: list[tuple[float, float, str]]
     sound_events: list[SoundEvent] = field(default_factory=list)
-    transients: list[tuple[float, float]] = field(default_factory=list)
+    transients: list[AudioHit] = field(default_factory=list)
 
 
 AUDIO_TRANSIENT_NEIGHBORHOOD_WINDOWS = 30
@@ -97,7 +104,7 @@ def audio_transients(
     sigma_multiple: float,
     floor: float,
     window_ms: int = 100,
-) -> list[tuple[float, float]]:
+) -> list[AudioHit]:
     window = int(sample_rate * window_ms / 1000)
     n_windows = len(pcm) // window
     if n_windows < 3:
@@ -106,7 +113,7 @@ def audio_transients(
     frames = truncated.reshape(n_windows, window)
     rms = np.sqrt(np.mean(frames**2, axis=1))
     span = AUDIO_TRANSIENT_NEIGHBORHOOD_WINDOWS
-    hits: list[tuple[float, float]] = []
+    hits: list[list[float]] = []
     for i in range(n_windows):
         lo = max(0, i - span)
         hi = min(n_windows, i + span + 1)
@@ -116,14 +123,25 @@ def audio_transients(
         sigma = max(1.4826 * dev, floor)
         if float(rms[i]) < base + sigma_multiple * sigma:
             continue
-        hits.append((i * window_ms / 1000.0, (i + 1) * window_ms / 1000.0))
+        hits.append(
+            [
+                i * window_ms / 1000.0,
+                (i + 1) * window_ms / 1000.0,
+                (float(rms[i]) - base) / sigma,
+            ]
+        )
     regions: list[list[float]] = []
-    for start, end in hits:
+    for start, end, strength in hits:
         if regions and start <= regions[-1][1] + 1e-9:
             regions[-1][1] = max(regions[-1][1], end)
+            regions[-1][2] = max(regions[-1][2], strength)
         else:
-            regions.append([start, end])
-    return [(s, e) for s, e in regions if e - s <= AUDIO_TRANSIENT_MAX_SEC]
+            regions.append([start, end, strength])
+    return [
+        AudioHit(start_sec=start, end_sec=end, sigma_multiple=strength)
+        for start, end, strength in regions
+        if end - start <= AUDIO_TRANSIENT_MAX_SEC
+    ]
 
 
 _vad_model: Any | None = None
@@ -235,7 +253,7 @@ def analyze_audio(path: Path, config: Config) -> AudioResult:
     l_regions = rms_loud_regions(pcm, sr, config.audio)
     hits = distress_keyword_hits(segs, config.audio)
     sevents = classify_sounds(path, config)
-    transients: list[tuple[float, float]] = []
+    transients: list[AudioHit] = []
     if config.crash.enabled:
         transients = audio_transients(
             pcm, sr, config.crash.audio_sigma, config.audio.rms_floor

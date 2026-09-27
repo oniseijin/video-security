@@ -113,6 +113,10 @@ suspicious_behavior = 0.5
 enabled = false
 jolt_sigma = 6.0
 audio_sigma = 5.0
+# A hit must reach this sigma to confirm a G-sensor candidate (base
+# audio_sigma hits still count in the no-G 2-of-3 path). Calibrate via
+# `vs crash-scan --calibrate`.
+audio_confirm_sigma = 7.5
 speed_drop_kmh = 25.0
 window_sec = 3.0
 min_signals = 2

@@ -716,7 +716,7 @@ def harvest_job(
             config.crash,
             audio_result.transients if audio_result is not None else [],
             [
-                GpsPoint(s.time_sec, s.speed_kmh, s.bearing)
+                GpsPoint(s.time_sec, s.speed_kmh, s.bearing, s.lat, s.lon)
                 for s in gps_sample_rows
             ],
         )

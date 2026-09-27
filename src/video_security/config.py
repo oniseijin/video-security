@@ -110,6 +110,7 @@ class CrashConfig:
     enabled: bool = False
     jolt_sigma: float = 6.0
     audio_sigma: float = 5.0
+    audio_confirm_sigma: float = 7.5
     speed_drop_kmh: float = 25.0
     window_sec: float = 3.0
     min_signals: int = 2

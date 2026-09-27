@@ -4,6 +4,29 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Changed
+
+- **Crash fusion gate tightened** per the step-1 `vs crash-scan`
+  findings: GPS points with negative `time_sec` (NMEA pre-roll) are
+  ignored; `bearing_snap` requires both fixes ≥ 20 km/h AND ≥ 5 m
+  travel between them (`GpsPoint` now carries lat/lon); audio
+  transients carry a `sigma_multiple` and a G-candidate is confirmed
+  by audio only at `[crash] audio_confirm_sigma` (default 7.5) —
+  base-`audio_sigma` hits still count in the no-G 2-of-3 path.
+  Crash evidence records sigma per A hit (Provenance passthrough).
+
+### Added
+
+- **`vs crash-scan --calibrate [--limit N]`** (default 50, `0` = all):
+  read-only noise-floor measurement on done NORMAL-mode jobs sampled
+  evenly across the archive — per-job A hits at base/confirm sigma,
+  S hits by rule, per-clip-hour rates, and the A+S co-occurrence the
+  no-G 2-of-3 path would produce on ordinary driving (J excluded:
+  jolt is EVENT-only by design); summary percentiles and a
+  suggested-thresholds line. Writes nothing to the DB.
+
 ## [0.12.0] - 2026-09-27
 
 ### Added

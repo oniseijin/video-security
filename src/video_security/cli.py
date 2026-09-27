@@ -1359,13 +1359,21 @@ def repair_cmd(
 def crash_scan_cmd(
     ctx: typer.Context,
     job: list[int] = typer.Option([], "--job", help="Scan only this job ID (repeatable)"),  # noqa: B008, E501
-    limit: int | None = typer.Option(None, "--limit", help="Cap number of jobs scanned"),  # noqa: B008, E501
+    limit: int | None = typer.Option(None, "--limit", help="Cap number of jobs scanned (calibrate: 0 = all, default 50)"),  # noqa: B008, E501
+    calibrate: bool = typer.Option(False, "--calibrate", help="Measure A/S noise floor on NORMAL-mode done jobs (read-only)"),  # noqa: B008, E501
 ) -> None:
-    from video_security.crashscan import run_crash_scan
+    from video_security.crashscan import run_crash_calibration, run_crash_scan
 
     conn, cfg = _get_db(ctx)
     try:
-        print(run_crash_scan(conn, cfg, job_id=job[0] if job else None, limit=limit))
+        if calibrate:
+            print(run_crash_calibration(conn, cfg, limit=limit))
+        else:
+            print(
+                run_crash_scan(
+                    conn, cfg, job_id=job[0] if job else None, limit=limit
+                )
+            )
     finally:
         conn.close()
 

@@ -1629,6 +1629,34 @@ demoting A as a sole G-confirmer (require J or a real speed drop, or
 raise `audio_sigma`). The scan report is the review artifact; nothing
 written to the DB.
 
+**Tuned 2026-09-27** (all three step-1 items applied, ahead of
+step-2 human review): (1) `speed_drop_hits` drops GPS points with
+negative `time_sec` — NMEA sidecars cover pre-roll time before the
+clip starts, and negative-time bearing snaps were firing; (2)
+`bearing_snap` now requires BOTH fixes at ≥ 20 km/h (up from 10) AND
+≥ 5 m haversine travel between them (≤ 2 s pair window and ≥ 90°
+diff unchanged), so stationary GPS jitter can no longer fire —
+`GpsPoint` gained `lat`/`lon` threaded from `GpsSample`/`clip_gps_data`;
+(3) A is demoted as a sole G-confirmer: transients are now
+`AudioHit(start_sec, end_sec, sigma_multiple)` and a new
+`[crash] audio_confirm_sigma` (default 7.5) gates the G-path — when
+G is present, an A hit confirms only at `sigma_multiple ≥
+audio_confirm_sigma`; base-`audio_sigma` A hits still count normally
+in the no-G 2-of-3 path. Crash evidence records `sigma_multiple` per
+A hit (Provenance panel passthrough). To measure the noise floor
+before flipping `enabled`, `vs crash-scan --calibrate [--limit N]`
+(default 50, `--limit 0` = all) samples done NORMAL-mode front/rear
+jobs evenly across the archive and reports per-job A-hit counts at
+base and confirm sigma, max sigma_multiple, S hits by rule, and the
+A+S co-occurrence rate (how often the no-G 2-of-3 path would fire on
+ordinary driving — computed with the real `fuse_crash` no-G rule);
+J is not measured because jolt is EVENT-only by design, so
+calibration on NORMAL clips covers exactly the no-G insurance
+signals. Summary block: p50/p90/max of per-job counts, per-clip-hour
+rates, and a suggested-thresholds line (noise sigma p99/peak vs the
+current `audio_sigma`/`audio_confirm_sigma`). Read-only: writes
+nothing to the DB.
+
 ---
 
 ## Testing Strategy

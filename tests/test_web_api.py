@@ -778,7 +778,13 @@ def test_event_provenance_crash_signals(tmp_path: Path) -> None:
                     "J": [
                         {"time_sec": 13.1, "spike_px": 34.2, "baseline_px": 1.8}
                     ],
-                    "A": [],
+                    "A": [
+                        {
+                            "start_sec": 13.0,
+                            "end_sec": 13.2,
+                            "sigma_multiple": 8.2,
+                        }
+                    ],
                     "S": [
                         {"time_sec": 13.4, "drop_kmh": 41.2, "rule": "speed_drop"}
                     ],
@@ -808,6 +814,7 @@ def test_event_provenance_crash_signals(tmp_path: Path) -> None:
     assert data["crash"]["rule"] == "G+J+S"
     assert data["crash"]["signals"] == ["G", "J", "S"]
     assert data["crash"]["hits"]["J"][0]["spike_px"] == 34.2
+    assert data["crash"]["hits"]["A"][0]["sigma_multiple"] == 8.2
     assert data["crash"]["thresholds"]["speed_drop_kmh"] == 25.0
 
     pending = _get_json(client, "/api/events/11/provenance")

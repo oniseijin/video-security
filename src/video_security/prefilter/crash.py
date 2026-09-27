@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ import numpy as np
 
 from video_security.config import CrashConfig
 from video_security.enrich import clip_mode
+from video_security.ingest.audio import AudioHit
 
 CRASH_EVENT_TYPE = "crash"
 CRASH_PRIORITY = 0.95
@@ -21,7 +23,9 @@ JOLT_DECAY_RATIO = 0.5
 JOLT_MAD_SCALE = 1.4826
 SPEED_DROP_WINDOW_SEC = 2.0
 BEARING_SNAP_DEG = 90.0
-BEARING_SNAP_MIN_SPEED_KMH = 10.0
+BEARING_SNAP_MIN_SPEED_KMH = 20.0
+BEARING_SNAP_MIN_TRAVEL_M = 5.0
+EARTH_RADIUS_M = 6371000.0
 EVENT_PAD_SEC = 1.0
 
 
@@ -44,12 +48,14 @@ class GpsPoint:
     time_sec: float
     speed_kmh: float | None
     bearing: float | None
+    lat: float | None = None
+    lon: float | None = None
 
 
 @dataclass
 class CrashSignals:
     jolt: list[JoltHit] = field(default_factory=list)
-    audio: list[tuple[float, float]] = field(default_factory=list)
+    audio: list[AudioHit] = field(default_factory=list)
     speed: list[SpeedHit] = field(default_factory=list)
 
 
@@ -142,11 +148,28 @@ def jolt_hits(
     return jolt_hits_from_samples(jolt_samples(path, sample_every), jolt_sigma)
 
 
+def haversine_m(lat0: float, lon0: float, lat1: float, lon1: float) -> float:
+    phi0 = math.radians(lat0)
+    phi1 = math.radians(lat1)
+    dphi = phi1 - phi0
+    dlambda = math.radians(lon1 - lon0)
+    a = (
+        math.sin(dphi / 2.0) ** 2
+        + math.cos(phi0) * math.cos(phi1) * math.sin(dlambda / 2.0) ** 2
+    )
+    return 2.0 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
 def speed_drop_hits(
     points: list[GpsPoint], speed_drop_kmh: float
 ) -> list[SpeedHit]:
     pts = sorted(
-        (p for p in points if p.speed_kmh is not None), key=lambda p: p.time_sec
+        (
+            p
+            for p in points
+            if p.speed_kmh is not None and p.time_sec >= 0.0
+        ),
+        key=lambda p: p.time_sec,
     )
     hits: list[SpeedHit] = []
     i = 0
@@ -172,18 +195,27 @@ def speed_drop_hits(
             )
         else:
             i += 1
-    moving: list[tuple[float, float]] = [
-        (p.time_sec, p.bearing)
+    moving = [
+        p
         for p in pts
         if (p.speed_kmh or 0.0) >= BEARING_SNAP_MIN_SPEED_KMH
         and p.bearing is not None
     ]
-    for (t0, b0), (t1, b1) in zip(moving, moving[1:], strict=False):
-        if t1 - t0 > SPEED_DROP_WINDOW_SEC:
+    for p0, p1 in zip(moving, moving[1:], strict=False):
+        if p1.time_sec - p0.time_sec > SPEED_DROP_WINDOW_SEC:
             continue
-        diff = abs((b1 - b0 + 180.0) % 360.0 - 180.0)
+        if (
+            p0.lat is None
+            or p0.lon is None
+            or p1.lat is None
+            or p1.lon is None
+        ):
+            continue
+        if haversine_m(p0.lat, p0.lon, p1.lat, p1.lon) < BEARING_SNAP_MIN_TRAVEL_M:
+            continue
+        diff = abs(((p1.bearing or 0.0) - (p0.bearing or 0.0) + 180.0) % 360.0 - 180.0)
         if diff >= BEARING_SNAP_DEG:
-            hits.append(SpeedHit(time_sec=t1, drop_kmh=0.0, rule="bearing_snap"))
+            hits.append(SpeedHit(time_sec=p1.time_sec, drop_kmh=0.0, rule="bearing_snap"))
     hits.sort(key=lambda h: h.time_sec)
     return hits
 
@@ -191,13 +223,18 @@ def speed_drop_hits(
 def fuse_crash(
     g_mode: bool,
     jolt: list[JoltHit],
-    audio: list[tuple[float, float]],
+    audio: list[AudioHit],
     speed: list[SpeedHit],
     cfg: CrashConfig,
 ) -> list[CrashEvent]:
+    confirming_audio = [
+        h
+        for h in audio
+        if not g_mode or h.sigma_multiple >= cfg.audio_confirm_sigma
+    ]
     items: list[tuple[float, str]] = []
     items.extend((h.time_sec, "J") for h in jolt)
-    items.extend((start, "A") for start, _end in audio)
+    items.extend((h.start_sec, "A") for h in confirming_audio)
     items.extend((h.time_sec, "S") for h in speed)
     items.sort(key=lambda x: x[0])
     clusters: list[list[tuple[float, str]]] = []
@@ -230,9 +267,13 @@ def fuse_crash(
             if any(t == h.time_sec and sig == "J" for t, sig in cluster)
         ]
         hits["A"] = [
-            {"start_sec": s, "end_sec": e}
-            for s, e in audio
-            if any(t == s and sig == "A" for t, sig in cluster)
+            {
+                "start_sec": h.start_sec,
+                "end_sec": h.end_sec,
+                "sigma_multiple": round(h.sigma_multiple, 1),
+            }
+            for h in confirming_audio
+            if any(t == h.start_sec and sig == "A" for t, sig in cluster)
         ]
         hits["S"] = [
             {
@@ -254,6 +295,7 @@ def fuse_crash(
             "thresholds": {
                 "jolt_sigma": cfg.jolt_sigma,
                 "audio_sigma": cfg.audio_sigma,
+                "audio_confirm_sigma": cfg.audio_confirm_sigma,
                 "speed_drop_kmh": cfg.speed_drop_kmh,
                 "window_sec": cfg.window_sec,
                 "min_signals": min_signals,
@@ -288,7 +330,7 @@ def compute_crash_signals(
     g_mode: bool,
     channel: str,
     gps: list[GpsPoint],
-    audio: list[tuple[float, float]],
+    audio: list[AudioHit],
     cfg: CrashConfig,
 ) -> CrashSignals:
     jolt: list[JoltHit] = []
@@ -303,7 +345,7 @@ def detect_crash_events(
     job_id: int,
     video_path: str,
     config: CrashConfig,
-    audio_transients: list[tuple[float, float]],
+    audio_transients: list[AudioHit],
     gps_points: list[GpsPoint],
 ) -> list[CrashEvent]:
     if not config.enabled:

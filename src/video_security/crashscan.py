@@ -7,8 +7,13 @@ from pathlib import Path
 
 from video_security import db
 from video_security.archive import _resolve_cold_path
-from video_security.config import Config
-from video_security.ingest.audio import AudioError, audio_transients, extract_pcm
+from video_security.config import Config, CrashConfig
+from video_security.ingest.audio import (
+    AudioError,
+    AudioHit,
+    audio_transients,
+    extract_pcm,
+)
 from video_security.prefilter.crash import (
     GpsPoint,
     JoltHit,
@@ -21,21 +26,30 @@ from video_security.prefilter.crash import (
 DASH_MODES = {"NORMAL", "EVENT", "MANUAL", "PARKING"}
 _IMPORT_DATE_RE = re.compile(r"^\d{8}$")
 _MAZDA_FILENAME_RE = re.compile(r"^\d{12}\.MP4$", re.IGNORECASE)
+CALIBRATE_DEFAULT_LIMIT = 50
 
 
-def is_mazda_event_path(video_path: str) -> bool:
+def _is_mazda_clip_path(video_path: str, mode: str) -> bool:
     parts = Path(video_path).parts
     if len(parts) < 5:
         return False
-    channel, mode, import_date = parts[-2], parts[-3], parts[-4]
+    channel, clip_mode, import_date = parts[-2], parts[-3], parts[-4]
     return (
         bool(_MAZDA_FILENAME_RE.match(parts[-1]))
         and channel in ("front", "rear")
-        and mode in DASH_MODES
-        and mode == "EVENT"
+        and clip_mode in DASH_MODES
+        and clip_mode == mode
         and bool(_IMPORT_DATE_RE.match(import_date))
         and "clips" in parts[:-4]
     )
+
+
+def is_mazda_event_path(video_path: str) -> bool:
+    return _is_mazda_clip_path(video_path, "EVENT")
+
+
+def is_mazda_normal_path(video_path: str) -> bool:
+    return _is_mazda_clip_path(video_path, "NORMAL")
 
 
 def crash_scan_candidates(
@@ -54,6 +68,22 @@ def crash_scan_candidates(
     if limit is not None:
         out = out[:limit]
     return out
+
+
+def crash_calibrate_candidates(
+    conn: sqlite3.Connection, limit: int | None = None
+) -> list[sqlite3.Row]:
+    if limit is None:
+        limit = CALIBRATE_DEFAULT_LIMIT
+    rows = conn.execute(
+        "SELECT id, video_path, recording_start_utc FROM jobs "
+        "WHERE status = 'done' ORDER BY id"
+    ).fetchall()
+    out = [r for r in rows if is_mazda_normal_path(str(r["video_path"]))]
+    if limit <= 0 or len(out) <= limit:
+        return out
+    step = -(-len(out) // limit)
+    return out[::step]
 
 
 def _decode_path(
@@ -80,7 +110,7 @@ def _decode_path(
 
 def _gps_points(conn: sqlite3.Connection, job_id: int) -> list[GpsPoint]:
     rows = conn.execute(
-        "SELECT time_sec, speed_kmh, bearing FROM clip_gps_data "
+        "SELECT time_sec, lat, lon, speed_kmh, bearing FROM clip_gps_data "
         "WHERE job_id = ? ORDER BY time_sec",
         (job_id,),
     ).fetchall()
@@ -89,6 +119,8 @@ def _gps_points(conn: sqlite3.Connection, job_id: int) -> list[GpsPoint]:
             float(r["time_sec"]),
             float(r["speed_kmh"]) if r["speed_kmh"] is not None else None,
             float(r["bearing"]) if r["bearing"] is not None else None,
+            float(r["lat"]) if r["lat"] is not None else None,
+            float(r["lon"]) if r["lon"] is not None else None,
         )
         for r in rows
     ]
@@ -155,7 +187,7 @@ def scan_job(
         except Exception as e:
             result.j = SignalReport("n/a", f"decode failed: {e}")
 
-    transients: list[tuple[float, float]] = []
+    transients: list[AudioHit] = []
     try:
         pcm = extract_pcm(path)
         transients = audio_transients(
@@ -164,7 +196,11 @@ def scan_job(
         if transients:
             result.a = SignalReport(
                 "hit",
-                "hit " + ", ".join(f"{s:.1f}-{e:.1f}s" for s, e in transients),
+                "hit "
+                + ", ".join(
+                    f"{h.start_sec:.1f}-{h.end_sec:.1f}s {h.sigma_multiple:.1f}x"
+                    for h in transients
+                ),
             )
     except AudioError:
         result.a = SignalReport("n/a", "no audio")
@@ -228,3 +264,139 @@ def run_crash_scan(
         f"{unavailable} unavailable of {len(candidates)} scanned"
     )
     return "\n".join([header, *lines, summary])
+
+
+@dataclass
+class CalibrationResult:
+    job_id: int
+    recorded_at: str | None
+    clip_hours: float
+    a_base: int
+    a_confirm: int
+    max_sigma: float
+    sigmas: list[float]
+    s_by_rule: dict[str, int]
+    co_occurrence: int
+    note: str = ""
+
+
+def calibrate_job(
+    conn: sqlite3.Connection, config: Config, row: sqlite3.Row
+) -> CalibrationResult:
+    job_id = int(row["id"])
+    cfg = config.crash
+    result = CalibrationResult(
+        job_id=job_id,
+        recorded_at=row["recording_start_utc"],
+        clip_hours=0.0,
+        a_base=0,
+        a_confirm=0,
+        max_sigma=0.0,
+        sigmas=[],
+        s_by_rule={},
+        co_occurrence=0,
+    )
+    path, err = _decode_path(conn, config, job_id, str(row["video_path"]))
+    if path is None:
+        result.note = err
+        return result
+    audio: list[AudioHit] = []
+    try:
+        pcm = extract_pcm(path)
+        result.clip_hours = len(pcm) / 16000.0 / 3600.0
+        audio = audio_transients(
+            pcm, 16000, cfg.audio_sigma, config.audio.rms_floor
+        )
+        confirm = audio_transients(
+            pcm, 16000, cfg.audio_confirm_sigma, config.audio.rms_floor
+        )
+        result.a_base = len(audio)
+        result.a_confirm = len(confirm)
+        result.sigmas = [h.sigma_multiple for h in audio]
+        result.max_sigma = max(result.sigmas, default=0.0)
+    except AudioError:
+        result.note = "no audio"
+    gps = _gps_points(conn, job_id)
+    speed = speed_drop_hits(gps, cfg.speed_drop_kmh) if gps else []
+    for hit in speed:
+        result.s_by_rule[hit.rule] = result.s_by_rule.get(hit.rule, 0) + 1
+    result.co_occurrence = len(fuse_crash(False, [], audio, speed, cfg))
+    return result
+
+
+def _percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * q))))
+    return ordered[idx]
+
+
+def _calibration_summary(
+    results: list[CalibrationResult], cfg: CrashConfig
+) -> list[str]:
+    total_hours = sum(r.clip_hours for r in results)
+    a_base = [float(r.a_base) for r in results]
+    a_confirm = [float(r.a_confirm) for r in results]
+    s_counts = [float(sum(r.s_by_rule.values())) for r in results]
+    co = [float(r.co_occurrence) for r in results]
+    all_sigmas = [s for r in results for s in r.sigmas]
+    p99_sigma = _percentile(all_sigmas, 0.99)
+    peak_sigma = max(all_sigmas, default=0.0)
+
+    def line(label: str, totals: list[float]) -> str:
+        total = int(sum(totals))
+        rate = f"{total / total_hours:.1f}/clip-hour" if total_hours > 0 else "n/a"
+        return (
+            f"  {label}: {total} ({rate}) "
+            f"p50 {_percentile(totals, 0.5):.0f} "
+            f"p90 {_percentile(totals, 0.9):.0f} "
+            f"max {max(totals, default=0.0):.0f}"
+        )
+
+    return [
+        "summary:",
+        f"  clips: {len(results)}, total {total_hours:.2f} clip-hours",
+        line("A-base", a_base),
+        line("A-confirm", a_confirm),
+        line("S", s_counts),
+        line("A+S co-occurrence (no-G would-fire)", co),
+        (
+            f"  suggested thresholds: noise sigma p99 = {p99_sigma:.1f}, "
+            f"peak = {peak_sigma:.1f} "
+            f"(current audio_sigma = {cfg.audio_sigma:.1f}, "
+            f"audio_confirm_sigma = {cfg.audio_confirm_sigma:.1f})"
+        ),
+    ]
+
+
+def run_crash_calibration(
+    conn: sqlite3.Connection,
+    config: Config,
+    limit: int | None = None,
+) -> str:
+    candidates = crash_calibrate_candidates(conn, limit=limit)
+    if not candidates:
+        return "crash-calibrate: no NORMAL-mode done jobs found"
+    lines = [
+        f"crash-calibrate: {len(candidates)} NORMAL-mode done job(s) sampled"
+    ]
+    results = [calibrate_job(conn, config, row) for row in candidates]
+    for res in results:
+        rec = f" rec {res.recorded_at}" if res.recorded_at else ""
+        lines.append(f"job {res.job_id}{rec}")
+        s_total = sum(res.s_by_rule.values())
+        rules = (
+            ", ".join(f"{k}={v}" for k, v in sorted(res.s_by_rule.items()))
+            or "none"
+        )
+        lines.append(
+            f"  A base {res.a_base} (max {res.max_sigma:.1f}x) | "
+            f"A confirm {res.a_confirm} | S {s_total} ({rules})"
+        )
+        note = f" [{res.note}]" if res.note else ""
+        lines.append(
+            f"  A+S co-occurrence within window_sec: {res.co_occurrence}{note}"
+        )
+    lines.extend(_calibration_summary(results, config.crash))
+    return "\n".join(lines)
