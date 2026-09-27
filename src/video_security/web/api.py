@@ -53,9 +53,7 @@ def app_config(
     return {"carto_api_key": cfg.map.carto_api_key}
 
 
-def stats(
-    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
-) -> dict[str, Any]:
+def stats_payload(conn: sqlite3.Connection, cfg: Config) -> dict[str, Any]:
     by_status: dict[str, int] = {
         str(row["status"]): int(row["c"])
         for row in conn.execute("SELECT status, COUNT(*) AS c FROM jobs GROUP BY status")
@@ -134,6 +132,12 @@ def stats(
         "storage": storage,
         "imports": imports,
     }
+
+
+def stats(
+    conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
+) -> dict[str, Any]:
+    return stats_payload(conn, cfg)
 
 
 def _parse_utc(value: str | None) -> datetime | None:

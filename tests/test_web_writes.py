@@ -105,9 +105,22 @@ def _person_rows(db_path: Path) -> list[tuple[Any, ...]]:
     return _dump(db_path, ("persons",))["persons"]
 
 
-def _set_job_status(db_path: Path, job_id: int, status: str) -> None:
+def _set_job_status(
+    db_path: Path, job_id: int, status: str, age_sec: int | None = None
+) -> None:
     conn = sqlite3.connect(str(db_path))
-    conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
+    if age_sec is None:
+        conn.execute(
+            "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (status, job_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE jobs SET status = ?, "
+            "updated_at = datetime('now', ?) WHERE id = ?",
+            (status, f"-{age_sec} seconds", job_id),
+        )
     conn.commit()
     conn.close()
 
@@ -273,10 +286,25 @@ def test_active_batch_guard(client: TestClient, db_file: Path) -> None:
     _set_job_status(db_file, 1, "pending")
     assert _post(client, "/api/persons/1/name", {"name": "A"}).status_code == 409
 
+    _set_job_status(db_file, 1, "extracting", age_sec=1200)
+    assert _post(client, "/api/persons/1/name", {"name": "A"}).status_code == 409
+
     _set_job_status(db_file, 1, "done")
     resp = _post(client, "/api/persons/1/name", {"name": "A"})
     assert resp.status_code == 200
     assert _person_rows(db_file)[0] == (1, "A", 1)
+
+
+def test_stale_backlog_does_not_guard(client: TestClient, db_file: Path) -> None:
+    _set_job_status(db_file, 1, "extracting", age_sec=7200)
+    _set_job_status(db_file, 2, "pending", age_sec=86400)
+    resp = _post(client, "/api/persons/1/name", {"name": "A"})
+    assert resp.status_code == 200
+    assert _person_rows(db_file)[0] == (1, "A", 1)
+    conn = sqlite3.connect(str(db_file))
+    rows = conn.execute("SELECT id, status FROM jobs ORDER BY id").fetchall()
+    conn.close()
+    assert rows == [(1, "extracting"), (2, "pending")]
 
 
 def test_event_suppress_and_restore(client: TestClient, db_file: Path) -> None:

@@ -92,6 +92,24 @@ export function fetchStats(): Promise<Stats> {
   return fetchJson<Stats>("/api/stats")
 }
 
+export interface ActiveJobProgress {
+  id: number
+  status: string
+  current_stage: string | null
+  current_frame: number
+  total_frames: number | null
+  label: string
+}
+
+export interface ProgressPayload {
+  stats: Stats
+  active: ActiveJobProgress[]
+}
+
+export function fetchProgress(): Promise<ProgressPayload> {
+  return fetchJson<ProgressPayload>("/api/progress")
+}
+
 export function fetchJobs(params: URLSearchParams): Promise<JobsPage> {
   return fetchJson<JobsPage>(`/api/jobs?${params.toString()}`)
 }

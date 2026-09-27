@@ -19,6 +19,9 @@ from video_security.identity import (
 from video_security.web.server import ApiError
 
 TERMINAL_JOB_STATUSES = ("done", "failed")
+TRANSIENT_JOB_STATUSES = ("extracting", "filtering", "triage", "detail")
+RECENT_WRITE_WINDOW_SEC = 600
+TRANSIENT_ACTIVITY_WINDOW_SEC = 3600
 
 _WRITE_LOCK = threading.Lock()
 
@@ -82,10 +85,19 @@ def _connect_rw(db_path: str) -> sqlite3.Connection:
 
 
 def _require_idle(conn: sqlite3.Connection) -> None:
-    placeholders = ",".join("?" * len(TERMINAL_JOB_STATUSES))
+    terminal = ",".join("?" * len(TERMINAL_JOB_STATUSES))
+    transient = ",".join("?" * len(TRANSIENT_JOB_STATUSES))
     busy = conn.execute(
-        f"SELECT 1 FROM jobs WHERE status NOT IN ({placeholders}) LIMIT 1",
-        TERMINAL_JOB_STATUSES,
+        f"SELECT 1 FROM jobs WHERE status NOT IN ({terminal}) AND ("
+        "updated_at > datetime('now', ?) OR ("
+        f"status IN ({transient}) AND updated_at > datetime('now', ?)"
+        ")) LIMIT 1",
+        (
+            *TERMINAL_JOB_STATUSES,
+            f"-{RECENT_WRITE_WINDOW_SEC} seconds",
+            *TRANSIENT_JOB_STATUSES,
+            f"-{TRANSIENT_ACTIVITY_WINDOW_SEC} seconds",
+        ),
     ).fetchone()
     if busy is not None:
         raise ApiError(

@@ -1080,15 +1080,42 @@ plate crops on disk.
   connection per mutation (`busy_timeout=5000`, `foreign_keys=ON`)
   behind a process-wide `threading.Lock`, short `BEGIN IMMEDIATE`
   transactions, commit + close per request; the per-thread ro pool
-  above is untouched. A guard refuses every mutation with 409 while
-  any job sits in a non-terminal status (terminal = `done`, `failed`)
-  — mutations and analyze batches never overlap. Endpoints are thin
+  above is untouched. A guard refuses every mutation with 409 while a
+  batch is actively running — redefined 2026-09-27 (Stage 2): active
+  = any non-terminal job (terminal = `done`, `failed`) whose
+  `updated_at` moved inside the last 10 min, or any mid-flight
+  transient status (`extracting`, `filtering`, `triage`, `detail`)
+  inside the engine's 1 h `reclaim_stale_jobs` window. `updated_at`
+  only moves at phase claims, status changes, evidence writes and
+  imports — never per frame — so the transient branch covers a long
+  phase whose row looks quiet; queued backlog (`pending`/`harvested`/
+  `triaged` older than 10 min) and abandoned transient rows never
+  block. Endpoints are thin
   FastAPI POST routes over the CLI's shared `identity.py`/`db.py`
   ops; pydantic-validated bodies, errors as `{"error": ...}` JSON
+- **Live progress (Stage 2, 2026-09-27)**: `web/progress.py` —
+  `GET /api/progress/stream` (`text/event-stream`, hand-formatted
+  `event:`/`data:` lines, no new deps): ~1 s tick, a frame only when
+  the payload changed, `: keepalive` comment every ~15 s so idle
+  connections stay warm, clean close on client disconnect. Each frame
+  is `event: progress` + compact JSON `{stats, active}`: `stats` is
+  the exact `/api/stats` payload (shared `stats_payload` query in
+  `api.py`), `active` lists every in-flight job (transient statuses:
+  `extracting`, `filtering`, `triage`, `detail` — queued backlog
+  stays in the `stats` counts, not the strip) with `id`,
+  `status`, `current_stage`, `current_frame`, `total_frames`, and a
+  video-basename `label`. One dedicated ro connection per stream
+  (`open_readonly` with `check_same_thread=False` — reads run via
+  `asyncio.to_thread`, strictly sequential, closed in the generator's
+  `finally`); the thread-local pool is untouched.
+  `GET /api/progress` serves the same payload once as plain JSON
+  (polling fallback + tests)
 - Module layout: `web/server.py` (FastAPI adapter: routes, ApiError
   handler, Range streaming, static bundle, SPA fallback) ·
   `web/api.py` (endpoints as `(conn, cfg, params) -> dict`
-  — no HTTP types, testable without sockets) · `web/media.py` (artifact
+  — no HTTP types, testable without sockets) ·
+  `web/progress.py` (SSE live progress: stream + snapshot) ·
+  `web/media.py` (artifact
   mounts, traversal guard, Range parsing) · `web/static/` (committed
   React bundle)
 
@@ -1100,8 +1127,15 @@ plate crops on disk.
   `npm --prefix web run build` (theme export wired as `prebuild`)
 - Runtime deps: react, react-dom, react-router-dom,
   @tanstack/react-query, leaflet. Filters live in URL search params
-  (shareable, back-button correct); dashboard polls `/api/stats` every
-  5 s — no SSE in v1
+  (shareable, back-button correct). Live stats since 2026-09-27
+  (Stage 2): the dashboard subscribes to `/api/progress/stream` via
+  `EventSource` — each `progress` event updates the react-query
+  `["stats"]` cache and an active-jobs strip (id · status · stage ·
+  `128/900` · filename, existing `--vs-*` tokens). Reconnects rely on
+  EventSource's native auto-retry; on stream error the hook polls
+  `/api/progress` every 5 s and the stats query's own 5 s poll resumes
+  (`refetchInterval` gated on live state), so nothing regresses when
+  SSE is unavailable
 - Routes: `/` dashboard (stats, import history, storage, active-job
   progress, recent-events map) · `/jobs` filterable paginated list ·
   `/jobs/:id` tabbed detail · `/jobs/:id/events/:eid` event detail ·
@@ -1251,7 +1285,8 @@ self-contained sub-agent task with explicit acceptance criteria.
 ### Resolved decisions
 
 Committed bundle (Node dev-only) · iframe-first with native-tab stubs →
-incremental React migration · read-only web v1 · polling not SSE ·
+incremental React migration · read-only web v1 · polling not SSE
+(progress switched to SSE 2026-09-27, Stage 2) ·
 cache-only geocode from the server · no raw-night backfill · port 8377 ·
 stdlib server (v1) → FastAPI/uvicorn (2026-09-27, Stage 1A) · web
 write path: naming + suppress/flag on shared CLI ops (2026-09-27,
@@ -1338,16 +1373,50 @@ discussions) plus the pull toward GUI edits converge on a staged v2:
    connection (`busy_timeout=5000`), serializes on a process-wide write
    lock, wraps a short `BEGIN IMMEDIATE` transaction, and closes; the
    read pool stays query-only. A guard refuses every mutation with 409
-   while any job sits in a non-terminal status (terminal = `done`,
-   `failed`; everything else — `pending`, `extracting`, `filtering`,
-   `harvested`, `triage`, `triaged`, `detail` — counts as an active
-   batch). Loopback, no-auth, and the startup banner are unchanged.
+   while a batch is actively running (rule redefined at Stage 2,
+   2026-09-27 — originally any non-terminal status; see Stage 2 below
+   for the recent-activity rule). Loopback, no-auth, and the startup
+   banner are unchanged.
    UI: assign-to-person controls on face cards (persons dropdown +
    inline new-person name), rename + confirm-step merge on person
    pages, suppress/restore on event detail, ⚑ flag/unflag on job rows
    and job detail — react-query invalidations only.
 2. **Stage 2 — SSE live progress** (tail a running analyze) once
    FastAPI is in; replaces 5 s polling only where it matters.
+   **Shipped 2026-09-27**: `web/progress.py` adds
+   `GET /api/progress/stream` — hand-formatted `text/event-stream`
+   (no new dependencies), ~1 s tick, `event: progress` frames with
+   compact JSON `{stats, active}` (`stats` = the exact `/api/stats`
+   payload via a factored `stats_payload`; `active` = every in-flight
+   job — transient statuses only, queued backlog stays in the `stats`
+   counts — with `id`, `status`, `current_stage`,
+   `current_frame`, `total_frames`, basename `label`), sent only when
+   the payload changed, plus a `: keepalive` comment every ~15 s.
+   Each stream holds one dedicated ro connection (sequential
+   `asyncio.to_thread` reads, closed in the generator's `finally` on
+   disconnect); `GET /api/progress` returns the same payload once as
+   plain JSON for tests and as the polling fallback. The dashboard
+   subscribes with `EventSource`, updating the react-query stats
+   cache and an active-jobs strip; native EventSource auto-reconnect
+   was chosen over manual backoff (the browser already retries with
+   its own backoff, and the loopback server needs nothing fancier);
+   while the stream is down the hook polls `/api/progress` every 5 s
+   and the stats query resumes its original 5 s poll. The same stage
+   fixes a write-guard defect found on the real DB: real catalogs sit
+   with queued backlog (`pending`/`harvested`/`triaged`) and stale
+   transient rows for days, so "any non-terminal job blocks
+   mutations" disabled writes around the clock. The guard now 409s
+   only on recent activity: any non-terminal job whose `updated_at`
+   moved inside 10 min (evidence: `updated_at` is touched by
+   `update_job_status`, `update_job_evidence`, `set_job_import_meta`,
+   and at every `claim_next_job` phase claim / `mark_failed` /
+   `reclaim_stale_jobs` in `engine.py` — never per frame), or any
+   transient status (`extracting`, `filtering`, `triage`, `detail`)
+   inside the engine's 1 h `reclaim_stale_jobs` window — that branch
+   exists because a phase can legitimately run longer than 10 min
+   with a frozen `updated_at`, and past the reclaim window a
+   transient row is abandoned by the engine's own rules. Idle
+   backlog no longer blocks; a live batch always does.
 3. **Stage 3 — deliberate extras, each its own decision**: dispatch
    analyze from the UI (coordinate the single-writer rule),
    watchlist management UI (write-path candidate #2), token auth
@@ -1801,7 +1870,14 @@ tracking across jobs.
    Vision quality path intact for macOS versions where the request
    works. **Applied 2026-09-25**; `vs index-faces` re-run on the archive
    is pending (run outside night batches — it writes rows while analyze
-   holds the WAL write lock).
+   holds the WAL write lock). **Ran 2026-09-27 (outside batches)**:
+   the pipeline is validated and idempotent — the archive's true face
+   surface is 66 crops on disk across 38 events (12 jobs), all already
+   indexed into 2 clusters; a full `backfill-media --detect-faces`
+   pass over all 1,903 keyframed events found no additional faces
+   (dashcam/highway content — almost no people), so the 48 px gate
+   simply hasn't had new material yet. This item is closed; the
+   Stage 1B naming UI has the full working set.
 - `persons.name` column (existing ALTER TABLE pattern) + `vs person
   name|merge|move` CLI — the web console stays read-only. **Next version is
   CLI-only**: the web naming UI (click-to-tag on face chips, name editing on

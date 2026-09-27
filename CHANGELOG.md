@@ -20,6 +20,17 @@ follow semantic versioning.
   face cards, rename + merge (with confirm) on person pages,
   suppress/restore on event detail, ⚑ flag/unflag in the jobs list and
   job detail; names live in the local DB only.
+- **Web console live progress (v2 Stage 2)**: `GET
+  /api/progress/stream` pushes the dashboard stats plus an active-jobs
+  list (id, status, stage, frame progress, filename) as server-sent
+  events whenever the payload changes, with keepalive comments while
+  idle; `GET /api/progress` serves the same payload once. The
+  dashboard subscribes via `EventSource` and falls back to 5 s polling
+  when the stream is down. The 409 write guard now keys on recent
+  activity (a write within the last 10 minutes, or a mid-flight job
+  within the engine's 1 h stale-reclaim window) instead of any
+  non-terminal job, so queued or stale backlog no longer blocks web
+  mutations.
 
 ## [0.9.0] - 2026-09-27
 

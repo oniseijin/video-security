@@ -54,9 +54,11 @@ class ApiError(Exception):
         self.status = status
 
 
-def open_readonly(db_path: str) -> sqlite3.Connection:
+def open_readonly(
+    db_path: str, check_same_thread: bool = True
+) -> sqlite3.Connection:
     uri = Path(db_path).expanduser().resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = sqlite3.connect(uri, uri=True, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -194,6 +196,10 @@ def create_app(
         )
 
     app.include_router(writes)
+
+    from video_security.web.progress import add_progress_routes
+
+    add_progress_routes(app, config.storage.db_path, config)
 
     def static_endpoint(request: Request) -> Response:
         path = str(request.scope["path"])

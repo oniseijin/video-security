@@ -9,6 +9,7 @@ import {
   fetchWatchlistHits,
 } from "../api"
 import type {
+  ActiveJobProgress,
   GpsEventMarker,
   GpsPoint,
   HoursResponse,
@@ -22,6 +23,7 @@ import { HeatMap } from "../components/HeatMap"
 import { TerminalNote } from "../components/TerminalNote"
 import { TrackMap } from "../components/TrackMap"
 import { fmtBytes, fmtDate } from "../format"
+import { useProgressStream } from "../progress"
 import { toneColor } from "../theme"
 
 function progressPct(current: number, total: number | null): number {
@@ -63,6 +65,43 @@ function Stat({ value, label }: { value: number; label: string }) {
       <span className="stat-value">{value}</span>
       <span className="stat-label">{label}</span>
     </div>
+  )
+}
+
+function ActiveJobs({
+  jobs,
+  live,
+}: {
+  jobs: ActiveJobProgress[]
+  live: boolean
+}) {
+  return (
+    <section className="panel">
+      <h2>Active Job{live ? " · live" : ""}</h2>
+      {jobs.length === 0 ? (
+        <TerminalNote>no active job</TerminalNote>
+      ) : (
+        jobs.map((job) => (
+          <div key={job.id}>
+            <p className="active-line">
+              JOB {job.id} — {job.status} — stage {job.current_stage ?? "—"} —{" "}
+              {job.current_frame}
+              {job.total_frames !== null ? `/${job.total_frames}` : ""}
+              {job.label !== "" ? ` — ${job.label}` : ""}
+            </p>
+            <div className="progress">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${progressPct(job.current_frame, job.total_frames)}%`,
+                  background: toneColor("info"),
+                }}
+              />
+            </div>
+          </div>
+        ))
+      )}
+    </section>
   )
 }
 
@@ -293,10 +332,11 @@ function Analytics() {
 }
 
 export function Dashboard() {
+  const { active: liveJobs, live } = useProgressStream()
   const { data, isPending, isError, error } = useQuery<Stats, Error>({
     queryKey: ["stats"],
     queryFn: fetchStats,
-    refetchInterval: 5000,
+    refetchInterval: live ? false : 5000,
   })
 
   if (isPending) {
@@ -311,8 +351,22 @@ export function Dashboard() {
 
   const pending = data.jobs.by_status.pending ?? 0
   const done = data.jobs.by_status.done ?? 0
-  const active = data.active_job
   const storage = data.storage
+  const stripJobs: ActiveJobProgress[] =
+    liveJobs.length > 0
+      ? liveJobs
+      : data.active_job !== null
+        ? [
+            {
+              id: data.active_job.id,
+              status: "processing",
+              current_stage: data.active_job.stage,
+              current_frame: data.active_job.current_frame,
+              total_frames: data.active_job.total_frames,
+              label: "",
+            },
+          ]
+        : []
   const usedPct =
     storage.free_gb !== null &&
     storage.total_gb !== null &&
@@ -363,28 +417,7 @@ export function Dashboard() {
           </tbody>
         </table>
       </section>
-      <section className="panel">
-        <h2>Active Job</h2>
-        {active ? (
-          <div>
-            <p className="active-line">
-              JOB {active.id} — stage {active.stage} — frame {active.current_frame}
-              {active.total_frames !== null ? ` / ${active.total_frames}` : ""}
-            </p>
-            <div className="progress">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${progressPct(active.current_frame, active.total_frames)}%`,
-                  background: toneColor("info"),
-                }}
-              />
-            </div>
-          </div>
-        ) : (
-          <TerminalNote>no active job</TerminalNote>
-        )}
-      </section>
+      <ActiveJobs jobs={stripJobs} live={live} />
       <section className="panel">
         <h2>Import History</h2>
         <table className="data-table">
