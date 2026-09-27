@@ -1617,6 +1617,17 @@ a fixture DB.
 producing a dry report only; step 2 — human review of every candidate
 via the provenance view, threshold tuning, then flip `enabled = true`
 for nightly. Never default-on before that review.
+**Step-1 result (2026-09-27, all 20 EVENT-mode done jobs): 20/20
+would-fire, 0 insufficient — the fusion gate discriminates nothing on
+this sample.** Every scanned clip is G-positive by selection, and the
++1 confirmation is too cheap: `bearing_snap` fired on pre-roll GPS
+(negative `time_sec`, low-speed bearing jitter) in several clips, and
+G+A fires on ordinary in-cabin audio blips. Before enabling: drop GPS
+points with negative `time_sec`; tighten `bearing_snap` (higher min
+speed and/or minimum travel distance between fixes); consider
+demoting A as a sole G-confirmer (require J or a real speed drop, or
+raise `audio_sigma`). The scan report is the review artifact; nothing
+written to the DB.
 
 ---
 
