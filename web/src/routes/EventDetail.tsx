@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
-import { fetchEventDetail } from "../api"
+import { fetchEventDetail, restoreEvent, suppressEvent } from "../api"
 import type { EventDetail } from "../api"
 import { Filmstrip } from "../components/Filmstrip"
 import type { FilmFrame } from "../components/Filmstrip"
@@ -9,6 +9,35 @@ import { TerminalNote } from "../components/TerminalNote"
 import { fmtSec } from "../format"
 import { toneColor } from "../theme"
 import type { Tone } from "../theme"
+
+function SuppressionControl({ event }: { event: EventDetail }) {
+  const queryClient = useQueryClient()
+  const suppressed = event.status === "suppressed"
+  const mutation = useMutation({
+    mutationFn: () =>
+      suppressed ? restoreEvent(event.event_id) : suppressEvent(event.event_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["event", event.event_id] })
+      queryClient.invalidateQueries({ queryKey: ["events"] })
+      queryClient.invalidateQueries({ queryKey: ["job-events"] })
+    },
+  })
+  return (
+    <div className="assign-row">
+      <button
+        className="app-btn"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate()}
+        type="button"
+      >
+        {suppressed ? "RESTORE EVENT" : "SUPPRESS EVENT"}
+      </button>
+      {mutation.isError ? (
+        <span className="assign-error">{mutation.error.message}</span>
+      ) : null}
+    </div>
+  )
+}
 
 export function EventDetailRoute() {
   const { eid } = useParams()
@@ -100,6 +129,7 @@ export function EventDetailRoute() {
           </div>
         </div>
         <p className="desc-full">{data.description}</p>
+        <SuppressionControl event={data} />
       </section>
 
       {frames.length > 0 ? (

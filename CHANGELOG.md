@@ -4,6 +4,23 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Web console write path (v2 Stage 1B) + FastAPI serving (Stage
+  1A)**: `vs serve` now runs FastAPI/uvicorn (loopback, no auth,
+  read paths unchanged) and gains the first mutations, mirroring
+  existing CLI verbs only — face/person naming (assign a face to an
+  existing person or an inline new name, rename, merge with name
+  carry-over, all through the same `vs person` ops), event
+  suppress/restore, and job flag/unflag. Mutations serialize through a
+  single RW connection with `busy_timeout` and are refused with 409
+  while an analyze batch is active. UI: assign-to-person controls on
+  face cards, rename + merge (with confirm) on person pages,
+  suppress/restore on event detail, ⚑ flag/unflag in the jobs list and
+  job detail; names live in the local DB only.
+
 ## [0.9.0] - 2026-09-27
 
 ### Added

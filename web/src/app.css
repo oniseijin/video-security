@@ -914,3 +914,40 @@ a.count-chip:hover {
 }
 
 .plate-crop-img { cursor: zoom-in; }
+
+.assign-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.35rem 0;
+}
+
+.assign-row select,
+.assign-row input {
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+  color: var(--vs-ink);
+  background: var(--vs-surface-1);
+  border: 1px solid var(--vs-line);
+  padding: 0.15rem 0.3rem;
+  min-width: 0;
+}
+
+.assign-row input {
+  width: 8rem;
+}
+
+.assign-error {
+  color: var(--vs-threat);
+  font-family: var(--vs-font-mono);
+  font-size: 0.6875rem;
+}
+
+.flag-btn {
+  padding: 0 0.4rem;
+}
+
+.person-controls {
+  margin-bottom: 0.75rem;
+}

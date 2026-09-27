@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { fetchJobs } from "../api"
 import type { JobsPage } from "../api"
+import { FlagToggle } from "../components/FlagToggle"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate } from "../format"
 
@@ -225,6 +226,7 @@ export function JobsList() {
                   <td>{fmtDate(job.imported_at)}</td>
                   <td>
                     <span className="chip-row">
+                      <FlagToggle jobId={job.id} note={job.flag_note} />
                       {job.flag_note !== null ? (
                         <span
                           className="chip"

@@ -1406,7 +1406,8 @@ def persons(
         "(SELECT MAX(j.recording_start_utc) FROM faces f "
         " JOIN events e ON e.id = f.event_id "
         " JOIN jobs j ON j.id = f.job_id WHERE f.person_id = p.id) AS last_seen "
-        "FROM persons p WHERE p.sightings > 0 "
+        "FROM persons p "
+        "WHERE p.sightings > 0 OR (p.name IS NOT NULL AND p.name != '') "
         "ORDER BY p.sightings DESC, p.id",
         (),
     ).fetchall()
@@ -1589,6 +1590,7 @@ def faces(
             continue
         crops: list[str] = []
         person_ids: list[int | None] = []
+        face_ids: list[int | None] = []
         for i in range(min(len(faces_data), len(kf_paths))):
             boxes = faces_data[i] if isinstance(faces_data[i], list) else []
             for j in range(len(boxes)):
@@ -1601,10 +1603,11 @@ def faces(
                 if crop.is_file():
                     crops.append(f"/media/faces/{int(row['job_id'])}/{crop.name}")
                     frow = conn.execute(
-                        "SELECT person_id FROM faces WHERE event_id = ? "
+                        "SELECT id, person_id FROM faces WHERE event_id = ? "
                         "AND keyframe_index = ? AND face_index = ?",
                         (int(row["id"]), i, j),
                     ).fetchone()
+                    face_ids.append(int(frow["id"]) if frow else None)
                     person_ids.append(
                         int(frow["person_id"]) if frow and frow["person_id"] else None
                     )
@@ -1620,6 +1623,7 @@ def faces(
                 "start_sec": float(row["start_sec"]),
                 "crops": crops,
                 "person_ids": person_ids,
+                "face_ids": face_ids,
             }
         )
     limit, offset = _limit_offset(params)

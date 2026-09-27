@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import threading
-import urllib.error
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from video_security.config import Config
 from video_security.db import connect, init_db
-from video_security.web.server import STATIC_DIR, WebServer
+from video_security.web.server import STATIC_DIR, create_app
 
 INDEX = STATIC_DIR / "index.html"
 
@@ -31,26 +29,13 @@ def _seed(db_path: Path) -> None:
 
 
 @pytest.fixture()
-def base_url(tmp_path: Path) -> Iterator[str]:
+def client(tmp_path: Path) -> Iterator[TestClient]:
     db_path = tmp_path / "t.db"
     _seed(db_path)
     cfg = Config()
     cfg.storage.db_path = str(db_path)
     cfg.storage.artifact_dir = str(tmp_path / "artifacts")
-    server = WebServer(("127.0.0.1", 0), cfg)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{int(server.server_address[1])}"
-    server.shutdown()
-    server.server_close()
-
-
-def _status_of(url: str) -> tuple[int, str]:
-    try:
-        with urllib.request.urlopen(url) as resp:
-            return resp.status, resp.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8")
+    yield TestClient(create_app(cfg))
 
 
 def test_bundle_index_exists() -> None:
@@ -61,26 +46,27 @@ def test_bundle_index_exists() -> None:
     assert "vs-theme" in html
 
 
-def test_root_serves_bundle(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/")
-    assert status == 200
-    assert 'id="root"' in body
-    assert "VS // CONSOLE" in body
+def test_root_serves_bundle(client: TestClient) -> None:
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert 'id="root"' in resp.text
+    assert "VS // CONSOLE" in resp.text
 
 
-def test_spa_fallback_serves_bundle(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/jobs")
-    assert status == 200
-    assert 'id="root"' in body
+def test_spa_fallback_serves_bundle(client: TestClient) -> None:
+    resp = client.get("/jobs")
+    assert resp.status_code == 200
+    assert 'id="root"' in resp.text
 
 
-def test_bundle_asset_served(base_url: str) -> None:
+def test_bundle_asset_served(client: TestClient) -> None:
     html = INDEX.read_text(encoding="utf-8")
     asset = next(
         line.split('src="')[1].split('"')[0]
         for line in html.splitlines()
         if 'type="module"' in line and "src=" in line
     ).lstrip("./")
-    status, body = _status_of(f"{base_url}/{asset}")
-    assert status == 200
-    assert len(body) > 1000
+    resp = client.get(f"/{asset}")
+    assert resp.status_code == 200
+    assert len(resp.content) > 1000
+    assert "immutable" in resp.headers["Cache-Control"]

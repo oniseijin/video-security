@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import threading
-import urllib.error
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from video_security.config import Config
 from video_security.db import connect, init_db
-from video_security.web.server import WebServer, open_readonly
+from video_security.web.server import create_app, open_readonly
 
 
 def _seed(db_path: Path) -> None:
@@ -47,42 +45,35 @@ def _seed(db_path: Path) -> None:
 
 
 @pytest.fixture()
-def base_url(tmp_path: Path) -> Iterator[str]:
+def client(tmp_path: Path) -> Iterator[TestClient]:
     db_path = tmp_path / "t.db"
     _seed(db_path)
     cfg = Config()
     cfg.storage.db_path = str(db_path)
     cfg.storage.artifact_dir = str(tmp_path / "artifacts")
-    server = WebServer(("127.0.0.1", 0), cfg)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{int(server.server_address[1])}"
-    server.shutdown()
-    server.server_close()
+    yield TestClient(create_app(cfg))
 
 
-def _get_json(url: str) -> Any:
-    with urllib.request.urlopen(url) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _get_json(client: TestClient, path: str) -> Any:
+    resp = client.get(path)
+    assert resp.status_code == 200
+    return resp.json()
 
 
-def _status_of(url: str) -> tuple[int, str]:
-    try:
-        with urllib.request.urlopen(url) as resp:
-            return resp.status, resp.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8")
+def _status_of(client: TestClient, path: str) -> tuple[int, str]:
+    resp = client.get(path)
+    return resp.status_code, resp.text
 
 
-def test_health(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/health")
+def test_health(client: TestClient) -> None:
+    data = _get_json(client, "/api/health")
     assert data["ok"] is True
     assert data["db"] == "readonly"
     assert isinstance(data["version"], str)
 
 
-def test_stats(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/stats")
+def test_stats(client: TestClient) -> None:
+    data = _get_json(client, "/api/stats")
     assert data["jobs"]["total"] == 3
     assert data["jobs"]["by_status"] == {"done": 1, "pending": 1, "filtering": 1}
     assert data["events"] == 1
@@ -98,32 +89,53 @@ def test_stats(base_url: str) -> None:
     assert data["imports"][0]["done"] == 1
 
 
-def test_unknown_api_404(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/api/nope")
+def test_unknown_api_404(client: TestClient) -> None:
+    status, body = _status_of(client, "/api/nope")
     assert status == 404
     assert json.loads(body)["error"] == "not found"
 
 
-def test_traversal_blocked(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/..%2f..%2f..%2fetc%2fpasswd")
+def test_unknown_media_404(client: TestClient) -> None:
+    status, body = _status_of(client, "/media/nope")
+    assert status == 404
+    assert json.loads(body)["error"] == "not found"
+
+
+def test_traversal_blocked(client: TestClient) -> None:
+    status, body = _status_of(client, "/..%2f..%2f..%2fetc%2fpasswd")
     assert status in (200, 404)
     assert "root:" not in body
 
 
-def test_root_serves_html(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/")
+def test_root_serves_html(client: TestClient) -> None:
+    status, body = _status_of(client, "/")
     assert status == 200
     assert "<html" in body.lower()
 
 
-def test_spa_fallback(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/jobs")
+def test_spa_fallback(client: TestClient) -> None:
+    status, body = _status_of(client, "/jobs")
     assert status == 200
     assert "<html" in body.lower()
 
 
-def test_readonly_rejects_writes(base_url: str, tmp_path: Path) -> None:
-    conn = open_readonly(str(tmp_path / "t.db"))
+def test_head_matches_get_without_body(client: TestClient) -> None:
+    resp = client.head("/api/health")
+    assert resp.status_code == 200
+    assert resp.content == b""
+    resp = client.head("/jobs")
+    assert resp.status_code == 200
+    assert resp.content == b""
+
+
+def test_post_is_405(client: TestClient) -> None:
+    assert client.post("/api/jobs").status_code == 405
+
+
+def test_readonly_rejects_writes(tmp_path: Path) -> None:
+    db_path = tmp_path / "t.db"
+    _seed(db_path)
+    conn = open_readonly(str(db_path))
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("INSERT INTO jobs (video_path, video_hash) VALUES ('x', 'y')")
     conn.close()

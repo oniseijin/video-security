@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom"
 import { fetchJobDetail } from "../api"
 import type { JobDetail as JobDetailData } from "../api"
 import { useCrumbLabel } from "../components/Breadcrumbs"
+import { FlagToggle } from "../components/FlagToggle"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtBytes, fmtDate, fmtSec } from "../format"
 import { CapturesTab } from "./tabs/CapturesTab"
@@ -82,13 +83,19 @@ function Header({ job }: { job: JobDetailData }) {
             <span className="chip">ARCHIVE</span>
           </Meta>
         ) : null}
-        {job.flag_note !== null ? (
-          <Meta label="review">
-            <span className="chip" title={job.flag_note || "flagged for review"}>
-              ⚑ {job.flag_note || "flagged for review"}
-            </span>
-          </Meta>
-        ) : null}
+        <Meta label="review">
+          <span className="chip-row">
+            <FlagToggle jobId={job.id} note={job.flag_note} />
+            {job.flag_note !== null ? (
+              <span
+                className="chip"
+                title={job.flag_note || "flagged for review"}
+              >
+                {job.flag_note || "flagged for review"}
+              </span>
+            ) : null}
+          </span>
+        </Meta>
       </div>
       <p className="path-note">{job.video_path}</p>
       <div className="count-row">

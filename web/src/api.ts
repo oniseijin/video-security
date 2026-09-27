@@ -8,6 +8,23 @@ export async function fetchJson<T>(url: string): Promise<T> {
   return (await res.json()) as T
 }
 
+export async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  const data: unknown = await res.json().catch(() => null)
+  if (!res.ok) {
+    const message =
+      data && typeof data === "object" && "error" in data
+        ? String((data as { error: unknown }).error)
+        : `${res.status} ${res.statusText}`
+    throw new Error(message)
+  }
+  return data as T
+}
+
 export interface StatsByStatus {
   [status: string]: number
 }
@@ -456,6 +473,7 @@ export interface FaceItem {
   start_sec: number
   crops: string[]
   person_ids: (number | null)[]
+  face_ids: (number | null)[]
 }
 
 export interface FacesPage {
@@ -711,4 +729,86 @@ export interface RepeatPlatesResponse {
 
 export function fetchAnalyticsPlates(): Promise<RepeatPlatesResponse> {
   return fetchJson<RepeatPlatesResponse>("/api/analytics/plates")
+}
+
+export interface MutationOk {
+  ok: boolean
+}
+
+export interface PersonMutationResult extends MutationOk {
+  person_id: number
+  name: string | null
+}
+
+export interface MergeResult extends MutationOk {
+  source_id: number
+  target_id: number
+  moved: number
+}
+
+export interface AssignResult extends MutationOk {
+  face_id: number
+  person_id: number
+  created_person: boolean
+}
+
+export interface EventStatusResult extends MutationOk {
+  event_id: number
+  status: string
+}
+
+export interface FlagResult extends MutationOk {
+  job_id: number
+  flag_note: string | null
+}
+
+export type AssignBody =
+  | { person_id: number }
+  | { new_person_name: string }
+
+export function assignFace(
+  faceId: number,
+  body: AssignBody
+): Promise<AssignResult> {
+  return postJson<AssignResult>(`/api/faces/${faceId}/assign`, body)
+}
+
+export function renamePerson(
+  personId: number,
+  name: string
+): Promise<PersonMutationResult> {
+  return postJson<PersonMutationResult>(`/api/persons/${personId}/name`, { name })
+}
+
+export function createPerson(name: string): Promise<PersonMutationResult> {
+  return postJson<PersonMutationResult>("/api/persons", { name })
+}
+
+export function mergePersons(
+  sourceId: number,
+  targetId: number
+): Promise<MergeResult> {
+  return postJson<MergeResult>("/api/persons/merge", {
+    source_id: sourceId,
+    target_id: targetId,
+  })
+}
+
+export function suppressEvent(eventId: number): Promise<EventStatusResult> {
+  return postJson<EventStatusResult>(`/api/events/${eventId}/suppress`, {})
+}
+
+export function restoreEvent(eventId: number): Promise<EventStatusResult> {
+  return postJson<EventStatusResult>(`/api/events/${eventId}/restore`, {})
+}
+
+export function flagJob(
+  jobId: number,
+  note: string | null
+): Promise<FlagResult> {
+  return postJson<FlagResult>(`/api/jobs/${jobId}/flag`, { note })
+}
+
+export function unflagJob(jobId: number): Promise<FlagResult> {
+  return postJson<FlagResult>(`/api/jobs/${jobId}/unflag`, {})
 }

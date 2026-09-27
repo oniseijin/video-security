@@ -1,13 +1,85 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { fetchFaces } from "../api"
-import type { FacesPage } from "../api"
+import { assignFace, fetchFaces, fetchPersons } from "../api"
+import type { AssignBody, FacesPage, PersonsPage } from "../api"
 import { TerminalNote } from "../components/TerminalNote"
 import { fmtDate, fmtSec } from "../format"
 import { toneColor } from "../theme"
 import type { Tone } from "../theme"
 
 const LIMIT = 48
+
+export function AssignControl({
+  faceId,
+  currentPersonId,
+}: {
+  faceId: number
+  currentPersonId: number | null
+}) {
+  const queryClient = useQueryClient()
+  const [personId, setPersonId] = useState("")
+  const [newName, setNewName] = useState("")
+
+  const { data: persons } = useQuery<PersonsPage, Error>({
+    queryKey: ["persons", "assign-options"],
+    queryFn: () => fetchPersons(new URLSearchParams({ limit: "200" })),
+  })
+
+  const mutation = useMutation({
+    mutationFn: (body: AssignBody) => assignFace(faceId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["faces"] })
+      queryClient.invalidateQueries({ queryKey: ["persons"] })
+      queryClient.invalidateQueries({ queryKey: ["person"] })
+      queryClient.invalidateQueries({ queryKey: ["job-faces"] })
+      setPersonId("")
+      setNewName("")
+    },
+  })
+
+  const body: AssignBody | null = newName.trim()
+    ? { new_person_name: newName.trim() }
+    : personId
+      ? { person_id: Number(personId) }
+      : null
+
+  return (
+    <div className="assign-row">
+      <select
+        aria-label="assign to person"
+        disabled={mutation.isPending}
+        onChange={(event) => setPersonId(event.target.value)}
+        value={personId}
+      >
+        <option value="">person…</option>
+        {persons?.items.map((p) => (
+          <option key={p.person_id} value={p.person_id}>
+            {p.name ?? `PERSON ${String(p.person_id).padStart(3, "0")}`}
+          </option>
+        ))}
+      </select>
+      <input
+        aria-label="new person name"
+        disabled={mutation.isPending}
+        onChange={(event) => setNewName(event.target.value)}
+        placeholder="new person"
+        value={newName}
+      />
+      <button
+        className="app-btn"
+        disabled={mutation.isPending || body === null}
+        onClick={() => body && mutation.mutate(body)}
+        type="button"
+      >
+        {currentPersonId != null ? "MOVE" : "ASSIGN"}
+      </button>
+      {mutation.isError ? (
+        <span className="assign-error">{mutation.error.message}</span>
+      ) : null}
+    </div>
+  )
+}
 
 export function Faces() {
   const [params, setParams] = useSearchParams()
@@ -35,7 +107,7 @@ export function Faces() {
     <section className="panel">
       <h2>Faces</h2>
       <TerminalNote>
-        local detection only — no recognition or embeddings
+        local detection only — assign faces to persons to name them
       </TerminalNote>
       {isPending ? (
         <TerminalNote>querying /api/faces ...</TerminalNote>
@@ -83,6 +155,12 @@ export function Faces() {
                       job {item.job_id}
                     </Link>
                   </figcaption>
+                  {item.face_ids[idx] != null ? (
+                    <AssignControl
+                      currentPersonId={item.person_ids[idx]}
+                      faceId={item.face_ids[idx] as number}
+                    />
+                  ) : null}
                 </figure>
               ))
             )}

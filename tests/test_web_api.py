@@ -2,20 +2,17 @@ from __future__ import annotations
 
 import json
 import struct
-import threading
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from video_security.config import Config
 from video_security.db import connect, init_db
 from video_security.geo import ensure_table
-from video_security.web.server import WebServer
+from video_security.web.server import create_app
 
 JPEG = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffdb004300ffd9")
 
@@ -189,36 +186,27 @@ def _seed(base: Path) -> None:
 
 
 @pytest.fixture()
-def base_url(tmp_path: Path) -> Iterator[str]:
+def client(tmp_path: Path) -> Iterator[TestClient]:
     _seed(tmp_path)
     cfg = Config()
     cfg.storage.db_path = str(tmp_path / "t.db")
     cfg.storage.artifact_dir = str(tmp_path / "artifacts")
-    server = WebServer(("127.0.0.1", 0), cfg)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{int(server.server_address[1])}"
-    server.shutdown()
-    server.server_close()
+    yield TestClient(create_app(cfg))
 
 
-def _get_json(url: str) -> Any:
-    with urllib.request.urlopen(urllib.parse.quote(url, safe="/:?=&")) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _get_json(client: TestClient, path: str) -> Any:
+    resp = client.get(path)
+    assert resp.status_code == 200
+    return resp.json()
 
 
-def _status_of(url: str) -> tuple[int, bytes]:
-    try:
-        with urllib.request.urlopen(
-            urllib.parse.quote(url, safe="/:?=&")
-        ) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
+def _status_of(client: TestClient, path: str) -> tuple[int, bytes]:
+    resp = client.get(path)
+    return resp.status_code, resp.content
 
 
-def test_jobs_list_and_filters(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs")
+def test_jobs_list_and_filters(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs")
     assert data["total"] == 4
     by_id = {item["id"]: item for item in data["items"]}
     assert by_id[1]["channel"] == "front"
@@ -234,30 +222,30 @@ def test_jobs_list_and_filters(base_url: str) -> None:
     assert by_id[3]["has_gps"] is False
     assert by_id[1]["counts"] == {"events": 4, "plates": 2, "faces": 2}
 
-    pending = _get_json(f"{base_url}/api/jobs?mode=PARKING")
+    pending = _get_json(client, "/api/jobs?mode=PARKING")
     assert [item["id"] for item in pending["items"]] == [4, 3]
 
-    chan = _get_json(f"{base_url}/api/jobs?channel=rear")
+    chan = _get_json(client, "/api/jobs?channel=rear")
     assert {item["id"] for item in chan["items"]} == {2, 4}
 
-    q = _get_json(f"{base_url}/api/jobs?q=a.mp4")
+    q = _get_json(client, "/api/jobs?q=a.mp4")
     assert {item["id"] for item in q["items"]} == {1, 2}
 
-    page = _get_json(f"{base_url}/api/jobs?limit=2&offset=2&sort=id&order=asc")
+    page = _get_json(client, "/api/jobs?limit=2&offset=2&sort=id&order=asc")
     assert page["total"] == 4
     assert [item["id"] for item in page["items"]] == [3, 4]
 
-    dev = _get_json(f"{base_url}/api/jobs?device=iphone")
+    dev = _get_json(client, "/api/jobs?device=iphone")
     assert dev["total"] == 1
     assert dev["items"][0]["id"] == 1
 
-    dash = _get_json(f"{base_url}/api/jobs?device=dashcam")
+    dash = _get_json(client, "/api/jobs?device=dashcam")
     assert dash["total"] == 0
     assert dash["items"] == []
 
 
-def test_job_detail(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1")
+def test_job_detail(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1")
     assert data["pair"] == {"job_id": 2, "channel": "rear"}
     assert data["event_types"] == {"plate_capture": 1, "intrusion": 1, "suspicious_behavior": 2}
     assert data["counts"]["plates"] == 2
@@ -267,8 +255,8 @@ def test_job_detail(base_url: str) -> None:
     assert data["archived"] is None
 
 
-def test_job_detail_archived_field(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/2")
+def test_job_detail_archived_field(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/2")
     assert data["archived"] is None
     assert data["device"] is None
 
@@ -297,28 +285,28 @@ def test_job_detail_archived_row(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_job_events_category_and_faces(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/events")
+def test_job_events_category_and_faces(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/events")
     items = {item["event_id"]: item for item in data["items"]}
     assert items[10]["category"] == "driving"
     assert items[10]["face_count"] == 1
     assert items[10]["description_source"] == "llm"
     assert items[10]["plate_norm"] == "習志野5001"
     assert items[10]["recorded_at"] is not None
-    driving = _get_json(f"{base_url}/api/jobs/1/events?category=driving")
+    driving = _get_json(client, "/api/jobs/1/events?category=driving")
     assert len(driving["items"]) == 4
 
 
-def test_events_cross_job(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/events?category=driving")
+def test_events_cross_job(client: TestClient) -> None:
+    data = _get_json(client, "/api/events?category=driving")
     assert data["total"] == 4
-    one = _get_json(f"{base_url}/api/events?limit=1")
+    one = _get_json(client, "/api/events?limit=1")
     assert one["limit"] == 1
     assert len(one["items"]) == 1
 
 
-def test_event_detail(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/events/10")
+def test_event_detail(client: TestClient) -> None:
+    data = _get_json(client, "/api/events/10")
     assert data["keyframes"][0]["url"] == "/media/frames/1/event_10_0.jpg"
     assert data["keyframes"][0]["raw_url"] == "/media/frames/1/event_10_0_raw.jpg"
     assert data["keyframes"][0]["faces"] == [[0.1, 0.2, 0.3, 0.4]]
@@ -339,20 +327,20 @@ def test_event_detail(base_url: str) -> None:
     assert data["links"]["report"] == "/jobs/1/report#event-10"
 
 
-def test_missing_event_404(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/api/events/999")
+def test_missing_event_404(client: TestClient) -> None:
+    status, body = _status_of(client, "/api/events/999")
     assert status == 404
     assert json.loads(body)["error"] == "event not found"
 
 
-def test_categories(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/categories")
+def test_categories(client: TestClient) -> None:
+    data = _get_json(client, "/api/categories")
     assert data["categories"]["driving"] == 4
     assert data["types"]["plate_capture"] == 1
 
 
-def test_job_plates(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/plates")
+def test_job_plates(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/plates")
     items = {item["track_id"]: item for item in data["items"]}
     assert items[7]["ken"] == "千葉県"
     assert items[7]["crop_url"] == "/media/plates/1/track_7.jpg"
@@ -361,22 +349,22 @@ def test_job_plates(base_url: str) -> None:
     assert items[8]["crop_url"] is None
 
 
-def test_plates_gallery_and_detail(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/plates")
+def test_plates_gallery_and_detail(client: TestClient) -> None:
+    data = _get_json(client, "/api/plates")
     assert data["total"] == 2
     by_norm = {item["norm_text"]: item for item in data["items"]}
     assert by_norm["習志野5001"]["best_crop_url"] == "/media/plates/1/track_7.jpg"
     assert by_norm["習志野5001"]["jobs"] == [1]
-    detail = _get_json(f"{base_url}/api/plates/習志野5001")
+    detail = _get_json(client, "/api/plates/習志野5001")
     assert detail["ken"] == "千葉県"
     assert detail["sightings"][0]["job_id"] == 1
     assert detail["sightings"][0]["event_id"] == 10
-    missing = _status_of(f"{base_url}/api/plates/ZZZ")
+    missing = _status_of(client, "/api/plates/ZZZ")
     assert missing[0] == 404
 
 
-def test_job_tracks(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/tracks")
+def test_job_tracks(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/tracks")
     tr = data["items"][0]
     assert tr["track_id"] == 7
     assert tr["plate_norm"] == "習志野5001"
@@ -384,107 +372,107 @@ def test_job_tracks(base_url: str) -> None:
     assert tr["strip"] == ["/media/frames/1/track_7_0.jpg"]
 
 
-def test_job_gps(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/gps")
+def test_job_gps(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/gps")
     assert len(data["points"]) == 3
     assert data["points"][0]["lat"] == pytest.approx(35.645)
     assert data["events"][0]["event_id"] in (10, 11, 13)
 
 
-def test_search_japanese(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/search?q=千葉市立公園")
+def test_search_japanese(client: TestClient) -> None:
+    data = _get_json(client, "/api/search?q=千葉市立公園")
     assert data["text"][0]["text"] == "千葉市立公園"
-    data2 = _get_json(f"{base_url}/api/search?q=5001")
+    data2 = _get_json(client, "/api/search?q=5001")
     assert data2["plates"][0]["norm_text"] == "習志野5001"
-    data3 = _get_json(f"{base_url}/api/search?q=おはよう")
+    data3 = _get_json(client, "/api/search?q=おはよう")
     assert data3["transcripts"][0]["text"] == "おはよう"
-    status, body = _status_of(f"{base_url}/api/search?q=")
+    status, body = _status_of(client, "/api/search?q=")
     assert status == 400
-    bad = _status_of(f"{base_url}/api/search?q=%22%25%29")
+    bad = _status_of(client, "/api/search?q=%22%25%29")
     assert bad[0] == 400
 
 
-def test_search_semantic_unavailable_without_ollama(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/search?q=blue car")
+def test_search_semantic_unavailable_without_ollama(client: TestClient) -> None:
+    data = _get_json(client, "/api/search?q=blue car")
     assert "semantic_available" in data
     assert isinstance(data["semantic"], list)
     assert data["semantic_available"] or data["semantic"] == []
 
 
-def test_map_recent(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/map/recent")
+def test_map_recent(client: TestClient) -> None:
+    data = _get_json(client, "/api/map/recent")
     ids = [item["event_id"] for item in data["items"]]
     assert 11 in ids
 
 
-def test_media_serves_artifacts(base_url: str) -> None:
-    status, _ = _status_of(f"{base_url}/media/frames/1/event_10_0.jpg")
+def test_media_serves_artifacts(client: TestClient) -> None:
+    status, _ = _status_of(client, "/media/frames/1/event_10_0.jpg")
     assert status == 200
-    status, body = _status_of(f"{base_url}/media/plates/1/track_7.jpg")
-    assert status == 200
-    assert body == JPEG
-    status, body = _status_of(f"{base_url}/media/faces/1/face_10_0_0.jpg")
+    status, body = _status_of(client, "/media/plates/1/track_7.jpg")
     assert status == 200
     assert body == JPEG
-    status, _ = _status_of(f"{base_url}/media/frames/1/nope.jpg")
+    status, body = _status_of(client, "/media/faces/1/face_10_0_0.jpg")
+    assert status == 200
+    assert body == JPEG
+    status, _ = _status_of(client, "/media/frames/1/nope.jpg")
     assert status == 404
-    status, _ = _status_of(f"{base_url}/media/faces/1/..%2f..%2f..%2ft.db")
+    status, _ = _status_of(client, "/media/faces/1/..%2f..%2f..%2ft.db")
     assert status == 404
-    status, _ = _status_of(f"{base_url}/media/frames/1/..%2f..%2f..%2ft.db")
+    status, _ = _status_of(client, "/media/frames/1/..%2f..%2f..%2ft.db")
     assert status == 404
 
 
-def test_report_html_embed(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/api/jobs/1/report.html?embed=1")
+def test_report_html_embed(client: TestClient) -> None:
+    status, body = _status_of(client, "/api/jobs/1/report.html?embed=1")
     assert status == 200
     assert b"/media/frames/1/event_10_0.jpg" in body
     assert b'id="theme-toggle"' not in body
     assert b'id="face-toggle"' not in body
-    status, body = _status_of(f"{base_url}/api/jobs/1/report.html")
+    status, body = _status_of(client, "/api/jobs/1/report.html")
     assert status == 200
     assert b'id="theme-toggle"' in body
-    status, _ = _status_of(f"{base_url}/api/jobs/999/report.html")
+    status, _ = _status_of(client, "/api/jobs/999/report.html")
     assert status in (404, 500)
 
 
-def test_report_404_is_json(base_url: str) -> None:
-    status, body = _status_of(f"{base_url}/api/jobs/999")
+def test_report_404_is_json(client: TestClient) -> None:
+    status, body = _status_of(client, "/api/jobs/999")
     assert status == 404
     assert json.loads(body)["error"] == "job not found"
 
 
-def test_app_config_default_null_key(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/config")
+def test_app_config_default_null_key(client: TestClient) -> None:
+    data = _get_json(client, "/api/config")
     assert data == {"carto_api_key": None}
 
 
-def test_faces_gallery(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/faces")
+def test_faces_gallery(client: TestClient) -> None:
+    data = _get_json(client, "/api/faces")
     assert data["total"] == 1
     item = data["items"][0]
     assert item["job_id"] == 1
     assert item["event_id"] == 10
     assert item["crops"] == ["/media/faces/1/face_10_0_0.jpg"]
-    filtered = _get_json(f"{base_url}/api/faces?job_id=3")
+    filtered = _get_json(client, "/api/faces?job_id=3")
     assert filtered["total"] == 0
 
 
-def test_jobs_flag_note(base_url: str, tmp_path: Path) -> None:
+def test_jobs_flag_note(client: TestClient, tmp_path: Path) -> None:
     conn = connect(str(tmp_path / "t.db"))
     conn.execute("UPDATE jobs SET flag_note = 'review me' WHERE id = 1")
     conn.commit()
     conn.close()
-    page = _get_json(f"{base_url}/api/jobs?limit=50")
+    page = _get_json(client, "/api/jobs?limit=50")
     item = next(j for j in page["items"] if j["id"] == 1)
     assert item["flag_note"] == "review me"
     other = next(j for j in page["items"] if j["id"] == 2)
     assert other["flag_note"] is None
-    detail = _get_json(f"{base_url}/api/jobs/1")
+    detail = _get_json(client, "/api/jobs/1")
     assert detail["flag_note"] == "review me"
 
 
-def test_animals_gallery(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/animals")
+def test_animals_gallery(client: TestClient) -> None:
+    data = _get_json(client, "/api/animals")
     assert data["total"] == 1
     item = data["items"][0]
     assert item["event_id"] == 10
@@ -496,23 +484,23 @@ def test_animals_gallery(base_url: str) -> None:
     assert kf["boxes"] == [
         {"kind": "animal", "track_id": 9, "box": [0.6, 0.4, 0.2, 0.2]}
     ]
-    filtered = _get_json(f"{base_url}/api/animals?job_id=2")
+    filtered = _get_json(client, "/api/animals?job_id=2")
     assert filtered["total"] == 0
 
 
-def test_stats_faces(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/stats")
+def test_stats_faces(client: TestClient) -> None:
+    data = _get_json(client, "/api/stats")
     assert data["faces"] == 2
 
 
-def test_faces_gallery_person_ids(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/faces")
+def test_faces_gallery_person_ids(client: TestClient) -> None:
+    data = _get_json(client, "/api/faces")
     item = data["items"][0]
     assert item["person_ids"] == [1]
 
 
-def test_job_faces_grouped(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/faces")
+def test_job_faces_grouped(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/faces")
     assert data["job_id"] == 1
     assert data["total"] == 2
     assert len(data["groups"]) == 1
@@ -524,13 +512,13 @@ def test_job_faces_grouped(base_url: str) -> None:
         "/media/faces/1/face_10_0_0.jpg"
     }
     assert group["crops"][0]["person_name"] == "Kenji"
-    empty = _get_json(f"{base_url}/api/jobs/3/faces")
+    empty = _get_json(client, "/api/jobs/3/faces")
     assert empty["total"] == 0
     assert empty["groups"] == []
 
 
-def test_persons_endpoints(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/persons")
+def test_persons_endpoints(client: TestClient) -> None:
+    data = _get_json(client, "/api/persons")
     assert data["total"] == 1
     p = data["items"][0]
     assert p["person_id"] == 1
@@ -538,7 +526,7 @@ def test_persons_endpoints(base_url: str) -> None:
     assert p["sightings"] == 1
     assert p["representative_crop_url"] == "/media/faces/1/face_10_0_0.jpg"
     assert p["first_seen"] is not None
-    detail = _get_json(f"{base_url}/api/persons/1")
+    detail = _get_json(client, "/api/persons/1")
     assert detail["person_id"] == 1
     assert detail["name"] == "Kenji"
     assert detail["total"] == 2
@@ -546,7 +534,7 @@ def test_persons_endpoints(base_url: str) -> None:
     assert s["event_id"] == 10
     assert s["face_id"] == 1
     assert s["crop_url"] == "/media/faces/1/face_10_0_0.jpg"
-    status, _b = _status_of(f"{base_url}/api/persons/999")
+    status, _b = _status_of(client, "/api/persons/999")
     assert status == 404
 
 
@@ -604,25 +592,21 @@ def test_search_semantic_with_stub(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_events_date_filter(base_url: str) -> None:
-    all_data = _get_json(f"{base_url}/api/events")
+def test_events_date_filter(client: TestClient) -> None:
+    all_data = _get_json(client, "/api/events")
     assert all_data["total"] == 4
-    before = _get_json(f"{base_url}/api/events?to=2025-08-01")
+    before = _get_json(client, "/api/events?to=2025-08-01")
     assert before["total"] == 0
-    after = _get_json(f"{base_url}/api/events?from=2025-09-21")
+    after = _get_json(client, "/api/events?from=2025-09-21")
     assert after["total"] == 4
-    range_q = _get_json(
-        f"{base_url}/api/events?from=2025-09-21&to=2025-09-23"
-    )
+    range_q = _get_json(client, "/api/events?from=2025-09-21&to=2025-09-23")
     assert range_q["total"] == 4
-    same_day = _get_json(
-        f"{base_url}/api/events?from=2025-09-22&to=2025-09-22"
-    )
+    same_day = _get_json(client, "/api/events?from=2025-09-22&to=2025-09-22")
     assert same_day["total"] == 4
 
 
-def test_days_endpoint(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/days")
+def test_days_endpoint(client: TestClient) -> None:
+    data = _get_json(client, "/api/days")
     sample = data["days"][0]
     assert "analyzed" in sample
     assert "days" in data
@@ -637,8 +621,8 @@ def test_days_endpoint(base_url: str) -> None:
         assert d["events"] >= 0
 
 
-def test_analytics_hours_endpoint(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/analytics/hours")
+def test_analytics_hours_endpoint(client: TestClient) -> None:
+    data = _get_json(client, "/api/analytics/hours")
     assert "hours" in data
     assert isinstance(data["hours"], list)
     for h in data["hours"]:
@@ -648,8 +632,8 @@ def test_analytics_hours_endpoint(base_url: str) -> None:
         assert h["count"] >= 0
 
 
-def test_analytics_locations_endpoint(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/analytics/locations")
+def test_analytics_locations_endpoint(client: TestClient) -> None:
+    data = _get_json(client, "/api/analytics/locations")
     assert "locations" in data
     assert isinstance(data["locations"], list)
     for loc in data["locations"]:
@@ -658,8 +642,8 @@ def test_analytics_locations_endpoint(base_url: str) -> None:
         assert loc["count"] >= 1
 
 
-def test_analytics_repeat_plates(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/analytics/plates")
+def test_analytics_repeat_plates(client: TestClient) -> None:
+    data = _get_json(client, "/api/analytics/plates")
     assert data["total"] == 2
     items = {i["norm_text"]: i for i in data["items"]}
     y = items["習志野5001"]
@@ -671,17 +655,17 @@ def test_analytics_repeat_plates(base_url: str) -> None:
     assert items["Y2"]["count"] == 1
 
 
-def test_search_semantic_transcripts_group(base_url: str) -> None:
-    status, _b = _status_of(f"{base_url}/api/search?q=anything")
+def test_search_semantic_transcripts_group(client: TestClient) -> None:
+    status, _b = _status_of(client, "/api/search?q=anything")
     assert status == 200
-    data = _get_json(f"{base_url}/api/search?q=anything")
+    data = _get_json(client, "/api/search?q=anything")
     assert "semantic_transcripts" in data
     assert data["semantic_transcripts"] == []
 
 
 
-def test_people_tracks_endpoint(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/people/tracks")
+def test_people_tracks_endpoint(client: TestClient) -> None:
+    data = _get_json(client, "/api/people/tracks")
     assert data["total"] == 1
     item = data["items"][0]
     assert item["job_id"] == 1
@@ -692,8 +676,8 @@ def test_people_tracks_endpoint(base_url: str) -> None:
     assert item["direction"] == "W"
 
 
-def test_person_detail_track_context(base_url: str) -> None:
-    detail = _get_json(f"{base_url}/api/persons/1")
+def test_person_detail_track_context(client: TestClient) -> None:
+    detail = _get_json(client, "/api/persons/1")
     by_event = {s["event_id"]: s for s in detail["sightings"]}
     sighting = by_event[13]
     assert sighting["track"] == {
@@ -705,8 +689,8 @@ def test_person_detail_track_context(base_url: str) -> None:
     assert by_event[10]["track"]["track_id"] == 7
 
 
-def test_job_tracks_includes_person_tracks(base_url: str) -> None:
-    data = _get_json(f"{base_url}/api/jobs/1/tracks")
+def test_job_tracks_includes_person_tracks(client: TestClient) -> None:
+    data = _get_json(client, "/api/jobs/1/tracks")
     by_id = {t["track_id"]: t for t in data["items"]}
     assert 7 in by_id
     assert by_id[7]["class_id"] != 0

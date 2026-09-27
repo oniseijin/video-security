@@ -385,8 +385,10 @@ sessions(
 
 **Removed from plan**: paddleocr (~1 GB saved), separate bytetrack, openai-whisper.
 
-**Web console (Phase 3)**: no new Python runtime deps (stdlib HTTP server).
-Node + npm are dev-only requirements for building the committed React bundle.
+**Web console (Phase 3)**: was stdlib-only; since the 2026-09-27
+FastAPI swap (Web Console → Serving), `fastapi` + `uvicorn` are runtime
+deps. Node + npm are dev-only requirements for building the committed
+React bundle.
 
 ---
 
@@ -1063,19 +1065,31 @@ plate crops on disk.
 
 ### Serving
 
-- `vs serve [--port N] [--host H] [--open]` — Python stdlib
-  `ThreadingHTTPServer`, zero new runtime deps (no FastAPI, no ORM — raw
-  `sqlite3` like the rest of the codebase)
+- `vs serve [--port N] [--host H] [--open]` — FastAPI app served by
+  uvicorn (swapped 2026-09-27, Stage 1A: the documented swap trigger —
+  first UI writes — was met). New runtime deps: `fastapi`, `uvicorn`.
+  Endpoints stay pure `(conn, cfg, params)` functions adapted to routes —
+  the swap was mechanical, no logic rewrite
 - 127.0.0.1 only, default port 8377 (`[web] host/port`), no auth — a
   loopback read-only viewer, stated plainly at startup
 - One sqlite3 connection per thread: `file:...?mode=ro` +
   `PRAGMA query_only=ON` + `busy_timeout=5000`. WAL readers coexist with
   a live analyzer run. Startup opens one short read-write connection to
   run idempotent `init_db` migrations, then closes it
-- Module layout: `web/server.py` (regex router, static bundle, SPA
-  fallback) · `web/api.py` (endpoints as `(conn, cfg, params) -> dict`
+- **Writes (Stage 1B, 2026-09-27)**: `web/writes.py` — one fresh RW
+  connection per mutation (`busy_timeout=5000`, `foreign_keys=ON`)
+  behind a process-wide `threading.Lock`, short `BEGIN IMMEDIATE`
+  transactions, commit + close per request; the per-thread ro pool
+  above is untouched. A guard refuses every mutation with 409 while
+  any job sits in a non-terminal status (terminal = `done`, `failed`)
+  — mutations and analyze batches never overlap. Endpoints are thin
+  FastAPI POST routes over the CLI's shared `identity.py`/`db.py`
+  ops; pydantic-validated bodies, errors as `{"error": ...}` JSON
+- Module layout: `web/server.py` (FastAPI adapter: routes, ApiError
+  handler, Range streaming, static bundle, SPA fallback) ·
+  `web/api.py` (endpoints as `(conn, cfg, params) -> dict`
   — no HTTP types, testable without sockets) · `web/media.py` (artifact
-  mounts, traversal guard, Range streaming) · `web/static/` (committed
+  mounts, traversal guard, Range parsing) · `web/static/` (committed
   React bundle)
 
 ### Frontend
@@ -1239,8 +1253,11 @@ self-contained sub-agent task with explicit acceptance criteria.
 Committed bundle (Node dev-only) · iframe-first with native-tab stubs →
 incremental React migration · read-only web v1 · polling not SSE ·
 cache-only geocode from the server · no raw-night backfill · port 8377 ·
-stdlib server · plate crops at analysis time + text-locate backfill ·
-track strips as new artifacts.
+stdlib server (v1) → FastAPI/uvicorn (2026-09-27, Stage 1A) · web
+write path: naming + suppress/flag on shared CLI ops (2026-09-27,
+Stage 1B) · plate
+crops at analysis time + text-locate backfill · track strips as new
+artifacts.
 
 ### v2 thoughts (future evolution)
 
@@ -1268,7 +1285,7 @@ Supporting migrations when volume justifies them: persist event
 category at write time (today computed per request + 30 s cache),
 transcript FTS5, residual plate-crop backfill retries.
 
-**When to switch to FastAPI.** The stdlib server is a deliberate v1
+**When to switch to FastAPI.** The stdlib server was a deliberate v1
 constraint, not a destination. Swap triggers — any one suffices:
 
 - Writes from the UI (reviewed/resolved flags, re-run buttons) —
@@ -1281,8 +1298,10 @@ constraint, not a destination. Swap triggers — any one suffices:
 The swap is cheap by design: `web/api.py` endpoints are pure
 `(conn, cfg, params) -> dict` functions with no HTTP types — moving
 them behind FastAPI routers is mechanical, no logic rewrite. The
-failure mode to avoid is swapping early: stdlib keeps the installer
-dependency-free while the API surface is still moving.
+failure mode to avoid is swapping early: stdlib kept the installer
+dependency-free while the API surface was still moving. Swapped
+2026-09-27 (Stage 1A below): the adapter lives in `web/server.py`,
+loopback + no-auth unchanged, read-only serving unchanged.
 
 **Other v2 candidates** (each a deliberate decision, not a default):
 live analyze dispatch from the UI (web becomes a writer — must
@@ -1304,7 +1323,29 @@ discussions) plus the pull toward GUI edits converge on a staged v2:
    mutations, TestClient tests; one RW connection behind a write lock
    with `busy_timeout`, short transactions only, never during an
    analyze batch. Still loopback, still no auth. React SPA unchanged
-   apart from react-query invalidations.
+   apart from react-query invalidations. Stage 1A (the swap itself)
+   landed 2026-09-27 read-only — FastAPI/uvicorn in, no write endpoints
+   yet; the mutations above remain. **Stage 1B shipped 2026-09-27**:
+   the write path exists — `web/writes.py` holds every mutation behind
+   `POST /api/persons` (create), `POST /api/persons/{id}/name`,
+   `POST /api/persons/merge`, `POST /api/faces/{id}/assign`
+   (`person_id` or `new_person_name`, then reconcile),
+   `POST /api/events/{id}/suppress|restore`, and
+   `POST /api/jobs/{id}/flag|unflag` (pydantic bodies, errors as
+   `{"error": ...}` JSON; person/event/job logic delegates to the same
+   `identity.py` / `db.py` helpers the CLI uses, so `vs person` and the
+   console can never diverge). Each mutation opens one fresh RW
+   connection (`busy_timeout=5000`), serializes on a process-wide write
+   lock, wraps a short `BEGIN IMMEDIATE` transaction, and closes; the
+   read pool stays query-only. A guard refuses every mutation with 409
+   while any job sits in a non-terminal status (terminal = `done`,
+   `failed`; everything else — `pending`, `extracting`, `filtering`,
+   `harvested`, `triage`, `triaged`, `detail` — counts as an active
+   batch). Loopback, no-auth, and the startup banner are unchanged.
+   UI: assign-to-person controls on face cards (persons dropdown +
+   inline new-person name), rename + confirm-step merge on person
+   pages, suppress/restore on event detail, ⚑ flag/unflag on job rows
+   and job detail — react-query invalidations only.
 2. **Stage 2 — SSE live progress** (tail a running analyze) once
    FastAPI is in; replaces 5 s polling only where it matters.
 3. **Stage 3 — deliberate extras, each its own decision**: dispatch
@@ -1496,6 +1537,8 @@ Not in scope for current phases; captured so the intent isn't lost.
   (see Web Console → v2 thoughts). **First candidate: the face/person
   naming UI** (click-to-tag, name edits, face reassignment) — deferred
   behind the CLI version; see Face naming & person management.
+  **Shipped 2026-09-27 (Stage 1B)**: naming UI + event suppress and
+  job flag writes landed on the shared CLI ops.
 - **Ultralytics → non-AGPL detector** (potential consideration — likely not
   worth the effort absent a concrete trigger): ultralytics is the only
   AGPL-3.0 component in the tree (and its yolov8n.pt weights are AGPL too;
@@ -1772,7 +1815,13 @@ tracking across jobs.
   designations. Also `vs person new [name]` mints a fresh person (split
   workflow: mint, `move` faces into it), person-page sightings now show
   face IDs, and `reconcile_persons` keeps named persons alive with zero
-  faces.
+  faces. **Update 2026-09-27 (Web console Stage 1B)**: the "web naming
+  UI out of scope" decision above is superseded — assign-to-person
+  (existing person or inline new name), rename, and merge now ship in
+  the web console on the shared `vs person` ops, with the same guard
+  rules as every Stage 1B write (see v2 reconsideration, Stage 1B).
+  The CLI remains fully equivalent; names still live in the local DB
+  only.
 - Propagation is automatic: one name covers every face in the cluster, and
   future index runs assign new faces to the nearest named cluster
   (`assign_person` at index time).
