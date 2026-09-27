@@ -1671,6 +1671,63 @@ full-archive pass (`--calibrate --limit 0`) can firm the floor
 overnight. Enabling `[crash] enabled = true` is now a
 data-supported decision pending owner sign-off.
 
+### LLM/VLM eval harness (spec 2026-09-27 — implementation in flight)
+
+Measures LLM *judgment* (triage/detail verdict quality), not plumbing
+(the mock servers already cover mechanics). `vs eval` replays the
+stored triage and detail prompt flow for labeled events against a
+chosen backend and scores the verdicts.
+
+- **Cases**: TOML, `[[case]]` = `job_id`, `event_id`, `expected`
+  (`relevant` bool, optional `event_type`, optional `confidence`
+  band), `stratum` (night/day/front/rear/person/vehicle/animal/...),
+  free-text `note`. `--cases PATH`, default
+  `~/.video-security/eval/cases.toml` — case files reference real
+  footage ids and are personal data: local-only, never committed.
+  A synthetic set (golden fixtures) ships under `tests/fixtures/`
+  for CI and as the format example. Cases grow from real mistakes:
+  every suppressed false positive / flagged miss is a candidate case.
+- **Backends**: `local` (default — mlx-serve or Ollama per config,
+  unchanged) and `cloud` (see below). `--model` overrides the stage
+  model for one run. Runner rebuilds each event's prompt context from
+  stored data (keyframes via `encode_image_jpeg`, transcript, detector
+  scores) exactly as the pipeline does — no re-analysis, no writes to
+  `events`/`analysis_results` (eval results live in the report/baseline
+  only).
+- **Scoring**: relevant/not confusion (precision/recall/F1), event-type
+  agreement, confidence-band calibration, per-stratum breakdown, and a
+  disagreement table (case, expected, got, model). Baseline JSON
+  (`--save-baseline PATH`) stores scores + model digest + date;
+  `--compare-baseline PATH` prints deltas; `--gate` turns any
+  precision/recall regression into exit 1 (default is report-only).
+- **`[cloud]` config block** (build now, serves the future escalation
+  tier too): `enabled` (**default false**), `base_url`, `model`,
+  `api_key_env` (default `VS_CLOUD_API_KEY` — the key itself lives in
+  the environment ONLY, never in any toml), `monthly_budget_usd`
+  (**default 0.0 = cloud always refused until set**),
+  `price_per_1m_input_tokens` / `price_per_1m_output_tokens` /
+  `price_per_image` for estimates. `config.example.toml` documents
+  placeholders. New `llm/cloud.py`: minimal urllib OpenAI-compatible
+  chat client (Authorization bearer, image content parts), retry/
+  timeout per the existing client patterns, `llm.make_llm_client`
+  gains a cloud branch. Cloud is **on-demand only** — reachable
+  solely via explicit `--backend cloud`; nothing in the nightly
+  pipeline ever calls it.
+- **Ledger + budget**: new `cloud_calls` table (ts, purpose, base_url,
+  model, input_tokens, output_tokens, images, est_cost_usd, ref) via
+  the idempotent `init_db` migration pattern — EVERY cloud call writes
+  a row (what left, why, cost — removals-style audit). Before any
+  call: estimated cost + current-month ledger sum must fit
+  `monthly_budget_usd`, else a clear refusal. `vs eval --backend
+  cloud` prints the run estimate (cases × (1 + keyframes) images +
+  token estimate × prices) before spending; `--dry-run` prints and
+  exits without calling.
+- **Tests**: `tests/mock_cloud.py` (tiny OpenAI-compatible
+  `/v1/chat/completions` canned-verdict server, same style as
+  mock_mlx_serve); budget refusal, ledger rows, estimate math, scorer
+  units, baseline compare, synthetic end-to-end vs golden fixtures,
+  enabled=false/key-missing refusals.
+
 ---
 
 ## Testing Strategy
