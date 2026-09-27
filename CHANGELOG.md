@@ -6,6 +6,39 @@ follow semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`vs eval` — LLM/VLM eval harness** (spec 2026-09-27): replays the
+  stored triage/detail prompt flow for labeled cases
+  (`[[case]]` TOML — job/event ids, expected verdict, stratum, note;
+  default `~/.video-security/eval/cases.toml`, local-only) against the
+  `local` or `cloud` backend and scores relevant/not confusion
+  (precision/recall/F1), event-type agreement, confidence bands, and
+  per-stratum breakdowns, with a disagreement table. Positive-expected
+  cases run both passes (triage + the primary detail call); negative
+  cases run triage only; nothing is written to
+  `events`/`analysis_results`. `--dry-run` prints the call/image/token
+  estimate and cost, then exits; `--save-baseline` writes baseline
+  JSON, `--compare-baseline` prints deltas, `--gate` exits 1 on a
+  precision/recall regression. Format example:
+  `tests/fixtures/eval_cases.toml`; mock server: `tests/mock_cloud.py`.
+- **`[cloud]` config block** (default `enabled = false`, budget $0 —
+  cloud refused until both are set): `base_url`, `model`,
+  `api_key_env` (default `VS_CLOUD_API_KEY` — the key itself lives in
+  the environment ONLY, never in any toml), per-1M-token and
+  per-image prices for estimates. New `llm/cloud.py`: minimal urllib
+  OpenAI-compatible chat client (bearer auth, image content parts,
+  transport retries per the existing client patterns);
+  `make_llm_client` gained a `backend="cloud"` branch. Cloud is
+  reachable solely via `vs eval --backend cloud` — nothing in the
+  nightly pipeline ever calls it.
+- **`cloud_calls` ledger + monthly budget cap**: every cloud call
+  inserts a row (ts, purpose, base_url, model, input/output tokens,
+  images, est cost, `job X event Y` ref) via an idempotent `init_db`
+  migration; before each call, the estimated cost plus the
+  current-month ledger sum must fit `[cloud] monthly_budget_usd`,
+  else the run is refused with the cap, spend, and estimate named.
+
 ### Changed
 
 - **Crash fusion gate tightened** per the step-1 `vs crash-scan`

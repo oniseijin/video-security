@@ -1671,12 +1671,36 @@ full-archive pass (`--calibrate --limit 0`) can firm the floor
 overnight. Enabling `[crash] enabled = true` is now a
 data-supported decision pending owner sign-off.
 
-### LLM/VLM eval harness (spec 2026-09-27 — implementation in flight)
+### LLM/VLM eval harness (implemented 2026-09-27)
 
 Measures LLM *judgment* (triage/detail verdict quality), not plumbing
 (the mock servers already cover mechanics). `vs eval` replays the
 stored triage and detail prompt flow for labeled events against a
 chosen backend and scores the verdicts.
+
+**Shipped 2026-09-27** exactly per the spec below, plus: `vs eval
+[--cases PATH] [--backend local|cloud] [--model NAME] [--limit N]
+[--dry-run] [--save-baseline PATH] [--compare-baseline PATH]
+[--gate]`; the runner rebuilds each case's context with the
+pipeline's own `load_llm_events` (evidence summary, keyframes from
+stored paths, transcript window) and writes nothing to
+`events`/`analysis_results`. Deltas from the spec as written:
+
+- positive cases run both passes but only the primary non-tiled
+  detail call — the low-confidence tile ladder is a repair path, and
+  skipping it keeps the per-run image/cost estimate exact;
+- the cloud client retries transport failures (5xx/network, per the
+  other clients) but has no JSON-repair second call — a malformed
+  verdict is a recorded case error, not a silently repeated paid
+  call;
+- budget exhaustion aborts the whole run (refusal naming the cap,
+  month spend, and per-call estimate); other per-call failures mark
+  the case as an error and the run continues;
+- a positive case is scored on its detail verdict when that call
+  succeeded, else on the triage verdict — mirroring what the pipeline
+  would have stored;
+- `--dry-run` (and the pre-run estimate) print for local too
+  ("cost: local — $0"), not just cloud.
 
 - **Cases**: TOML, `[[case]]` = `job_id`, `event_id`, `expected`
   (`relevant` bool, optional `event_type`, optional `confidence`
@@ -1816,7 +1840,8 @@ Not in scope for current phases; captured so the intent isn't lost.
     default; results labeled by model). That makes the harness the
     instrument that *measures* whether a cloud escalation tier (below)
     is worth building — data over vibes. Local-only scoring stays the
-    default and the CI path.
+    default and the CI path. **Shipped 2026-09-27: `vs eval` — see
+    Implementation Specifications.**
 - **Cloud escalation tier (proposal 2026-09-27 — conditionally
   revisits the rejected "cloud APIs" idea; not built, decision
   pending eval data)**: local stays the pipeline; a cloud VLM is an

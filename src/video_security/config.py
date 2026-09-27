@@ -61,6 +61,18 @@ class LLMConfig:
 
 
 @dataclasses.dataclass
+class CloudConfig:
+    enabled: bool = False
+    base_url: str = ""
+    model: str = ""
+    api_key_env: str = "VS_CLOUD_API_KEY"
+    monthly_budget_usd: float = 0.0
+    price_per_1m_input_tokens: float = 0.0
+    price_per_1m_output_tokens: float = 0.0
+    price_per_image: float = 0.0
+
+
+@dataclasses.dataclass
 class LLMStageConfig:
     model: str = ""
     num_ctx: int = 0
@@ -281,6 +293,7 @@ class Config:
     archive: ArchiveConfig = dataclasses.field(default_factory=ArchiveConfig)
     engine: EngineConfig = dataclasses.field(default_factory=EngineConfig)
     llm: LLMConfig = dataclasses.field(default_factory=LLMConfig)
+    cloud: CloudConfig = dataclasses.field(default_factory=CloudConfig)
     llm_triage: LLMStageConfig = dataclasses.field(
         default_factory=lambda: LLMStageConfig(model="gemma3:4b", num_ctx=2048, timeout_s=120)
     )
@@ -491,6 +504,8 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                             merged[str(provider)] = name
                     stage = dataclasses.replace(stage, models=merged)
                 kwargs[stage_attr] = stage
+        elif section == "cloud":
+            kwargs["cloud"] = _merge_dataclass(config.cloud, values, "cloud")
         elif section == "whisper":
             kwargs["whisper"] = _merge_dataclass(config.whisper, values, "whisper")
         elif section == "audio":

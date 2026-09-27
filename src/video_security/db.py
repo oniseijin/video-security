@@ -2,6 +2,7 @@ import dataclasses
 import json
 import re
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -297,6 +298,21 @@ MIGRATIONS: list[list[str]] = [
             removed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""",
         """CREATE INDEX idx_removals_hash ON removals(video_hash)""",
+    ],
+    [
+        """CREATE TABLE IF NOT EXISTS cloud_calls (
+            id INTEGER PRIMARY KEY,
+            ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            purpose TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            model TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            images INTEGER NOT NULL DEFAULT 0,
+            est_cost_usd REAL NOT NULL DEFAULT 0.0,
+            ref TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cloud_calls_ts ON cloud_calls(ts)",
     ],
 ]
 
@@ -953,6 +969,48 @@ def delete_archived_original(conn: sqlite3.Connection, job_id: int) -> None:
         "DELETE FROM archived_originals WHERE job_id = ?", (job_id,)
     )
     conn.commit()
+
+
+def insert_cloud_call(
+    conn: sqlite3.Connection,
+    purpose: str,
+    base_url: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    images: int,
+    est_cost_usd: float,
+    ref: str,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO cloud_calls "
+        "(purpose, base_url, model, input_tokens, output_tokens, images, "
+        "est_cost_usd, ref) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
+        (
+            purpose,
+            base_url,
+            model,
+            input_tokens,
+            output_tokens,
+            images,
+            est_cost_usd,
+            ref,
+        ),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.commit()
+    return int(row[0])
+
+
+def cloud_spend_month(conn: sqlite3.Connection) -> float:
+    month = datetime.now(UTC).strftime("%Y-%m")
+    row = conn.execute(
+        "SELECT COALESCE(SUM(est_cost_usd), 0.0) FROM cloud_calls "
+        "WHERE substr(ts, 1, 7) = ?",
+        (month,),
+    ).fetchone()
+    return float(row[0])
 
 
 def clip_fps(conn: sqlite3.Connection, job_id: int) -> float:

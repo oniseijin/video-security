@@ -1,0 +1,38 @@
+# Committed format example for `vs eval` case files.
+# Ids below are synthetic (tests seed matching fixtures). Real case
+# files reference real footage ids and are personal data: keep them
+# local-only (default ~/.video-security/eval/cases.toml), never commit.
+
+[[case]]
+job_id = 1
+event_id = 1
+stratum = "night"
+note = "synthetic: person at the door after hours"
+[case.expected]
+relevant = true
+event_type = "intrusion"
+confidence = "high"
+
+[[case]]
+job_id = 1
+event_id = 2
+stratum = "front"
+note = "synthetic: parked car with a known plate"
+[case.expected]
+relevant = true
+
+[[case]]
+job_id = 1
+event_id = 3
+stratum = "night"
+note = "synthetic: headlight sweep across a wall"
+[case.expected]
+relevant = false
+
+[[case]]
+job_id = 1
+event_id = 4
+stratum = "rear"
+note = "synthetic: cat trips the motion prefilter"
+[case.expected]
+relevant = false

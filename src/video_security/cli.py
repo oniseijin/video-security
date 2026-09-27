@@ -1378,6 +1378,109 @@ def crash_scan_cmd(
         conn.close()
 
 
+@app.command(name="eval")
+def eval_cmd(
+    ctx: typer.Context,
+    cases: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--cases",
+        help="TOML cases file (default ~/.video-security/eval/cases.toml)",
+    ),
+    backend: str = typer.Option("local", "--backend", help="Backend: local | cloud"),  # noqa: B008, E501
+    model: str | None = typer.Option(None, "--model", help="Override the stage model for this run"),  # noqa: B008, E501
+    limit: int | None = typer.Option(None, "--limit", help="Cap number of cases"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the cost/call estimate and exit without calling any backend"),  # noqa: B008, E501
+    save_baseline: Path | None = typer.Option(None, "--save-baseline", help="Write baseline JSON (scores, per-stratum, models, date, case count)"),  # noqa: B008, E501
+    compare_baseline: Path | None = typer.Option(None, "--compare-baseline", help="Compare against a baseline JSON and print deltas"),  # noqa: B008, E501
+    gate: bool = typer.Option(False, "--gate", help="Exit 1 if precision or recall regressed vs the compared baseline"),  # noqa: B008, E501
+) -> None:
+    from video_security import evalrun
+    from video_security.llm import make_llm_client
+    from video_security.llm.cloud import CloudError
+    from video_security.llm.ollama import OllamaError
+
+    conn, cfg = _get_db(ctx)
+    try:
+        if backend not in evalrun.BACKENDS:
+            print(
+                f"Error: --backend must be one of: {', '.join(evalrun.BACKENDS)}",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1)
+        if gate and compare_baseline is None:
+            print(
+                "Error: --gate requires --compare-baseline PATH",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1)
+        if backend == "cloud":
+            if cfg.cloud.monthly_budget_usd <= 0:
+                print(
+                    "Error: --backend cloud requires [cloud] monthly_budget_usd > 0 "
+                    "— set a monthly cap before spending",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(code=1)
+            try:
+                make_llm_client(cfg, backend="cloud")
+            except CloudError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                raise typer.Exit(code=1) from e
+        cases_path = (
+            cases
+            if cases is not None
+            else Path(evalrun.DEFAULT_CASES_PATH).expanduser()
+        )
+        case_list = evalrun.load_cases(cases_path)
+        if limit is not None:
+            case_list = case_list[:limit]
+        if not case_list:
+            print("Error: no cases to evaluate", file=sys.stderr)
+            raise typer.Exit(code=1)
+        print(evalrun.format_estimate(conn, cfg, case_list, backend))
+        if dry_run:
+            return
+
+        def _on_result(r: evalrun.CaseResult) -> None:
+            if r.got_relevant is None:
+                print(f"  {r.case.ref}: error — {r.error}")
+            else:
+                print(
+                    f"  {r.case.ref}: relevant={str(r.got_relevant).lower()} "
+                    f"{r.got_event_type}/{r.got_confidence} ({r.got_stage})"
+                )
+
+        print(f"evaluating {len(case_list)} case(s) against {backend} backend")
+        report = evalrun.run_eval(
+            conn,
+            cfg,
+            case_list,
+            backend=backend,
+            model_override=model,
+            on_result=_on_result,
+        )
+        print(evalrun.format_report(report))
+        if save_baseline is not None:
+            evalrun.save_baseline(report, save_baseline)
+            print(f"baseline saved: {save_baseline}")
+        if compare_baseline is not None:
+            baseline_data = evalrun.load_baseline(compare_baseline)
+            print(evalrun.format_baseline_compare(report, baseline_data))
+            if gate:
+                if evalrun.gate_regressed(baseline_data, report.scores):
+                    print(
+                        "gate: precision or recall regressed vs baseline",
+                        file=sys.stderr,
+                    )
+                    raise typer.Exit(code=1)
+                print("gate: no precision/recall regression vs baseline")
+    except (evalrun.CasesError, CloudError, OllamaError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
+    finally:
+        conn.close()
+
+
 @app.command(name="config")
 def config_cmd(ctx: typer.Context) -> None:
     cfg: Config = ctx.obj["config"]

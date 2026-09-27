@@ -68,6 +68,23 @@ timeout_s = 120
 [llm.detail.models]
 # "mlx-serve" = "mlx-community/gemma-4-12b-it-4bit"
 
+[cloud]
+# Opt-in OpenAI-compatible cloud endpoint (eval comparison via
+# `vs eval --backend cloud`; nothing in the nightly pipeline ever calls
+# it). Disabled and capped at $0 by default — cloud is refused until
+# both are set.
+enabled = false
+# base_url = "https://api.example.com"  (endpoint root; client posts to {base_url}/v1/chat/completions)
+# model = ""
+# The API key lives in the environment ONLY, never in any toml file:
+#   export VS_CLOUD_API_KEY="..."
+# api_key_env = "VS_CLOUD_API_KEY"  (name of the env var holding the key)
+monthly_budget_usd = 0.0
+# Prices for the per-call cost estimate and the cloud_calls ledger:
+price_per_1m_input_tokens = 0.0
+price_per_1m_output_tokens = 0.0
+price_per_image = 0.0
+
 [whisper]
 model = "small"
 # language = "ja"  (pin if monolingual)
