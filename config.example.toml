@@ -144,5 +144,5 @@ min_signals = 2
 [web]
 host = "127.0.0.1"
 port = 8377
-# native_report = true  (optional — Report tab renders native React panels instead of
-#                         the iframe report; A/B parity track, flip in local config + reload)
+# native_report = false  (optional — set false for the classic iframe Report tab; the
+#                         native React report is the default since v0.14.0)

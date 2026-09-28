@@ -28,15 +28,13 @@ batches run. No personal data in this file (counts and commands only).
   `VS_CLOUD_API_KEY`) and `--compare-baseline` vs the local run. The
   night-stratum delta decides the cloud escalation tier. Ledger starts
   at $0 (2026-09-27).
-- [ ] **Native report viewer parity review** (branch `native-report`,
-  built 2026-09-28, ready for A/B): A/B the native React report vs the
-  iframe report behind `[web] native_report = true` (flip in local
-  config + reload; served via `/api/config`, no rebuild) — parity
-  checklist status in DESIGN → v2 thoughts → Fully dynamic report.
-  Decide: merge, iterate, or drop.
 
 ## Reviewed / closed
 
+- 2026-09-28 — native report viewer parity review: owner A/B (classic
+  iframe on 8377 vs native React on 8378, same DB) — native signed
+  off; merged to main, default on from v0.14.0. Classic iframe stays
+  as the opt-out (`native_report = false`) and print/export path.
 - 2026-09-27 — index-faces archive re-run: validated; 66 faces / 38
   events / 2 clusters is the steady state (no new faces exist in the
   archive). Closed without action.

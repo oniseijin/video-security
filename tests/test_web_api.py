@@ -443,7 +443,7 @@ def test_report_404_is_json(client: TestClient) -> None:
 
 def test_app_config_default_null_key(client: TestClient) -> None:
     data = _get_json(client, "/api/config")
-    assert data == {"carto_api_key": None, "native_report": False}
+    assert data == {"carto_api_key": None, "native_report": True}
 
 
 def test_app_config_native_report(tmp_path: Path) -> None:
@@ -454,11 +454,11 @@ def test_app_config_native_report(tmp_path: Path) -> None:
     cfg = Config()
     cfg.storage.db_path = str(db_path)
     cfg.storage.artifact_dir = str(tmp_path / "artifacts")
-    cfg.web.native_report = True
+    cfg.web.native_report = False
     app = TestClient(create_app(cfg))
     resp = app.get("/api/config")
     assert resp.status_code == 200
-    assert resp.json() == {"carto_api_key": None, "native_report": True}
+    assert resp.json() == {"carto_api_key": None, "native_report": False}
 
 
 def test_faces_gallery(client: TestClient) -> None:

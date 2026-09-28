@@ -144,7 +144,7 @@ native_report = true
     defaults = load_config()
     assert defaults.map.carto_api_key is None
     assert defaults.web.port == 8377
-    assert defaults.web.native_report is False
+    assert defaults.web.native_report is True
 
 
 def test_web_native_report_rejects_non_bool(tmp_path: Path) -> None:

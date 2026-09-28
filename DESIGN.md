@@ -1345,6 +1345,9 @@ iframe tab exactly as it was. Parity checklist status:
   export path)
 Deferred to the owner A/B: visual sign-off vs the iframe and the
 merge/iterate/drop decision (REVIEW.md tracks it).
+DECIDED (2026-09-28): owner A/B passed — branch merged to main and
+`[web] native_report` defaults to true from v0.14.0. The iframe
+stays as the opt-out, deep-link, and print/export path.
 
 Supporting migrations when volume justifies them: persist event
 category at write time (today computed per request + 30 s cache),
