@@ -530,7 +530,7 @@ carto_api_key = null                                # optional CARTO basemap key
 [web]
 host = "127.0.0.1"                                  # vs serve binding (loopback only)
 port = 8377
-native_report = false                               # Report tab as native React panels (iframe fallback)
+native_report = true                                # Report tab renders native React panels (set false for the classic iframe report)
 
 [repair]
 untrunc_path = null                                 # absolute untrunc path; default: PATH, then ~/.local/bin/untrunc
@@ -1860,7 +1860,13 @@ Not in scope for current phases; captured so the intent isn't lost.
     `analysis_results` rows with model, prompt version, timestamp) and
     a Provenance panel in EventDetail; per-frame prefilter verdicts and
     run-time thresholds are not persisted, so the panel shows the job
-    evidence summary instead.
+    evidence summary instead. **Shipped 2026-09-28**: evidence links —
+    crash signal hit times and the crash window line link to the job
+    Playback tab seeked to that second (`/jobs/{id}/playback?t=`;
+    DualPlayer `initialTime` positions both players, no autoplay), and
+    prefilter counts link to their job tabs
+    (captures/tracks/plates/faces/map). No API changes — the payload
+    already carried job ids and hit times in the playback time base.
   - Keyframe image-similarity search (Frigate Explore-style: CLIP-family
     embeddings over keyframes, text query + find-similar, pure
     SQLite/numpy scan) — adjacent to the rejected vector-DB idea;
