@@ -4,6 +4,24 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [0.14.0] - 2026-09-28
+
+### Added
+
+- **Native report view (default on)** — the Report tab now renders a
+  native React document composing the promoted panels in report.py's
+  section order — header (job meta) → summary → timeline → location
+  track → keyframes → plates → transcript terminal → driving log —
+  reusing existing read endpoints only (no new API surface).
+  Cross-link navigation (event → EventDetail, plate → PlateDetail,
+  person chip → PersonDetail, vehicle → TrackDetail), shared Lightbox
+  (zoom/pan + face boxes at all zoom levels), theme tile sync, and a
+  "classic report" link for print/export (`report.py` stays the
+  export renderer). `[web] native_report` (default `true` since this
+  release) toggles the mode via `/api/config`; `false` restores the
+  classic iframe tab, which remains the deep-link and print/export
+  path. Owner A/B (iframe vs native, same DB) settled for native.
+
 ## [0.13.0] - 2026-09-28
 
 ### Added
