@@ -133,15 +133,25 @@ carto_api_key = "cb1_test_key"
 
 [web]
 port = 9000
+native_report = true
 """)
     cfg = load_config(toml_file)
     assert cfg.map.carto_api_key == "cb1_test_key"
     assert cfg.web.port == 9000
     assert cfg.web.host == "127.0.0.1"  # not overridden
+    assert cfg.web.native_report is True
 
     defaults = load_config()
     assert defaults.map.carto_api_key is None
     assert defaults.web.port == 8377
+    assert defaults.web.native_report is False
+
+
+def test_web_native_report_rejects_non_bool(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text('[web]\nnative_report = "yes"\n')
+    with pytest.raises(ConfigError):
+        load_config(toml_file)
 
 
 def test_unknown_keys_ignored(tmp_path: Path) -> None:

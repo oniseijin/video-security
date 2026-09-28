@@ -50,7 +50,10 @@ def health(
 def app_config(
     conn: sqlite3.Connection, cfg: Config, params: dict[str, Any]
 ) -> dict[str, Any]:
-    return {"carto_api_key": cfg.map.carto_api_key}
+    return {
+        "carto_api_key": cfg.map.carto_api_key,
+        "native_report": cfg.web.native_report,
+    }
 
 
 def stats_payload(conn: sqlite3.Connection, cfg: Config) -> dict[str, Any]:

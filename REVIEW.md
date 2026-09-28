@@ -29,9 +29,11 @@ batches run. No personal data in this file (counts and commands only).
   night-stratum delta decides the cloud escalation tier. Ledger starts
   at $0 (2026-09-27).
 - [ ] **Native report viewer parity review** (branch `native-report`,
-  built 2026-09-28): A/B the native React report vs the iframe report
-  behind `[web] native_report = true` — parity checklist in DESIGN →
-  v2 thoughts → Fully dynamic report. Decide: merge, iterate, or drop.
+  built 2026-09-28, ready for A/B): A/B the native React report vs the
+  iframe report behind `[web] native_report = true` (flip in local
+  config + reload; served via `/api/config`, no rebuild) — parity
+  checklist status in DESIGN → v2 thoughts → Fully dynamic report.
+  Decide: merge, iterate, or drop.
 
 ## Reviewed / closed
 

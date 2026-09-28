@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
+import { fetchAppConfig } from "../../api"
+import type { AppConfig, JobDetail as JobDetailData } from "../../api"
+import { TerminalNote } from "../../components/TerminalNote"
+import { ReportView } from "../ReportView"
 import { themeAttr } from "../../theme"
 
 function syncFrame(frame: HTMLIFrameElement | null): void {
@@ -27,7 +32,7 @@ function syncFrame(frame: HTMLIFrameElement | null): void {
   )
 }
 
-export function ReportTab({ jobId }: { jobId: number }) {
+function ClassicReportFrame({ jobId }: { jobId: number }) {
   const [searchParams] = useSearchParams()
   const event = searchParams.get("event")
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -69,4 +74,19 @@ export function ReportTab({ jobId }: { jobId: number }) {
       </p>
     </section>
   )
+}
+
+export function ReportTab({ jobId, job }: { jobId: number; job: JobDetailData }) {
+  const { data: appConfig, isPending } = useQuery<AppConfig, Error>({
+    queryKey: ["app-config"],
+    queryFn: fetchAppConfig,
+    staleTime: Infinity,
+  })
+  if (isPending) {
+    return <TerminalNote>querying /api/config ...</TerminalNote>
+  }
+  if (appConfig?.native_report) {
+    return <ReportView job={job} />
+  }
+  return <ClassicReportFrame jobId={jobId} />
 }

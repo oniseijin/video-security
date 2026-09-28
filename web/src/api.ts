@@ -414,6 +414,7 @@ export function fetchJobTranscript(id: number): Promise<JobTranscriptPage> {
 
 export interface AppConfig {
   carto_api_key: string | null
+  native_report: boolean
 }
 
 export function fetchAppConfig(): Promise<AppConfig> {

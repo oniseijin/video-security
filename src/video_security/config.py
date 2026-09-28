@@ -164,6 +164,7 @@ class MapConfig:
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8377
+    native_report: bool = False
 
 
 @dataclasses.dataclass

@@ -530,6 +530,7 @@ carto_api_key = null                                # optional CARTO basemap key
 [web]
 host = "127.0.0.1"                                  # vs serve binding (loopback only)
 port = 8377
+native_report = false                               # Report tab as native React panels (iframe fallback)
 
 [repair]
 untrunc_path = null                                 # absolute untrunc path; default: PATH, then ~/.local/bin/untrunc
@@ -1315,6 +1316,35 @@ migration scaffold. Suggested ordering:
    React
 5. The iframe route remains afterward for deep links and print;
    deprecate only if maintaining both proves costlier than it saves
+
+STATUS (2026-09-28): steps 2-3 are built on branch `native-report`
+(anchored at v0.13.0). `web/src/routes/ReportView.tsx` composes the
+promoted panels into one scrollable document mirroring report.py's
+section order — header (job meta) → summary → timeline → location
+track → keyframes → plates → transcript terminal → driving log —
+reusing the existing read endpoints only (no new API surface).
+Switch mechanism: `[web] native_report` (default false), exposed via
+`/api/config`; the Report tab picks the mode from that response, so
+flipping the toggle in local config and reloading is enough — no
+rebuild. Toggle off (or `/api/config` failing) keeps the classic
+iframe tab exactly as it was. Parity checklist status:
+- lightbox zoom/pan + face boxes at all zooms — implemented (shared
+  Lightbox on keyframes; plate crops open their source frame)
+- ken chips — implemented (person name chips on keyframe designations,
+  from job-face groups, linking to PersonDetail; plate ken chips in
+  the plates section)
+- theme tile swap — implemented (same React tree; TrackMap follows
+  `data-theme` directly, no postMessage)
+- transcript terminal — implemented (report.py's `>` prompt +
+  start-end stamp formatting)
+- cross-link navigation — implemented (event → EventDetail, plate →
+  PlateDetail, person chip → PersonDetail, vehicle → TrackDetail) —
+  the native advantage
+- print/export — NOT reimplemented by design; a "classic report"
+  link points at `/api/jobs/{id}/report.html` (report.py stays the
+  export path)
+Deferred to the owner A/B: visual sign-off vs the iframe and the
+merge/iterate/drop decision (REVIEW.md tracks it).
 
 Supporting migrations when volume justifies them: persist event
 category at write time (today computed per request + 30 s cache),

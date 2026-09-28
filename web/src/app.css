@@ -1016,3 +1016,30 @@ a.count-chip:hover {
 .saved-search-delete:hover {
   color: var(--vs-threat);
 }
+
+.kf-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.kf-stack .kf-wrap {
+  position: relative;
+  display: inline-block;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.kf-stack .kf-wrap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  cursor: zoom-in;
+}
+
+.plate-crops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}

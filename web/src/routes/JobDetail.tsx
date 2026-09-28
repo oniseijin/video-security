@@ -188,7 +188,7 @@ export function JobDetail() {
           </Link>
         ))}
       </nav>
-      {active === "report" ? <ReportTab jobId={jobId} /> : null}
+      {active === "report" ? <ReportTab job={data} jobId={jobId} /> : null}
       {active === "events" ? <EventsTab jobId={jobId} /> : null}
       {active === "captures" ? <CapturesTab jobId={jobId} /> : null}
       {active === "faces" ? <FacesTab jobId={jobId} /> : null}
