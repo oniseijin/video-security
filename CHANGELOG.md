@@ -4,6 +4,21 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **Provenance evidence links (EventDetail)** — crash signal hits and
+  prefilter counts in the Provenance panel are now clickable. Every
+  crash hit time (jolt @t, audio transient window, speed drop / bearing
+  snap @t) and the crash window line link to the job's Playback tab
+  seeked to that second (`/jobs/{id}/playback?t=…`, playhead positioned
+  only — no autoplay); the prefilter counts (frames / tracks / plates /
+  faces / gps) link to the corresponding job tabs. Lets crash-candidate
+  suppress/restore judgments be made against the actual footage. No API
+  changes — the provenance payload already carried job ids and hit
+  times in the playback time base.
+
 ## [0.14.0] - 2026-09-28
 
 ### Added

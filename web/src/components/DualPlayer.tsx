@@ -16,12 +16,13 @@ interface DualPlayerProps {
   frontSrc: string
   rearSrc: string | null
   events: PlayTick[]
+  initialTime?: number
 }
 
 const SYNC_INTERVAL_MS = 250
 const DRIFT_SEC = 0.25
 
-export function DualPlayer({ jobId, frontSrc, rearSrc, events }: DualPlayerProps) {
+export function DualPlayer({ jobId, frontSrc, rearSrc, events, initialTime }: DualPlayerProps) {
   const frontRef = useRef<HTMLVideoElement>(null)
   const rearRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -39,6 +40,18 @@ export function DualPlayer({ jobId, frontSrc, rearSrc, events }: DualPlayerProps
     }
     setCurrent(t)
   }
+
+  const seekInitial = (t: number | undefined) => {
+    if (t === undefined || !Number.isFinite(t)) {
+      return
+    }
+    const dur = frontRef.current?.duration
+    seek(typeof dur === "number" && Number.isFinite(dur) ? Math.min(t, dur) : t)
+  }
+
+  useEffect(() => {
+    seekInitial(initialTime)
+  }, [initialTime])
 
   useEffect(() => {
     if (!playing) {
@@ -86,7 +99,10 @@ export function DualPlayer({ jobId, frontSrc, rearSrc, events }: DualPlayerProps
             preload="metadata"
             ref={frontRef}
             src={frontSrc}
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+            onLoadedMetadata={(e) => {
+              setDuration(e.currentTarget.duration)
+              seekInitial(initialTime)
+            }}
             onEnded={() => {
               rearRef.current?.pause()
               setPlaying(false)

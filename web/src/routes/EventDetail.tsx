@@ -1,3 +1,5 @@
+import { Fragment } from "react"
+import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import {
@@ -76,31 +78,60 @@ function verdictLine(stage: string, v: ProvenanceVerdict) {
   )
 }
 
-function crashSignalLine(sig: string, hits: CrashSignalProvenance["hits"], thr: Record<string, number>) {
+function hitTimeLink(jobId: number, t: number | undefined, label: string) {
+  if (t === undefined || !Number.isFinite(t)) {
+    return label
+  }
+  return (
+    <Link className="job-link" to={`/jobs/${jobId}/playback?t=${t}`}>
+      {label}
+    </Link>
+  )
+}
+
+function crashSignalLine(
+  jobId: number,
+  sig: string,
+  hits: CrashSignalProvenance["hits"],
+  thr: Record<string, number>,
+) {
   const items = hits[sig] || []
   if (items.length === 0) {
     return `${sig}: no hit`
   }
-  const details = items
-    .map((h) => {
-      if (sig === "J" && h.spike_px !== undefined) {
-        return `spike ${h.spike_px}px vs baseline ${h.baseline_px}px @${h.time_sec}s`
-      }
-      if (sig === "A" && h.start_sec !== undefined) {
-        return `transient ${h.start_sec}\u2013${h.end_sec}s`
-      }
-      if (sig === "S" && h.drop_kmh !== undefined && h.drop_kmh > 0) {
-        return `-${h.drop_kmh} km/h @${h.time_sec}s (${h.rule})`
-      }
-      if (sig === "S") {
-        return `bearing snap @${h.time_sec}s`
-      }
-      return h.rule || sig
-    })
-    .join(" · ")
+  const details = items.map((h, i) => {
+    const parts: ReactNode[] = []
+    if (sig === "J" && h.spike_px !== undefined) {
+      parts.push(`spike ${h.spike_px}px vs baseline ${h.baseline_px}px `)
+      parts.push(hitTimeLink(jobId, h.time_sec, `@${h.time_sec}s`))
+    } else if (sig === "A" && h.start_sec !== undefined) {
+      parts.push("transient ")
+      parts.push(hitTimeLink(jobId, h.start_sec, `${h.start_sec}\u2013${h.end_sec}s`))
+    } else if (sig === "S" && h.drop_kmh !== undefined && h.drop_kmh > 0) {
+      parts.push(`-${h.drop_kmh} km/h `)
+      parts.push(hitTimeLink(jobId, h.time_sec, `@${h.time_sec}s`))
+      parts.push(` (${h.rule})`)
+    } else if (sig === "S") {
+      parts.push("bearing snap ")
+      parts.push(hitTimeLink(jobId, h.time_sec, `@${h.time_sec}s`))
+    } else {
+      parts.push(h.rule || sig)
+    }
+    return (
+      <Fragment key={i}>
+        {i > 0 ? " · " : ""}
+        {parts}
+      </Fragment>
+    )
+  })
   const sigma =
     sig === "J" ? ` (σ ${thr.jolt_sigma ?? "?"}×)` : sig === "A" ? ` (σ ${thr.audio_sigma ?? "?"}×)` : ""
-  return `${sig}: ${details}${sigma}`
+  return (
+    <>
+      {sig}: {details}
+      {sigma}
+    </>
+  )
 }
 
 function Provenance({ eventId }: { eventId: number }) {
@@ -126,22 +157,57 @@ function Provenance({ eventId }: { eventId: number }) {
     faces?: number
     gps_samples?: number
   } | null
-  const prefilterBits: string[] = []
+  const prefilterBits: ReactNode[] = []
   if (ev) {
     if (typeof ev.frames_kept === "number") {
-      prefilterBits.push(`frames ${ev.frames_kept}`)
+      prefilterBits.push(
+        <>
+          frames{" "}
+          <Link className="job-link" to={`/jobs/${data.job_id}/captures`}>
+            {ev.frames_kept}
+          </Link>
+        </>,
+      )
     }
     if (Array.isArray(ev.vehicle_tracks)) {
-      prefilterBits.push(`tracks ${ev.vehicle_tracks.length}`)
+      prefilterBits.push(
+        <>
+          tracks{" "}
+          <Link className="job-link" to={`/jobs/${data.job_id}/tracks`}>
+            {ev.vehicle_tracks.length}
+          </Link>
+        </>,
+      )
     }
     if (Array.isArray(ev.plates)) {
-      prefilterBits.push(`plates ${ev.plates.length}`)
+      prefilterBits.push(
+        <>
+          plates{" "}
+          <Link className="job-link" to={`/jobs/${data.job_id}/plates`}>
+            {ev.plates.length}
+          </Link>
+        </>,
+      )
     }
     if (typeof ev.faces === "number") {
-      prefilterBits.push(`faces ${ev.faces}`)
+      prefilterBits.push(
+        <>
+          faces{" "}
+          <Link className="job-link" to={`/jobs/${data.job_id}/faces`}>
+            {ev.faces}
+          </Link>
+        </>,
+      )
     }
     if (typeof ev.gps_samples === "number") {
-      prefilterBits.push(`gps ${ev.gps_samples}`)
+      prefilterBits.push(
+        <>
+          gps{" "}
+          <Link className="job-link" to={`/jobs/${data.job_id}/map`}>
+            {ev.gps_samples}
+          </Link>
+        </>,
+      )
     }
   }
   const d = data.detector
@@ -162,19 +228,30 @@ function Provenance({ eventId }: { eventId: number }) {
         <p>
           <span className="ts">[prefilter]</span>{" "}
           {prefilterBits.length > 0
-            ? prefilterBits.join(" · ")
+            ? prefilterBits.map((bit, i) => (
+                <Fragment key={i}>
+                  {i > 0 ? " · " : ""}
+                  {bit}
+                </Fragment>
+              ))
             : "no job prefilter evidence recorded"}
         </p>
         {data.crash ? (
           <>
             <p>
               <span className="ts">[crash]</span> rule {data.crash.rule} ·{" "}
-              {data.crash.start_sec.toFixed(1)}–{data.crash.end_sec.toFixed(1)}s
+              {data.crash.start_sec.toFixed(1)}–{data.crash.end_sec.toFixed(1)}s{" "}
+              <Link
+                className="job-link"
+                to={`/jobs/${data.job_id}/playback?t=${data.crash.start_sec}`}
+              >
+                ▶ playback @ {data.crash.start_sec.toFixed(1)}s
+              </Link>
             </p>
             {data.crash.signals.map((sig) => (
               <p key={sig}>
                 <span className="ts">[crash]</span>{" "}
-                {crashSignalLine(sig, data.crash!.hits, data.crash!.thresholds)}
+                {crashSignalLine(data.job_id, sig, data.crash!.hits, data.crash!.thresholds)}
               </p>
             ))}
           </>

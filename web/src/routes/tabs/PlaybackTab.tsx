@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { fetchJobDetail, fetchJobEvents } from "../../api"
 import type { JobDetail as JobDetailData, JobEventsPage } from "../../api"
 import { DualPlayer } from "../../components/DualPlayer"
@@ -25,6 +25,10 @@ export function PlaybackTab({ job }: { job: JobDetailData }) {
     queryKey: ["job-events", jobId],
     queryFn: () => fetchJobEvents(jobId),
   })
+  const [searchParams] = useSearchParams()
+  const rawT = searchParams.get("t")
+  const parsedT = rawT === null || rawT === "" ? Number.NaN : Number(rawT)
+  const initialTime = Number.isFinite(parsedT) ? parsedT : undefined
   const pairQuery = useQuery<JobDetailData, Error>({
     queryKey: ["job", pairId],
     queryFn: () => fetchJobDetail(pairId ?? 0),
@@ -82,7 +86,13 @@ export function PlaybackTab({ job }: { job: JobDetailData }) {
           events error: {eventsQuery.error.message}
         </TerminalNote>
       ) : (
-        <DualPlayer events={ticks} frontSrc={frontSrc} jobId={jobId} rearSrc={rearSrc} />
+        <DualPlayer
+          events={ticks}
+          frontSrc={frontSrc}
+          initialTime={initialTime}
+          jobId={jobId}
+          rearSrc={rearSrc}
+        />
       )}
       <div className="chip-row">
         {Object.entries(job.event_types).map(([type, count]) => (
