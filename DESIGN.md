@@ -1703,6 +1703,10 @@ requirement carries the discrimination. The sample is small; a
 full-archive pass (`--calibrate --limit 0`) can firm the floor
 overnight. Enabling `[crash] enabled = true` is now a
 data-supported decision pending owner sign-off.
+**Enabled 2026-09-28** (owner sign-off; first live batch = that
+night's sweep, tuned code defaults kept). Candidate review: Events
+filtered to type=crash → EventDetail Provenance panel ([crash] rule
++ per-signal hits vs thresholds) → per-event suppress.
 
 ### LLM/VLM eval harness (implemented 2026-09-27)
 

@@ -6,11 +6,15 @@ batches run. No personal data in this file (counts and commands only).
 
 ## Pending
 
-- [ ] **Crash detection enable** (data-supported since 2026-09-27):
-  tuned gate re-scan = 14 would-fire / 6 insufficient of 20 EVENT
-  clips; calibration over 45 NORMAL clips = 0 no-G false-fires.
-  Action: set `[crash] enabled = true` in the local config; review
-  crash candidates in the Provenance panel after the next batch.
+- [ ] **Crash candidate review** (first live batch after the
+  2026-09-28 enable — check the morning after a sweep): filter
+  Events by type=crash, open each candidate's EventDetail Provenance
+  panel ([crash] rule + per-signal hit values vs thresholds; G needs
+  a confirmer among J / A-confirm / S — door slams, hard braking,
+  and potholes are the known impostors), suppress false positives
+  per-event (RESTORE exists for regret). Calibration floor: 0 no-G
+  false-fires over 45 NORMAL clips; tuned re-scan = 14 would-fire of
+  20 old EVENT clips.
   Ref: DESIGN → Crash detection → Re-validation 2026-09-27.
 - [ ] **Intrusion-candidate review** (grew with each batch — refresh
   before starting): 2026-09-28 count = 790 unsuppressed priority-0.9
@@ -31,6 +35,9 @@ batches run. No personal data in this file (counts and commands only).
 
 ## Reviewed / closed
 
+- 2026-09-28 — crash detection enable: owner signed off; `[crash]
+  enabled = true` set in local config, tuned code defaults kept.
+  Follow-up review of live candidates now in Pending.
 - 2026-09-28 — native report viewer parity review: owner A/B (classic
   iframe on 8377 vs native React on 8378, same DB) — native signed
   off; merged to main, default on from v0.14.0. Classic iframe stays
