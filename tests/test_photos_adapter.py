@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +130,7 @@ def test_run_import_photos_end_to_end(
             ["uuid-cloud", None, "2026-09-02T10:00:00", False],
         ],
     )
+    import_date_before = datetime.now(UTC).strftime("%Y%m%d")
     report = run_import(lib, cfg, db_conn)
     assert report.imported == 1
     assert report.skipped_cloud == 1
@@ -141,7 +142,10 @@ def test_run_import_photos_end_to_end(
 
     clips_dir = tmp_path / "artifacts" / "clips"
     date_dir = next(iter(clips_dir.iterdir()))
-    assert date_dir.name == f"{datetime.now().strftime('%Y%m%d')}"
+    assert date_dir.name in {
+        import_date_before,
+        datetime.now(UTC).strftime("%Y%m%d"),
+    }
     dest = date_dir / "PHOTOS" / "front" / "IMG_1.MOV"
     assert dest.is_file()
     assert dest.read_bytes() == Path(v1).read_bytes()
@@ -168,7 +172,7 @@ def test_run_import_collision_renames(
     _seam_env(monkeypatch, [["uuid-1", v, "2026-09-01T10:00:00", False]])
 
     clips_dir = tmp_path / "artifacts" / "clips"
-    date_dir = clips_dir / datetime.now().strftime("%Y%m%d") / "PHOTOS" / "front"
+    date_dir = clips_dir / datetime.now(UTC).strftime("%Y%m%d") / "PHOTOS" / "front"
     date_dir.mkdir(parents=True)
     (date_dir / "IMG_DUP.MOV").write_bytes(b"existing-different-content")
 
