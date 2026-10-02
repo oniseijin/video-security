@@ -135,3 +135,69 @@ def test_garbage_file(config: Config, tmp_path: Path) -> None:
     p.write_bytes(b"not a video")
     with pytest.raises(IngestError):
         list(iter_frames(p, config))
+
+def test_iter_frames_survives_chatty_stderr(tmp_path: Path, monkeypatch) -> None:
+    """P0 regression: with stderr=PIPE and only stdout drained, a chatty
+    decode-error stream (>64 KiB) deadlocks the stdout read forever. The
+    decode must complete (stderr is discarded)."""
+    import os
+    import threading
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ffprobe = bin_dir / "ffprobe"
+    ffprobe.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "json.dump({'streams': [{'codec_type': 'video', 'width': 64,\n"
+        "    'height': 64, 'r_frame_rate': '30/1', 'duration': '1.0',\n"
+        "    'nb_frames': '60'}]}, sys.stdout)\n"
+    )
+    tw = Config().prefilter.decode_width
+    th = int(round(tw * 64 / 64 / 2.0)) * 2
+    frame_bytes = tw * th * 3
+    ffmpeg = bin_dir / "ffmpeg"
+    ffmpeg.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "# flood stderr far past the 64 KiB pipe buffer\n"
+        "sys.stderr.write('e' * 200000)\n"
+        "sys.stdout.buffer.write(b'\\x00' * (%d))\n" % (frame_bytes * 2)
+    )
+    for p in (ffprobe, ffmpeg):
+        p.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ["PATH"])
+
+    outcome: dict = {}
+
+    def run() -> None:
+        try:
+            outcome["frames"] = len(list(iter_frames(tmp_path / "x.mp4", Config())))
+        except Exception as e:  # pragma: no cover - failure detail
+            outcome["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout=60)
+    assert not t.is_alive(), "iter_frames wedged — stderr pipe deadlock regression"
+    assert "error" not in outcome, outcome.get("error")
+    assert outcome.get("frames") == 1  # first frame kept, second has no motion
+
+
+def test_iter_frames_rejects_zero_fps(tmp_path: Path, monkeypatch) -> None:
+    """fps 0/1 must fail the job (IngestError), not ZeroDivisionError the sweep."""
+    import os
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "ffprobe").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "json.dump({'streams': [{'codec_type': 'video', 'width': 64,\n"
+        "    'height': 64, 'r_frame_rate': '0/1', 'duration': '1.0',\n"
+        "    'nb_frames': '30'}]}, sys.stdout)\n"
+    )
+    os.chmod(bin_dir / "ffprobe", 0o755)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ["PATH"])
+    with pytest.raises(IngestError, match="fps"):
+        list(iter_frames(tmp_path / "x.mp4", Config()))

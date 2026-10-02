@@ -309,3 +309,96 @@ def test_mark_failed_returns_to_phase_rest(tmp_path: Path) -> None:
     assert row is not None and row["status"] == "triaged"
     assert row["attempts"] == 1
     conn.close()
+
+
+def test_claim_next_job_skips_ids(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    j1 = create_job(conn, "/v/1.mp4", "h1")
+    j2 = create_job(conn, "/v/2.mp4", "h2")
+    conn.close()
+    claimed = engine.claim_next_job(skip_ids={j1.id})
+    assert claimed is not None
+    assert claimed.id == j2.id
+    assert engine.claim_next_job(skip_ids={j1.id, j2.id}) is None
+
+
+def test_requeue_job_restores_entry_status_without_attempts(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/r.mp4", "hr")
+    conn.close()
+    claimed = engine.claim_next_job(phase=1)
+    assert claimed is not None and claimed.status == "extracting"
+    engine.requeue_job(job.id)
+    conn = engine._connect()
+    row = conn.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row is not None and row["status"] == "pending"
+    assert row["attempts"] == 0
+    conn.close()
+
+
+def test_update_job_status_success_resets_attempts(tmp_path: Path) -> None:
+    from video_security.db import update_job_status
+
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/s.mp4", "hs")
+    conn.close()
+    engine.mark_failed(job.id)
+    conn = engine._connect()
+    row = conn.execute("SELECT attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
+    assert row is not None and row["attempts"] == 1
+    update_job_status(conn, job.id, "harvested")
+    row = conn.execute("SELECT attempts FROM jobs WHERE id = ?", (job.id,)).fetchone()
+    assert row is not None and row["attempts"] == 0
+    conn.close()
+
+
+def test_check_disk_watermark_raises_watermark_error() -> None:
+    from video_security.engine import (
+        WatermarkError,
+        check_disk_watermark_once,
+        set_watermark_config,
+    )
+
+    set_watermark_config(10**9)  # 1 TB free required — always breached
+    try:
+        with pytest.raises(WatermarkError):
+            check_disk_watermark_once()
+    finally:
+        set_watermark_config(None)
+    # no watermark configured -> no-op
+    check_disk_watermark_once()
+
+
+def test_delete_job_rows_cleans_embeddings(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    engine = BatchEngine(config)
+    conn = engine._connect()
+    job = create_job(conn, "/v/e.mp4", "he")
+    event_id = insert_event(conn, job.id, "motion", 0.0, 1.0, 1, None, "[]", 0.9, 0.5)
+    insert_transcript_segment(conn, job.id, 1, 1, 0.0, 1.0, "hello", None)
+    conn.execute(
+        "INSERT INTO event_embeddings (event_id, embedding, model) VALUES (?, ?, ?)",
+        (event_id, b"\x00" * 8, "test-model"),
+    )
+    conn.execute(
+        "INSERT INTO transcript_embeddings "
+        "(job_id, clip_id, segment_id, text, embedding, model) VALUES (?,?,?,?,?,?)",
+        (job.id, 1, 1, "hello", b"\x00" * 8, "test-model"),
+    )
+    conn.commit()
+    delete_job_rows(conn, job.id)
+    assert conn.execute("SELECT COUNT(*) FROM event_embeddings").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM transcript_embeddings").fetchone()[0] == 0
+    conn.close()

@@ -4,6 +4,40 @@ All notable changes to video-security are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow semantic versioning.
 
+## [0.14.2] - 2026-10-02
+
+### Fixed
+
+- **Retry cascade (P0)** — a transient LLM-server outage no longer converts
+  the whole queue to permanently-failed jobs within minutes. `claim_next_job`
+  takes a `skip_ids` cool-down set (a job failed this run is not re-claimed
+  until the next run, engine.py), `update_job_status` resets `attempts = 0`
+  on successful phase completion (`harvested`/`triaged`/`done`, db.py), and
+  new `vs job requeue-failed [--job ID] [--dry-run]` recovers terminal
+  'failed' jobs (one retry per requeue; attempts preserved). The run digest
+  now also prints `jobs failed: N -> M`.
+- **ffmpeg stderr deadlock (P0)** — `iter_frames` (ingest/frames.py) and
+  `jolt_samples` (prefilter/crash.py) spawned ffmpeg with an undrained
+  stderr=PIPE: a chatty decode-error stream fills the 64 KiB pipe, blocks
+  ffmpeg, and wedges the stdout read until the slot watchdog kills the run.
+  stderr is now DEVNULL (neither caller consumed it).
+- **Disk-watermark breach aborts the sweep (P1)** — new `WatermarkError`
+  (EngineError subclass) is caught ahead of the per-job handler:
+  the current job is requeued to its rest state without an attempts
+  increment and both sweep loops break, instead of fail-marking every
+  remaining job night after night.
+- **Per-job exception isolation (P1)** — the sweep catch list widened from
+  `(PipelineError, OllamaError, EngineError, IngestError)` to `Exception`
+  (logged with type name); one degenerate frame (cv2/torch/sqlite/…
+  ZeroDivisionError at fps=0) fails one job instead of killing the run.
+  `iter_frames` raises `IngestError` on fps<=0 (probed `0/1` rate) and
+  malformed `[threat] after_hours` ranges are rejected at config load.
+- **Stale embeddings on re-harvest/delete (P1)** — `delete_job_rows` now
+  clears `event_embeddings` (keyed by reusable event rowid) and
+  `transcript_embeddings` before the events rows go; re-harvested events
+  no longer silently serve the old event's vector in semantic search, and
+  deleted/pruned jobs stop leaking embedding rows.
+
 ## [0.14.1] - 2026-09-30
 
 ### Added

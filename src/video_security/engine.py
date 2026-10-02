@@ -19,6 +19,15 @@ class EngineError(Exception):
     pass
 
 
+class WatermarkError(EngineError):
+    """Disk watermark breached — sweeps must abort for a clean checkpoint.
+
+    Raised mid-harvest (every 1000 frames); unlike a plain EngineError this
+    must NOT fail-mark the job — the sweep breaks and the job is requeued
+    in its rest state without an attempts increment.
+    """
+
+
 def video_hash(path: Path) -> str:
     file_size = path.stat().st_size
     sha = hashlib.sha256(str(file_size).encode())
@@ -85,7 +94,7 @@ def check_disk_watermark_once() -> None:
     if _watermark_config_gb is None:
         return
     if disk_free_gb(Path.home()) < _watermark_config_gb:
-        raise EngineError(
+        raise WatermarkError(
             f"disk watermark breached ({disk_free_gb(Path.home()):.1f} GB free"
             f" < {_watermark_config_gb} GB) — aborting for checkpoint"
         )
@@ -145,15 +154,30 @@ class BatchEngine:
         init_db(conn)
         return conn
 
-    def claim_next_job(self, phase: int = 1) -> JobRow | None:
+    def claim_next_job(
+        self, phase: int = 1, skip_ids: set[int] | None = None
+    ) -> JobRow | None:
         entry = _PHASE_ENTRY[phase]
         conn = self._connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT * FROM jobs WHERE status = ? ORDER BY id LIMIT 1",
-                (entry,),
-            ).fetchone()
+            skip = sorted(skip_ids) if skip_ids else []
+            if skip:
+                # Cool-down: a job that just failed this run stays claimable
+                # in the DB (next run retries it) but is not re-claimed
+                # within the same sweep — one transient outage must not burn
+                # every attempt of every queued job in minutes.
+                placeholders = ",".join("?" * len(skip))
+                row = conn.execute(
+                    f"SELECT * FROM jobs WHERE status = ? "
+                    f"AND id NOT IN ({placeholders}) ORDER BY id LIMIT 1",
+                    (entry, *skip),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM jobs WHERE status = ? ORDER BY id LIMIT 1",
+                    (entry,),
+                ).fetchone()
             if row is None:
                 conn.execute("ROLLBACK")
                 return None
@@ -223,7 +247,27 @@ class BatchEngine:
         home_gb = disk_free_gb(Path.home())
         watermark = self.config.engine.disk_watermark_gb
         if home_gb < watermark:
-            raise EngineError("disk watermark breached — checkpointing and aborting")
+            raise WatermarkError("disk watermark breached — checkpointing and aborting")
+
+    def requeue_job(self, job_id: int) -> None:
+        """Return a transient-state job to its phase entry status without
+        incrementing attempts (clean aborts: disk watermark, etc.)."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT status FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return
+            rest = _TRANSIENT_TO_REST.get(str(row["status"]), "pending")
+            conn.execute(
+                "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (rest, job_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def mark_failed(self, job_id: int, attempts_cap: int = 3) -> None:
         conn = self._connect()

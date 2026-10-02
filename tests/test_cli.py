@@ -342,3 +342,184 @@ def test_diff_prompt_versions(tmp_path: Path) -> None:
     assert "compared 1 events, 1 changed" in result.output
     assert "person near gate" in result.output
     assert "two people near gate" in result.output
+
+
+def _sweep_fixture(tmp_path):
+    """Two pending jobs + engine/conn ready for _phase_sweeps."""
+    from video_security.config import Config, StorageConfig
+    from video_security.db import connect, create_job, init_db
+
+    db_path = str(tmp_path / "t.db")
+    config = Config(storage=StorageConfig(db_path=db_path))
+    conn = connect(db_path)
+    init_db(conn)
+    j1 = create_job(conn, "/v/a.mp4", "h1")
+    j2 = create_job(conn, "/v/b.mp4", "h2")
+    return config, conn, j1, j2
+
+
+def test_sweep_does_not_reclaim_job_failed_same_run(tmp_path, monkeypatch):
+    """P0 regression: one transient failure must not burn every attempt of
+    every queued job inside a single sweep (claim cool-down)."""
+    import video_security.pipeline as pipeline_mod
+    from video_security.cli import _phase_sweeps
+    from video_security.engine import BatchEngine, SignalGuard
+
+    config, conn, j1, j2 = _sweep_fixture(tmp_path)
+    calls = {"harvest": 0}
+
+    def fake_harvest(job, cfg, conn):
+        calls["harvest"] += 1
+        raise pipeline_mod.PipelineError("mlx-serve down")
+
+    monkeypatch.setattr(pipeline_mod, "harvest_job", fake_harvest)
+    engine = BatchEngine(config)
+    claims = {"n": 0}
+    orig_claim = engine.claim_next_job
+
+    def counting_claim(phase=1, skip_ids=None):
+        claims["n"] += 1
+        return orig_claim(phase, skip_ids=skip_ids)
+
+    engine.claim_next_job = counting_claim  # type: ignore[method-assign]
+    _phase_sweeps(engine, conn, config, [1], None, lambda: False, SignalGuard())
+
+    # j1 failed once and was NOT instantly re-claimed; j2 was claimed too
+    assert calls["harvest"] == 2
+    assert claims["n"] == 3  # j1, j2, then one dry claim that skips j1
+    from video_security.db import connect
+
+    conn2 = connect(config.storage.db_path)
+    row = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j1.id,)
+    ).fetchone()
+    assert row["status"] == "pending"  # attempt 1 < cap: retried next run
+    assert row["attempts"] == 1
+    row2 = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j2.id,)
+    ).fetchone()
+    assert row2["status"] == "pending"
+    assert row2["attempts"] == 1
+    conn2.close()
+
+
+def test_sweep_attempts_cap_marks_failed(tmp_path, monkeypatch):
+    """Three runs (attempts 3) still terminate a permanently-broken job."""
+    import video_security.pipeline as pipeline_mod
+    from video_security.cli import _phase_sweeps
+    from video_security.db import connect
+    from video_security.engine import BatchEngine, SignalGuard
+
+    config, conn, j1, _j2 = _sweep_fixture(tmp_path)
+
+    def fake_harvest(job, cfg, conn):
+        raise pipeline_mod.PipelineError("permanent")
+
+    monkeypatch.setattr(pipeline_mod, "harvest_job", fake_harvest)
+    engine = BatchEngine(config)
+    for _ in range(3):
+        _phase_sweeps(engine, conn, config, [1], None, lambda: False, SignalGuard())
+    conn2 = connect(config.storage.db_path)
+    row = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j1.id,)
+    ).fetchone()
+    assert row["status"] == "failed"
+    assert row["attempts"] == 3
+    conn2.close()
+
+
+def test_watermark_aborts_sweep_without_failing_jobs(tmp_path, monkeypatch):
+    """P1 regression: disk-watermark breach must abort the sweep and requeue
+    the job without an attempts increment — not fail-mark every job."""
+    from video_security.cli import _phase_sweeps
+    from video_security.db import connect
+    from video_security.engine import BatchEngine, SignalGuard, WatermarkError
+
+    config, conn, j1, j2 = _sweep_fixture(tmp_path)
+
+    def fake_harvest(job, cfg, conn):
+        raise WatermarkError("disk watermark breached")
+
+    monkeypatch.setattr("video_security.pipeline.harvest_job", fake_harvest)
+    engine = BatchEngine(config)
+    claims = {"n": 0}
+    orig_claim = engine.claim_next_job
+
+    def counting_claim(phase=1, skip_ids=None):
+        claims["n"] += 1
+        return orig_claim(phase, skip_ids=skip_ids)
+
+    engine.claim_next_job = counting_claim  # type: ignore[method-assign]
+    _phase_sweeps(engine, conn, config, [1], None, lambda: False, SignalGuard())
+
+    assert claims["n"] == 1  # sweep aborted after the first breach
+    conn2 = connect(config.storage.db_path)
+    row = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j1.id,)
+    ).fetchone()
+    assert row["status"] == "pending"  # requeued, no attempt burned
+    assert row["attempts"] == 0
+    row2 = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j2.id,)
+    ).fetchone()
+    assert row2["status"] == "pending"
+    assert row2["attempts"] == 0
+    conn2.close()
+
+
+def test_sweep_unexpected_exception_isolates_job(tmp_path, monkeypatch):
+    """P1 regression: a non-pipeline error (cv2/torch/sqlite/...) fails one
+    job instead of killing the whole sweep."""
+    from video_security.cli import _phase_sweeps
+    from video_security.db import connect
+    from video_security.engine import BatchEngine, SignalGuard
+
+    config, conn, j1, j2 = _sweep_fixture(tmp_path)
+
+    def fake_harvest(job, cfg, conn):
+        if job.id == j1.id:
+            raise ZeroDivisionError("division by zero (fps=0)")
+        from types import SimpleNamespace
+
+        from video_security.db import update_job_status
+
+        update_job_status(conn, job.id, "harvested")
+        return SimpleNamespace(events=0, plates=0, kept_frames=0)
+
+    monkeypatch.setattr("video_security.pipeline.harvest_job", fake_harvest)
+    engine = BatchEngine(config)
+    _phase_sweeps(engine, conn, config, [1], None, lambda: False, SignalGuard())
+    conn2 = connect(config.storage.db_path)
+    row = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j1.id,)
+    ).fetchone()
+    assert row["status"] == "pending"
+    assert row["attempts"] == 1
+    row2 = conn2.execute(
+        "SELECT status FROM jobs WHERE id = ?", (j2.id,)
+    ).fetchone()
+    assert row2["status"] == "harvested"  # sweep survived
+    conn2.close()
+
+
+def test_job_requeue_failed_cmd(tmp_path):
+    from video_security.db import connect
+
+    config, conn, j1, _j2 = _sweep_fixture(tmp_path)
+    conn.execute("UPDATE jobs SET status = 'failed', attempts = 3 WHERE id = ?", (j1.id,))
+    conn.commit()
+    conn.close()
+    db_file = tmp_path / "t.db"
+    result = runner.invoke(app, ["--db", str(db_file), "job", "requeue-failed", "--dry-run"])
+    assert result.exit_code == 0
+    assert "would requeue job" in result.stdout
+    result = runner.invoke(app, ["--db", str(db_file), "job", "requeue-failed"])
+    assert result.exit_code == 0
+    assert "requeued 1 failed job(s)" in result.stdout
+    conn2 = connect(str(db_file))
+    row = conn2.execute(
+        "SELECT status, attempts FROM jobs WHERE id = ?", (j1.id,)
+    ).fetchone()
+    assert row["status"] == "pending"
+    assert row["attempts"] == 3  # attempts preserved: one retry per requeue
+    conn2.close()

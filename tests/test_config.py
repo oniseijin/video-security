@@ -380,3 +380,19 @@ def test_llm_provider_invalid(tmp_path: Path) -> None:
     p.write_text('[llm]\nprovider = "vllm"\n')
     with pytest.raises(ConfigError, match="llm.provider"):
         load_config(p)
+
+
+def test_after_hours_valid_ranges(tmp_path: Path) -> None:
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text('[threat]\nafter_hours = ["22:00-06:00", "1:30-5:05"]\n')
+    cfg = load_config(toml_file)
+    assert cfg.threat.after_hours == ["22:00-06:00", "1:30-5:05"]
+
+
+def test_after_hours_rejects_malformed_range(tmp_path: Path) -> None:
+    """P1 regression: a malformed range must fail at config load, not raise
+    ValueError mid-harvest and fail-mark every queued job."""
+    toml_file = tmp_path / "config.toml"
+    toml_file.write_text('[threat]\nafter_hours = ["22-06"]\n')
+    with pytest.raises(ConfigError):
+        load_config(toml_file)

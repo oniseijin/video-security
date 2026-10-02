@@ -225,11 +225,9 @@ def _phase_sweeps(
     budget_hit: Callable[[], bool],
     guard: SignalGuard,
 ) -> None:
-    from video_security.engine import EngineError
+    from video_security.engine import WatermarkError
     from video_security.ingest.frames import IngestError
-    from video_security.llm.ollama import OllamaError
     from video_security.pipeline import (
-        PipelineError,
         detail_job,
         harvest_job,
         triage_job,
@@ -245,6 +243,8 @@ def _phase_sweeps(
             break
         print(f"— phase {phase} sweep —")
         processed = 0
+        failed_ids: set[int] = set()
+        aborted = False
         while True:
             if guard.stop_requested:
                 print("stop requested — finishing")
@@ -252,7 +252,7 @@ def _phase_sweeps(
             if budget_hit():
                 print("time budget reached — stopping")
                 break
-            claimed = engine.claim_next_job(phase)
+            claimed = engine.claim_next_job(phase, skip_ids=failed_ids)
             if claimed is None:
                 break
             job = claimed
@@ -271,19 +271,40 @@ def _phase_sweeps(
                     n = detail_job(job, cfg, conn, ollama_client) if ollama_client else 0
                     print(f"job {job.id} detailed: {n} events")
                 processed += 1
-            except (PipelineError, OllamaError, EngineError, IngestError) as e:
-                if isinstance(e, IngestError):
-                    from video_security.repair import auto_repair_job
+            except WatermarkError as e:
+                # Clean checkpoint: requeue without burning an attempt and
+                # stop the sweep — continuing would fail-mark every job.
+                print(
+                    f"job {job.id}: {e} — job requeued, aborting sweep",
+                    file=sys.stderr,
+                )
+                engine.requeue_job(job.id)
+                aborted = True
+                break
+            except IngestError as e:
+                from video_security.repair import auto_repair_job
 
-                    if auto_repair_job(conn, job.id, cfg):
-                        print(
-                            f"job {job.id}: corrupt video repaired via untrunc — "
-                            "requeued"
-                        )
-                        continue
+                if auto_repair_job(conn, job.id, cfg):
+                    print(
+                        f"job {job.id}: corrupt video repaired via untrunc — "
+                        "requeued"
+                    )
+                    continue
                 print(f"job {job.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(job.id)
+                failed_ids.add(job.id)
+            except Exception as e:
+                # Per-job isolation: one bad clip (cv2/torch/sqlite error,
+                # fps=0, malformed config value) must not kill the sweep.
+                print(
+                    f"job {job.id} failed: {type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+                engine.mark_failed(job.id)
+                failed_ids.add(job.id)
         print(f"phase {phase} sweep complete: {processed} jobs processed")
+        if aborted:
+            break
 
 
 @app.command(name="run")
@@ -352,6 +373,9 @@ def run_cmd(
         "done": conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE status = 'done'"
         ).fetchone()[0],
+        "failed": conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'failed'"
+        ).fetchone()[0],
     }
 
     budget_s: float | None = parse_duration(stop_after) if stop_after else None
@@ -402,9 +426,13 @@ def run_cmd(
         "done": conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE status = 'done'"
         ).fetchone()[0],
+        "failed": conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'failed'"
+        ).fetchone()[0],
     }
     print("— run digest —")
     print(f"jobs done: {before['done']} -> {after['done']}")
+    print(f"jobs failed: {before['failed']} -> {after['failed']}")
     print(
         f"events: +{after['events'] - before['events']}, "
         f"plates: +{after['plates'] - before['plates']}, "
@@ -932,11 +960,16 @@ def _watch_and_run(
     no_llm: bool,
     max_llm_events: int | None,
 ) -> None:
-    from video_security.engine import BatchEngine, EngineError, SignalGuard, on_ac_power
+    from video_security.engine import (
+        BatchEngine,
+        SignalGuard,
+        WatermarkError,
+        on_ac_power,
+    )
     from video_security.ingest.frames import IngestError
     from video_security.llm import make_llm_client
     from video_security.llm.ollama import OllamaError
-    from video_security.pipeline import PipelineError, analyze_video, enqueue_video
+    from video_security.pipeline import analyze_video, enqueue_video
     from video_security.watch import watch_loop
 
     if not on_ac_power():
@@ -966,10 +999,11 @@ def _watch_and_run(
             stop_check=lambda: guard.stop_requested,
             poll_interval_s=30.0,
         )
+        failed_ids: set[int] = set()
         while True:
             if guard.stop_requested:
                 break
-            claimed = engine.claim_next_job()
+            claimed = engine.claim_next_job(skip_ids=failed_ids)
             if claimed is None:
                 break
             try:
@@ -981,17 +1015,31 @@ def _watch_and_run(
                     f"job {claimed.id} done: {report.events} events, "
                     f"{report.plates} plates"
                 )
-            except (PipelineError, OllamaError, EngineError, IngestError) as e:
-                if isinstance(e, IngestError):
-                    from video_security.repair import auto_repair_job
+            except WatermarkError as e:
+                print(
+                    f"job {claimed.id}: {e} — job requeued, aborting sweep",
+                    file=sys.stderr,
+                )
+                engine.requeue_job(claimed.id)
+                break
+            except IngestError as e:
+                from video_security.repair import auto_repair_job
 
-                    if auto_repair_job(conn, claimed.id, cfg):
-                        print(
-                            f"job {claimed.id}: corrupt video repaired via untrunc — requeued"
-                        )
-                        continue
+                if auto_repair_job(conn, claimed.id, cfg):
+                    print(
+                        f"job {claimed.id}: corrupt video repaired via untrunc — requeued"
+                    )
+                    continue
                 print(f"job {claimed.id} failed: {e}", file=sys.stderr)
                 engine.mark_failed(claimed.id)
+                failed_ids.add(claimed.id)
+            except Exception as e:
+                print(
+                    f"job {claimed.id} failed: {type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+                engine.mark_failed(claimed.id)
+                failed_ids.add(claimed.id)
     if client is not None:
         client.unload(cfg.llm_triage.model)
         client.unload(cfg.llm_detail.model)
@@ -1198,6 +1246,51 @@ def job_remove_cmd(
                 print(f"no jobs with import-id {import_id}")
                 return
             run_bulk(f"--import-id {import_id}", ids)
+    finally:
+        conn.close()
+
+
+@job_app.command(name="requeue-failed")
+def job_requeue_failed_cmd(
+    ctx: typer.Context,
+    job_id: list[int] = typer.Option(  # noqa: B008
+        [], "--job", help="Only requeue these failed job IDs (repeatable)"
+    ),
+    dry_run: bool = typer.Option(  # noqa: B008
+        False, "--dry-run", help="List what would be requeued without changing it"
+    ),
+) -> None:
+    """Requeue failed jobs back to 'pending' (phase 1 re-runs are safe —
+    harvest deletes and recreates all rows). Attempts are left as-is: a
+    requeued job that fails again goes straight back to 'failed', while a
+    successful phase resets its attempt counter."""
+    conn, _cfg = _get_db(ctx)
+    try:
+        if job_id:
+            placeholders = ",".join("?" * len(job_id))
+            rows = conn.execute(
+                f"SELECT id FROM jobs WHERE status = 'failed' "
+                f"AND id IN ({placeholders}) ORDER BY id",
+                tuple(job_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id FROM jobs WHERE status = 'failed' ORDER BY id"
+            ).fetchall()
+        ids = [int(r["id"]) for r in rows]
+        if dry_run:
+            for i in ids:
+                print(f"would requeue job {i}")
+            print(f"{len(ids)} failed job(s) would be requeued")
+            return
+        for i in ids:
+            conn.execute(
+                "UPDATE jobs SET status = 'pending', "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (i,),
+            )
+        conn.commit()
+        print(f"requeued {len(ids)} failed job(s) to pending")
     finally:
         conn.close()
 

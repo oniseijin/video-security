@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -328,6 +329,19 @@ def _merge_dataclass(default: Any, overrides: dict[str, Any], path: str) -> Any:
     return dataclasses.replace(default, **kwargs)
 
 
+_AFTER_HOURS_RE = re.compile(r"\d{1,2}:\d{2}-\d{1,2}:\d{2}")
+
+
+def _validate_after_hours(ranges: list[str]) -> None:
+    """Fail fast at config load: a malformed range would otherwise raise
+    ValueError mid-harvest (parse_after_hours) and fail-mark every job."""
+    for r in ranges:
+        if not isinstance(r, str) or not _AFTER_HOURS_RE.fullmatch(r.strip()):
+            raise ConfigError(
+                f"Invalid after-hours range: {r!r} (expected 'HH:MM-HH:MM')"
+            )
+
+
 def _merge_value(default: Any, override: Any, path: str) -> Any:
     if isinstance(default, bool):
         if not isinstance(override, bool):
@@ -527,6 +541,7 @@ def _apply_toml_overrides(config: Config, toml_data: dict[str, Any]) -> Config:
                 )
             else:
                 kwargs["threat"] = _merge_dataclass(config.threat, values, "threat")
+            _validate_after_hours(kwargs["threat"].after_hours)
         elif section == "crash":
             kwargs["crash"] = _merge_dataclass(config.crash, values, "crash")
         elif section == "prefilter":

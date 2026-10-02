@@ -132,6 +132,10 @@ def iter_frames(
 ) -> Iterator[FrameData]:
     camera = camera or CameraOverrides()
     info = probe_video(video_path)
+    if info.fps <= 0:
+        # probe_video maps "0/1" frame rates to 0.0 on purpose; dividing by
+        # it would ZeroDivisionError the whole sweep, so fail the job.
+        raise IngestError(f"invalid fps {info.fps} in {video_path}")
     tw = config.prefilter.decode_width
     th = int(round(tw * info.height / info.width / 2.0)) * 2
     thr = (
@@ -163,7 +167,9 @@ def iter_frames(
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # stderr is never consumed here: a chatty decode-error stream would
+        # fill the 64 KiB pipe and deadlock the stdout read. Discard it.
+        stderr=subprocess.DEVNULL,
     )
     assert proc.stdout is not None
 

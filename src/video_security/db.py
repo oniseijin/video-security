@@ -433,11 +433,23 @@ def get_job_by_video_path(conn: sqlite3.Connection, video_path: str) -> JobRow |
     return _row_to_job(row)
 
 
+_SUCCESS_STATUSES = frozenset({"harvested", "triaged", "done"})
+
+
 def update_job_status(conn: sqlite3.Connection, job_id: int, status: str) -> None:
-    conn.execute(
-        "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (status, job_id),
-    )
+    if status in _SUCCESS_STATUSES:
+        # A phase completed successfully: clear the failure counter so the
+        # attempts cap measures consecutive failures, not lifetime history.
+        conn.execute(
+            "UPDATE jobs SET status = ?, attempts = 0, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, job_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, job_id),
+        )
     conn.commit()
 
 
@@ -823,6 +835,17 @@ def delete_job_rows(
         "transcript_segments", "analysis_results", "sessions", "clips",
         "clip_gps_data", "faces", "watchlist_hits",
     ]
+    # Embeddings must go before the events rows: event_embeddings is keyed
+    # by event_id (rowid, reusable after delete) — leaving stale vectors
+    # makes re-harvested events silently serve the old event's embedding.
+    conn.execute(
+        "DELETE FROM event_embeddings WHERE event_id IN "
+        "(SELECT id FROM events WHERE job_id = ?)",
+        (job_id,),
+    )
+    conn.execute(
+        "DELETE FROM transcript_embeddings WHERE job_id = ?", (job_id,)
+    )
     for table in tables:
         conn.execute(f"DELETE FROM {table} WHERE job_id = ?", (job_id,))
     conn.commit()

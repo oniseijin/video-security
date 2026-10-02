@@ -86,7 +86,9 @@ def jolt_samples(
         "-vf", f"scale={width}:{height},format=gray",
         "-an", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # stderr is never consumed: a chatty decode stream would fill the pipe
+    # and deadlock the stdout read (same hazard as ingest/frames.py).
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     assert proc.stdout is not None
     window = cv2.createHanningWindow((width, height), cv2.CV_32F)
     samples: list[tuple[float, float]] = []
